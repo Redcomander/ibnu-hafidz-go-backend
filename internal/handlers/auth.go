@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"math"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -168,6 +172,244 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(user)
+}
+
+// UpdateProfile updates authenticated user's own profile.
+func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
+	userID, _ := c.Locals("userID").(uint)
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "User not found",
+		})
+	}
+
+	type UpdateProfileRequest struct {
+		Name            string `json:"name"`
+		Username        string `json:"username"`
+		Email           string `json:"email"`
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+
+	var req UpdateProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Invalid request body",
+		})
+	}
+
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Email) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Name, username, and email are required",
+		})
+	}
+
+	// Ensure username/email remain unique (excluding current user).
+	var existing models.User
+	if err := h.db.Where("(email = ? OR username = ?) AND id <> ?", req.Email, req.Username, userID).First(&existing).Error; err == nil {
+		return c.Status(fiber.StatusConflict).JSON(models.ErrorResponse{
+			Error:   "conflict",
+			Message: "Email or username already exists",
+		})
+	}
+
+	user.Name = req.Name
+	user.Username = req.Username
+	user.Email = req.Email
+
+	if strings.TrimSpace(req.NewPassword) != "" {
+		if len(req.NewPassword) < 6 {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+				Error:   "validation_error",
+				Message: "New password must be at least 6 characters",
+			})
+		}
+		if strings.TrimSpace(req.CurrentPassword) == "" || !utils.CheckPassword(req.CurrentPassword, user.Password) {
+			return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+				Error:   "unauthorized",
+				Message: "Current password is incorrect",
+			})
+		}
+
+		hashedPassword, err := utils.HashPassword(req.NewPassword)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+				Error:   "server_error",
+				Message: "Failed to hash password",
+			})
+		}
+		user.Password = hashedPassword
+	}
+
+	if err := h.db.Save(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to update profile",
+		})
+	}
+
+	h.db.Preload("Roles.Permissions").First(&user, userID)
+	return c.JSON(user)
+}
+
+// UploadProfileAvatar uploads and updates authenticated user's avatar.
+func (h *AuthHandler) UploadProfileAvatar(c *fiber.Ctx) error {
+	userID, _ := c.Locals("userID").(uint)
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "User not found",
+		})
+	}
+
+	file, err := c.FormFile("avatar")
+	if err != nil || file == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Avatar file is required",
+		})
+	}
+
+	if file.Size > 2*1024*1024 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Avatar size must be <= 2MB",
+		})
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowed := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".webp": true,
+	}
+	if !allowed[ext] {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Avatar format must be jpg, png, or webp",
+		})
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "bad_request",
+			Message: "Invalid avatar file",
+		})
+	}
+	defer f.Close()
+
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	mimeType := http.DetectContentType(buf[:n])
+	allowedMimes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/webp": true,
+	}
+	if !allowedMimes[mimeType] {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Avatar content must be a valid image (jpg, png, webp)",
+		})
+	}
+
+	uploadPath := "./uploads"
+	if os.Getenv("UPLOAD_PATH") != "" {
+		uploadPath = os.Getenv("UPLOAD_PATH")
+	}
+
+	avatarDir := filepath.Join(uploadPath, "avatars")
+	if err := os.MkdirAll(avatarDir, 0o755); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to prepare upload directory",
+		})
+	}
+
+	filename := fmt.Sprintf("user_%d_%d%s", userID, time.Now().UnixNano(), ext)
+	relPath := filepath.ToSlash(filepath.Join("avatars", filename))
+	absPath := filepath.Join(uploadPath, relPath)
+
+	if err := c.SaveFile(file, absPath); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to save avatar",
+		})
+	}
+
+	if user.FotoGuru != nil && *user.FotoGuru != "" {
+		oldPath := filepath.Join(uploadPath, filepath.FromSlash(*user.FotoGuru))
+		if oldPath != absPath {
+			_ = os.Remove(oldPath)
+		}
+	}
+
+	user.FotoGuru = &relPath
+	if err := h.db.Save(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to update avatar",
+		})
+	}
+
+	h.db.Preload("Roles.Permissions").First(&user, userID)
+	return c.JSON(user)
+}
+
+// DeleteProfile soft deletes authenticated user's own account.
+func (h *AuthHandler) DeleteProfile(c *fiber.Ctx) error {
+	userID, _ := c.Locals("userID").(uint)
+
+	type DeleteProfileRequest struct {
+		CurrentPassword string `json:"current_password"`
+	}
+
+	var req DeleteProfileRequest
+	_ = c.BodyParser(&req)
+
+	var user models.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
+			Error:   "not_found",
+			Message: "User not found",
+		})
+	}
+
+	if strings.TrimSpace(req.CurrentPassword) == "" || !utils.CheckPassword(req.CurrentPassword, user.Password) {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "unauthorized",
+			Message: "Current password is required and must be correct",
+		})
+	}
+
+	if err := h.db.Delete(&user).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to delete account",
+		})
+	}
+
+	// Clear refresh cookie so active browser session ends immediately.
+	c.Cookie(&fiber.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Expires:  time.Now().Add(-1 * time.Hour),
+		HTTPOnly: true,
+		Secure:   h.cfg.Environment == "production",
+		SameSite: "Lax",
+		Path:     "/api/auth",
+	})
+
+	return c.JSON(fiber.Map{"message": "Account deleted successfully"})
 }
 
 // ErrorHandler is the global Fiber error handler

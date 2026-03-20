@@ -22,7 +22,7 @@ func Auth(cfg *config.Config) fiber.Handler {
 			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
 				tokenString = parts[1]
 			}
-		} else {
+		} else if c.Path() == "/api/notifications/stream" {
 			tokenString = c.Query("token")
 		}
 
@@ -92,5 +92,41 @@ func InjectDB(db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Locals("db", db)
 		return c.Next()
+	}
+}
+
+// ActivityLog stores authenticated request metadata for audit/activity page.
+func ActivityLog() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// Skip noisy endpoints
+		path := c.Path()
+		if path == "/api/notifications/stream" || strings.HasPrefix(path, "/health") {
+			return c.Next()
+		}
+
+		err := c.Next()
+
+		db, ok := c.Locals("db").(*gorm.DB)
+		if !ok {
+			return err
+		}
+		userID, ok := c.Locals("userID").(uint)
+		if !ok || userID == 0 {
+			return err
+		}
+
+		ip := c.IP()
+		ua := c.Get("User-Agent")
+		log := models.UserActivityLog{
+			UserID:     userID,
+			Method:     c.Method(),
+			Path:       path,
+			StatusCode: c.Response().StatusCode(),
+			IPAddress:  &ip,
+			UserAgent:  &ua,
+		}
+
+		_ = db.Create(&log).Error
+		return err
 	}
 }

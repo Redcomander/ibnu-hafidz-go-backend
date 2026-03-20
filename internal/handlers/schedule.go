@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -23,6 +24,8 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 	teacherID := c.Query("teacher_id")
 	day := c.Query("day")
 	dateStr := c.Query("date", time.Now().Format("2006-01-02")) // Default to today
+	search := strings.TrimSpace(c.Query("search"))
+	gender := strings.TrimSpace(c.Query("gender"))
 
 	// Validate format only — we use the string directly for MySQL DATE comparisons
 	if _, err := time.Parse("2006-01-02", dateStr); err != nil {
@@ -36,20 +39,32 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 			Preload("Assignment.DiniyyahLesson").
 			Preload("SubstituteTeacher")
 
+		if classID != "" || teacherID != "" || gender != "" || search != "" {
+			query = query.Joins("JOIN diniyyah_kelas_teachers dkt ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = dkt.id")
+		}
 		if classID != "" {
-			query = query.Joins("JOIN diniyyah_kelas_teachers ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = diniyyah_kelas_teachers.id").
-				Where("diniyyah_kelas_teachers.kelas_id = ?", classID)
+			query = query.Where("dkt.kelas_id = ?", classID)
 		}
 		if teacherID != "" {
-			query = query.Joins("JOIN diniyyah_kelas_teachers ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = diniyyah_kelas_teachers.id").
-				Where("diniyyah_kelas_teachers.user_id = ?", teacherID)
+			query = query.Where("dkt.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			query = query.Joins("JOIN kelas k ON dkt.kelas_id = k.id").
+				Where("k.gender = ?", gender)
+		}
+		if search != "" {
+			term := "%" + strings.ToLower(search) + "%"
+			query = query.Joins("JOIN diniyyah_lessons dl ON dkt.diniyyah_lesson_id = dl.id").
+				Joins("JOIN kelas k2 ON dkt.kelas_id = k2.id").
+				Joins("JOIN users u ON dkt.user_id = u.id").
+				Where("LOWER(dl.nama) LIKE ? OR LOWER(k2.nama) LIKE ? OR LOWER(u.name) LIKE ?", term, term, term)
 		}
 		if day != "" {
 			query = query.Where("hari = ?", day)
 		}
 
 		if err := query.Find(&schedules).Error; err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch schedules"})
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch schedules", "details": err.Error()})
 		}
 
 		// Prevent index out of range if empty
@@ -120,20 +135,32 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 		Preload("Assignment.Lesson").
 		Preload("SubstituteTeacher")
 
+	if classID != "" || teacherID != "" || gender != "" || search != "" {
+		query = query.Joins("JOIN lesson_kelas_teachers lkt ON jadwal_formal.lesson_kelas_teacher_id = lkt.id")
+	}
 	if classID != "" {
-		query = query.Joins("JOIN lesson_kelas_teachers ON jadwal_formal.lesson_kelas_teacher_id = lesson_kelas_teachers.id").
-			Where("lesson_kelas_teachers.kelas_id = ?", classID)
+		query = query.Where("lkt.kelas_id = ?", classID)
 	}
 	if teacherID != "" {
-		query = query.Joins("JOIN lesson_kelas_teachers ON jadwal_formal.lesson_kelas_teacher_id = lesson_kelas_teachers.id").
-			Where("lesson_kelas_teachers.user_id = ?", teacherID)
+		query = query.Where("lkt.user_id = ?", teacherID)
+	}
+	if gender != "" {
+		query = query.Joins("JOIN kelas k ON lkt.kelas_id = k.id").
+			Where("k.gender = ?", gender)
+	}
+	if search != "" {
+		term := "%" + strings.ToLower(search) + "%"
+		query = query.Joins("JOIN lessons ls ON lkt.lesson_id = ls.id").
+			Joins("JOIN users u ON lkt.user_id = u.id").
+			Joins("JOIN kelas k2 ON lkt.kelas_id = k2.id").
+			Where("LOWER(ls.nama) LIKE ? OR LOWER(k2.nama) LIKE ? OR LOWER(u.name) LIKE ?", term, term, term)
 	}
 	if day != "" {
 		query = query.Where("hari = ?", day)
 	}
 
 	if err := query.Find(&schedules).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch schedules"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch schedules", "details": err.Error()})
 	}
 
 	if len(schedules) == 0 {

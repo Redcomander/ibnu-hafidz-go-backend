@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
@@ -94,22 +95,47 @@ func (h *NotificationHandler) Stream(c *fiber.Ctx) error {
 	h.clients[userID][messageChan] = true
 	h.mu.Unlock()
 
-	// Unregister client on exit
-	defer func() {
-		h.mu.Lock()
-		delete(h.clients[userID], messageChan)
-		if len(h.clients[userID]) == 0 {
-			delete(h.clients, userID)
-		}
-		h.mu.Unlock()
-		close(messageChan)
-	}()
-
-	// Keep connection open and write events
+	// Keep connection open and write events.
+	// NOTE: cleanup must happen INSIDE the writer closure — the defer in the
+	// outer handler runs on "return nil" (before the writer goroutine starts),
+	// which would close messageChan immediately and cause a 0s disconnect loop.
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		for msg := range messageChan {
-			fmt.Fprintf(w, "data: %s\n\n", msg)
-			w.Flush()
+		defer func() {
+			h.mu.Lock()
+			delete(h.clients[userID], messageChan)
+			if len(h.clients[userID]) == 0 {
+				delete(h.clients, userID)
+			}
+			h.mu.Unlock()
+			close(messageChan)
+		}()
+
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case msg, ok := <-messageChan:
+				if !ok {
+					return
+				}
+				if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
+
+			case <-ticker.C:
+				// SSE comment heartbeat to keep idle connections alive.
+				// Client disconnect is detected by the Flush error below.
+				if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
+			}
 		}
 	})
 

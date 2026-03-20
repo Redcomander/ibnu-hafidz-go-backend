@@ -25,6 +25,9 @@ func main() {
 
 	// Load config
 	cfg := config.Load()
+	if cfg.Environment == "production" && (cfg.JWTSecret == "change-me-in-production" || cfg.JWTRefreshSecret == "change-me-refresh-secret") {
+		log.Fatal("Refusing to start in production with default JWT secrets")
+	}
 
 	// Connect database
 	db, err := database.Connect(cfg)
@@ -39,6 +42,12 @@ func main() {
 	// Migrate Notification
 	if err := db.AutoMigrate(&models.Notification{}); err != nil {
 		log.Fatalf("Failed to migrate notifications: %v", err)
+	}
+	if err := db.AutoMigrate(&models.UserActivityLog{}); err != nil {
+		log.Fatalf("Failed to migrate activity logs: %v", err)
+	}
+	if err := db.AutoMigrate(&models.FeatureFlag{}); err != nil {
+		log.Fatalf("Failed to migrate feature flags: %v", err)
 	}
 	// Migrate Lesson
 	if err := db.AutoMigrate(&models.Lesson{}, &models.DiniyyahLesson{}); err != nil {
@@ -152,6 +161,11 @@ func main() {
 		c.Set("X-Content-Type-Options", "nosniff")
 		c.Set("X-XSS-Protection", "1; mode=block")
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		if cfg.Environment == "production" {
+			c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		return c.Next()
 	})
 	app.Use(cors.New(cors.Config{
@@ -176,13 +190,24 @@ func main() {
 	auth.Get("/me", middleware.Auth(cfg), authHandler.Me)
 
 	// Protected routes
-	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg))
+	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+
+	// Profile (self service)
+	profile := protected.Group("/profile")
+	profile.Get("/", authHandler.Me)
+	profile.Post("/avatar", authHandler.UploadProfileAvatar)
+	profile.Put("/", authHandler.UpdateProfile)
+	profile.Delete("/", authHandler.DeleteProfile)
 
 	// Students
 	studentHandler := handlers.NewStudentHandler(db)
 	students := protected.Group("/students")
 	students.Get("/", middleware.Permission("students.view"), studentHandler.List)
 	students.Post("/", middleware.Permission("students.create"), studentHandler.Create)
+	students.Post("/import", middleware.Permission("students.create"), studentHandler.ImportCSV)
+	students.Get("/template", middleware.Permission("students.view"), studentHandler.ExportTemplate)
+	students.Get("/export/excel", middleware.Permission("students.view"), studentHandler.ExportCSV)
+	students.Post("/mass-delete", middleware.Permission("students.delete"), studentHandler.MassDelete)
 	students.Get("/:id", middleware.Permission("students.view"), studentHandler.Get)
 	students.Put("/:id", middleware.Permission("students.edit"), studentHandler.Update)
 	students.Delete("/:id", middleware.Permission("students.delete"), studentHandler.Delete)
@@ -204,6 +229,15 @@ func main() {
 	roles.Get("/:id", middleware.Permission("roles.view"), roleHandler.Get)
 	roles.Put("/:id", middleware.Permission("roles.edit"), roleHandler.Update)
 	roles.Delete("/:id", middleware.Permission("roles.delete"), roleHandler.Delete)
+
+	// Activity logs
+	activityLogHandler := handlers.NewActivityLogHandler(db)
+	protected.Get("/activity-logs", middleware.Permission("users.view"), activityLogHandler.List)
+
+	// Feature flags
+	featureFlagHandler := handlers.NewFeatureFlagHandler(db)
+	protected.Get("/feature-flags/ramadhan", featureFlagHandler.GetRamadhan)
+	protected.Put("/feature-flags/ramadhan", middleware.Permission("dashboard.view"), featureFlagHandler.SetRamadhan)
 
 	// Permissions
 	permHandler := handlers.NewPermissionHandler(db)
@@ -228,6 +262,8 @@ func main() {
 	kelas.Get("/", middleware.Permission("kelas.view"), kelasHandler.List)
 	kelas.Post("/", middleware.Permission("kelas.create"), kelasHandler.Create)
 	kelas.Get("/:id", middleware.Permission("kelas.view"), kelasHandler.Get)
+	kelas.Get("/:id/export-excel", middleware.Permission("kelas.view"), kelasHandler.ExportExcel)
+	kelas.Get("/:id/export-pdf", middleware.Permission("kelas.view"), kelasHandler.ExportPDF)
 	kelas.Put("/:id", middleware.Permission("kelas.edit"), kelasHandler.Update)
 	kelas.Delete("/:id", middleware.Permission("kelas.delete"), kelasHandler.Delete)
 	kelas.Post("/:id/students", middleware.Permission("kelas.edit"), kelasHandler.AddStudent)
@@ -251,7 +287,7 @@ func main() {
 	// Lesson Assignments (Guru Mapel per Lesson)
 	// Reusing ltHandler or creating new
 	ltHandlerLesson := handlers.NewLessonTeacherHandler(db)
-	lessons.Get("/:id/assignments", middleware.Permission("curriculum.view"), ltHandlerLesson.ListByLesson)
+	lessons.Get("/:id/assignments", middleware.Permission("lessons.view"), ltHandlerLesson.ListByLesson)
 	lessons.Post("/:id/assignments", middleware.Permission("curriculum.edit"), ltHandlerLesson.AssignToLesson)
 	lessons.Delete("/assignments/:assignment_id", middleware.Permission("curriculum.edit"), ltHandlerLesson.Unassign)
 

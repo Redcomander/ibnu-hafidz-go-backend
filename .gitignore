@@ -1,0 +1,42 @@
+# Go build artifacts
+/bin/
+/*.exe
+/*.dll
+/*.so
+/*.dylib
+*.test
+
+# GitHub workflows
+.github/
+
+# Editor files
+*.swp
+*~
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Dependency directories
+vendor/
+
+# Logs
+*.log
+
+# Uploaded files
+uploads/
+
+# Go module cache
+$GOMODCACHE/
+
+# IDE project files
+.DS_Store
+
+# GoLand
+*.iml
+
+# Cover profiles
+coverage.out

@@ -198,7 +198,7 @@ type ErrorResponse struct {
 // ──────────────────────────────────────────────────────────────
 type Visitor struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	IPAddress *string   `gorm:"size:45" json:"ip_address"`
+	IPAddress *string   `gorm:"size:255" json:"ip_address"`
 	UserAgent *string   `gorm:"type:text" json:"user_agent"`
 	CreatedAt time.Time `gorm:"index" json:"created_at"` // Index for fast dashboard stats
 	UpdatedAt time.Time `json:"updated_at"`

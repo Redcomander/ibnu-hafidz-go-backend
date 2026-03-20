@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
@@ -287,4 +290,65 @@ func (h *KelasHandler) RemoveStudent(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "Student removed successfully"})
+}
+
+// ExportExcel exports kelas students as CSV (excel-friendly).
+func (h *KelasHandler) ExportExcel(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var kelas models.Kelas
+
+	if err := h.db.Preload("Students").First(&kelas, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kelas not found"})
+	}
+
+	c.Set("Content-Type", "text/csv; charset=utf-8")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=kelas-%d-%s.csv", kelas.ID, time.Now().Format("20060102-150405")))
+
+	var b strings.Builder
+	b.WriteString("id,nama_lengkap,nisn,jenis_kelamin,status_periode,nama_ayah\n")
+	for _, s := range kelas.Students {
+		b.WriteString(fmt.Sprintf("%d,\"%s\",\"%s\",\"%s\",\"%s\",\"%s\"\n",
+			s.ID,
+			escapeCSV(s.NamaLengkap),
+			escapeCSV(ptrVal(s.NISN)),
+			escapeCSV(ptrVal(s.JenisKelamin)),
+			escapeCSV(ptrVal(s.StatusPeriode)),
+			escapeCSV(ptrVal(s.NamaAyah)),
+		))
+	}
+
+	return c.SendString(b.String())
+}
+
+// ExportPDF exports a printable plain-text summary.
+func (h *KelasHandler) ExportPDF(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var kelas models.Kelas
+
+	if err := h.db.Preload("Students").First(&kelas, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kelas not found"})
+	}
+
+	c.Set("Content-Type", "text/plain; charset=utf-8")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=kelas-%d-%s.txt", kelas.ID, time.Now().Format("20060102-150405")))
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("LAPORAN KELAS: %s %s\n", kelas.Nama, kelas.Tingkat))
+	b.WriteString("====================================\n")
+	for i, s := range kelas.Students {
+		b.WriteString(fmt.Sprintf("%d. %s | NISN: %s | Gender: %s\n", i+1, s.NamaLengkap, ptrVal(s.NISN), ptrVal(s.JenisKelamin)))
+	}
+
+	return c.SendString(b.String())
+}
+
+func ptrVal(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func escapeCSV(v string) string {
+	return strings.ReplaceAll(v, "\"", "\"\"")
 }

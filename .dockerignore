@@ -1,0 +1,9 @@
+.git
+.gitignore
+.vscode
+.idea
+node_modules
+tmp
+*.log
+.env
+uploads

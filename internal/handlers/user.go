@@ -151,8 +151,8 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 
 	h.db.Save(&user)
 
-	// Update roles if provided
-	if len(req.RoleIDs) > 0 {
+	// Update roles if field is provided (including empty array to clear roles).
+	if req.RoleIDs != nil {
 		var roles []models.Role
 		h.db.Where("id IN ?", req.RoleIDs).Find(&roles)
 		h.db.Model(&user).Association("Roles").Replace(roles)
