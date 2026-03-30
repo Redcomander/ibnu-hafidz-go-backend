@@ -135,6 +135,7 @@ type Comment struct {
 	Name           string    `gorm:"type:varchar(255);not null" json:"name"`
 	Email          string    `gorm:"type:varchar(255)" json:"email"`
 	Body           string    `gorm:"type:text;not null" json:"body"`
+	LikesCount     int       `gorm:"default:0" json:"likes_count"`
 	ProfilePicture *string   `gorm:"type:varchar(500)" json:"profile_picture"`
 	GoogleID       *string   `gorm:"type:varchar(255)" json:"google_id"`
 	IsApproved     bool      `gorm:"default:false" json:"is_approved"`

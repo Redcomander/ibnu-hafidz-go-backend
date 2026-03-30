@@ -189,6 +189,21 @@ func main() {
 	auth.Post("/logout", middleware.Auth(cfg), authHandler.Logout)
 	auth.Get("/me", middleware.Auth(cfg), authHandler.Me)
 
+	// Public content routes
+	publicHandler := handlers.NewPublicHandler(db)
+	public := api.Group("/public")
+	public.Get("/home", publicHandler.GetHome)
+	public.Get("/profile", publicHandler.GetProfile)
+	public.Get("/prestasi", publicHandler.GetPrestasi)
+	public.Get("/gallery/photo", publicHandler.GetGalleryPhoto)
+	public.Get("/gallery/video", publicHandler.GetGalleryVideo)
+	public.Get("/articles", publicHandler.GetArticles)
+	public.Get("/articles/:slug", publicHandler.GetArticleDetail)
+	public.Get("/articles/:slug/comments", publicHandler.GetArticleComments)
+	public.Post("/articles/:slug/comments", publicHandler.CreateArticleComment)
+	public.Post("/comments/:id/reply", publicHandler.ReplyArticleComment)
+	public.Post("/comments/:id/like", publicHandler.LikeComment)
+
 	// Protected routes
 	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
 
