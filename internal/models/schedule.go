@@ -8,6 +8,7 @@ import (
 
 type Schedule struct {
 	ID                  uint           `gorm:"primaryKey" json:"id"`
+	Type                string         `gorm:"column:type;size:30;not null;default:normal" json:"type"`
 	LessonTeacherID     uint           `gorm:"column:lesson_kelas_teacher_id;not null;index" json:"lesson_teacher_id"`
 	Day                 string         `gorm:"column:hari;size:20;not null" json:"day"` // Senin, Selasa, ...
 	StartTime           string         `gorm:"column:jam_mulai;type:time;not null" json:"start_time"`

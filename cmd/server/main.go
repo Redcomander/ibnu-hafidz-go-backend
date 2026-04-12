@@ -69,6 +69,16 @@ func main() {
 		log.Fatalf("Failed to migrate attendance: %v", err)
 	}
 
+	// Migrate Arrival tracking
+	if err := db.AutoMigrate(
+		&models.StudentArrival{},
+		&models.UserArrival{},
+		&models.StudentArrivalSetting{},
+		&models.SidebarMenuSetting{},
+	); err != nil {
+		log.Fatalf("Failed to migrate arrivals: %v", err)
+	}
+
 	// Migrate Halaqoh
 	if err := db.AutoMigrate(
 		&models.HalaqohAssignment{},
@@ -203,6 +213,9 @@ func main() {
 	public.Post("/articles/:slug/comments", publicHandler.CreateArticleComment)
 	public.Post("/comments/:id/reply", publicHandler.ReplyArticleComment)
 	public.Post("/comments/:id/like", publicHandler.LikeComment)
+	arrivalHandler := handlers.NewArrivalHandler(db)
+	public.Get("/arrivals/:token/search", arrivalHandler.SearchPublic)
+	public.Post("/arrivals/:token/submit", arrivalHandler.SubmitPublic)
 
 	// Protected routes
 	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
@@ -253,6 +266,9 @@ func main() {
 	featureFlagHandler := handlers.NewFeatureFlagHandler(db)
 	protected.Get("/feature-flags/ramadhan", featureFlagHandler.GetRamadhan)
 	protected.Put("/feature-flags/ramadhan", middleware.Permission("dashboard.view"), featureFlagHandler.SetRamadhan)
+	sidebarMenuSettingHandler := handlers.NewSidebarMenuSettingHandler(db)
+	protected.Get("/sidebar-menu-settings", sidebarMenuSettingHandler.List)
+	protected.Put("/sidebar-menu-settings", sidebarMenuSettingHandler.Update)
 
 	// Permissions
 	permHandler := handlers.NewPermissionHandler(db)
@@ -311,6 +327,9 @@ func main() {
 	protected.Get("/dashboard/stats", middleware.Permission("dashboard.view"), dashHandler.Stats)
 	protected.Get("/dashboard/visitor-stats", middleware.Permission("dashboard.view"), dashHandler.VisitorStats)
 	protected.Get("/dashboard/debug-schema", dashHandler.DebugSchema) // Temporary debug route
+	protected.Get("/arrivals/dashboard", middleware.Permission("dashboard.view"), arrivalHandler.Dashboard)
+	protected.Post("/arrivals/deadline", middleware.Permission("dashboard.view"), arrivalHandler.UpdateStudentDeadline)
+	protected.Post("/arrivals/reset-students", middleware.Permission("dashboard.view"), arrivalHandler.ResetStudentArrivals)
 
 	// Notifications
 	notifHandler := handlers.NewNotificationHandler(db)

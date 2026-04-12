@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -28,6 +29,22 @@ func dateRange(dateStr string) (string, string) {
 	start := t.Format("2006-01-02")
 	end := t.AddDate(0, 0, 1).Format("2006-01-02")
 	return start, end
+}
+
+func isDiniyyahAttendanceType(typeStr string) bool {
+	return strings.EqualFold(strings.TrimSpace(typeStr), "diniyyah")
+}
+
+func isRamadhanAttendanceType(typeStr string) bool {
+	v := strings.TrimSpace(strings.ToLower(typeStr))
+	return v == "ramadhan" || v == "ramadan"
+}
+
+func applyFormalScheduleTypeFilter(db *gorm.DB, scheduleAlias string, typeStr string) *gorm.DB {
+	if isRamadhanAttendanceType(typeStr) {
+		return db.Where(scheduleAlias+".type = ?", "ramadhan")
+	}
+	return db.Where(scheduleAlias + ".type IS NULL OR " + scheduleAlias + ".type = '' OR " + scheduleAlias + ".type = 'normal' OR " + scheduleAlias + ".type = 'formal'")
 }
 
 // GetAttendance retrieves the attendance form for a specific schedule and date
@@ -429,7 +446,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	table := "absensis"
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		table = "absensi_diniyyahs"
 	}
 
@@ -438,6 +455,10 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		Joins("JOIN students ON students.id = "+table+".student_id").
 		Where(table+".tanggal >= ? AND "+table+".tanggal < ?", startDate, endExclusive).
 		Where(table + ".deleted_at IS NULL")
+	if !isDiniyyahAttendanceType(typeStr) {
+		q = q.Joins("JOIN jadwal_formal jf ON jf.id = " + table + ".jadwal_formal_id")
+		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
+	}
 
 	// Filter by kelas
 	if kelasID != "" {
@@ -513,10 +534,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		Where("date >= ? AND date < ?", startDate, endExclusive).
 		Where("deleted_at IS NULL")
 
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		teacherQ = teacherQ.Where("jadwal_diniyyah_id IS NOT NULL")
 	} else {
-		teacherQ = teacherQ.Where("jadwal_formal_id IS NOT NULL")
+		teacherQ = teacherQ.Where("jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = teacher_attendances.jadwal_formal_id")
+		teacherQ = applyFormalScheduleTypeFilter(teacherQ, "jf", typeStr)
 	}
 
 	type TeacherStatusResult struct {
@@ -542,10 +564,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
 
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		summaryQ = summaryQ.Where("ta.jadwal_diniyyah_id IS NOT NULL")
 	} else {
-		summaryQ = summaryQ.Where("ta.jadwal_formal_id IS NOT NULL")
+		summaryQ = summaryQ.Where("ta.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id")
+		summaryQ = applyFormalScheduleTypeFilter(summaryQ, "jf", typeStr)
 	}
 
 	summaryQ.Group("u.id, u.name, u.foto_guru").Scan(&teacherSummary)
@@ -562,7 +585,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 	var substituteHistory []SubHistoryEntry
 
-	if typeStr == "formal" {
+	if !isDiniyyahAttendanceType(typeStr) {
 		h.db.Table("substitute_logs").
 			Select("substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
 			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
@@ -573,9 +596,10 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
+			Scopes(func(db *gorm.DB) *gorm.DB { return applyFormalScheduleTypeFilter(db, "jadwal_formal", typeStr) }).
 			Order("substitute_logs.date DESC").
 			Scan(&substituteHistory)
-	} else if typeStr == "diniyyah" {
+	} else if isDiniyyahAttendanceType(typeStr) {
 		h.db.Table("substitute_logs").
 			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
 			Joins("JOIN jadwal_diniyyahs ON jadwal_diniyyahs.id = substitute_logs.jadwal_diniyyah_id").
@@ -601,10 +625,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		Where("date >= ? AND date < ?", startDate, endExclusive).
 		Where("deleted_at IS NULL")
 
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		subQ = subQ.Where("jadwal_diniyyah_id IS NOT NULL")
 	} else {
-		subQ = subQ.Where("jadwal_formal_id IS NOT NULL")
+		subQ = subQ.Where("jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 	}
 
 	subQ.Group("substitute_teacher_id").Scan(&subCounts)
@@ -685,7 +710,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
 
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		summaryQ = summaryQ.Where("ta.jadwal_diniyyah_id IS NOT NULL")
 		if kelasID != "" {
 			summaryQ = summaryQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
@@ -693,7 +718,8 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 				Where("dkt.kelas_id = ?", kelasID)
 		}
 	} else {
-		summaryQ = summaryQ.Where("ta.jadwal_formal_id IS NOT NULL")
+		summaryQ = summaryQ.Where("ta.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id")
+		summaryQ = applyFormalScheduleTypeFilter(summaryQ, "jf", typeStr)
 	}
 
 	if teacherID != "" {
@@ -725,7 +751,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	}
 	var substituteHistory []SubHistoryEntry
 
-	if typeStr == "formal" {
+	if !isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs").
 			Select("substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
@@ -738,6 +764,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL")
+		subQ = applyFormalScheduleTypeFilter(subQ, "jadwal_formal", typeStr)
 
 		if teacherID != "" {
 			subQ = subQ.Where("(substitute_logs.original_teacher_id = ? OR substitute_logs.substitute_teacher_id = ?)", teacherID, teacherID)
@@ -746,7 +773,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			subQ = subQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
 		}
 		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
-	} else if typeStr == "diniyyah" {
+	} else if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs").
 			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
@@ -786,7 +813,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 		Where("substitute_logs.deleted_at IS NULL")
 
-	if typeStr == "diniyyah" {
+	if isDiniyyahAttendanceType(typeStr) {
 		subQ = subQ.Where("substitute_logs.jadwal_diniyyah_id IS NOT NULL")
 		if kelasID != "" {
 			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
@@ -794,7 +821,8 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 				Where("dkt.kelas_id = ?", kelasID)
 		}
 	} else {
-		subQ = subQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL")
+		subQ = subQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 	}
 
 	if teacherID != "" {

@@ -17,6 +17,14 @@ func NewScheduleHandler(db *gorm.DB) *ScheduleHandler {
 	return &ScheduleHandler{db: db}
 }
 
+func normalizedFormalScheduleType(typeStr string) string {
+	v := strings.TrimSpace(strings.ToLower(typeStr))
+	if v == "ramadhan" || v == "ramadan" {
+		return "ramadhan"
+	}
+	return "normal"
+}
+
 // List returns schedules with attendance status
 func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 	scheduleType := c.Query("type", "formal")
@@ -134,6 +142,12 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 		Preload("Assignment.Teacher").
 		Preload("Assignment.Lesson").
 		Preload("SubstituteTeacher")
+
+	if normalizedFormalScheduleType(scheduleType) == "ramadhan" {
+		query = query.Where("jadwal_formal.type = ?", "ramadhan")
+	} else {
+		query = query.Where("jadwal_formal.type IS NULL OR jadwal_formal.type = '' OR jadwal_formal.type = 'normal' OR jadwal_formal.type = 'formal'")
+	}
 
 	if classID != "" || teacherID != "" || gender != "" || search != "" {
 		query = query.Joins("JOIN lesson_kelas_teachers lkt ON jadwal_formal.lesson_kelas_teacher_id = lkt.id")
@@ -257,6 +271,7 @@ func (h *ScheduleHandler) Create(c *fiber.Ctx) error {
 
 	// Formal
 	schedule := models.Schedule{
+		Type:            normalizedFormalScheduleType(input.Type),
 		LessonTeacherID: input.AssignmentID,
 		Day:             input.Day,
 		StartTime:       input.StartTime + ":00",
@@ -319,6 +334,7 @@ func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 	if err := h.db.First(&schedule, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 	}
+	schedule.Type = normalizedFormalScheduleType(input.Type)
 	schedule.LessonTeacherID = input.AssignmentID
 	schedule.Day = input.Day
 	schedule.StartTime = input.StartTime + ":00"
