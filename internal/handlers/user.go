@@ -125,10 +125,12 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	}
 
 	type UpdateUserRequest struct {
-		Name     string `json:"name"`
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		RoleIDs  []uint `json:"role_ids"`
+		Name                 string `json:"name"`
+		Username             string `json:"username"`
+		Email                string `json:"email"`
+		Password             string `json:"password"`
+		PasswordConfirmation string `json:"password_confirmation"`
+		RoleIDs              []uint `json:"role_ids"`
 	}
 
 	var req UpdateUserRequest
@@ -147,6 +149,29 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	}
 	if req.Email != "" {
 		user.Email = req.Email
+	}
+	if req.Password != "" {
+		if len(req.Password) < 6 {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+				Error:   "validation_error",
+				Message: "Password minimal 6 karakter",
+			})
+		}
+		if req.PasswordConfirmation != "" && req.Password != req.PasswordConfirmation {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+				Error:   "validation_error",
+				Message: "Konfirmasi password tidak sama",
+			})
+		}
+
+		hashedPassword, err := utils.HashPassword(req.Password)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+				Error:   "server_error",
+				Message: "Failed to hash password",
+			})
+		}
+		user.Password = hashedPassword
 	}
 
 	h.db.Save(&user)
