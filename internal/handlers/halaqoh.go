@@ -852,6 +852,9 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	if !(user.HasPermission("halaqoh-assignments.edit") || user.HasPermission("halaqoh-assignments.delete") || user.HasRole("admin") || user.HasRole("super_admin") || user.HasRole("tim_presensi")) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru halaqoh"})
+	}
 
 	// ── Time restriction check ──
 	if !canBypassTimeRestriction(user) && !isWithinSessionTime(session) {

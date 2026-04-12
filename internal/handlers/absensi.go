@@ -19,6 +19,28 @@ func NewAbsensiHandler(db *gorm.DB) *AbsensiHandler {
 	return &AbsensiHandler{db: db}
 }
 
+func (h *AbsensiHandler) getUserFromContext(c *fiber.Ctx) (*models.User, error) {
+	if u, ok := c.Locals("user").(*models.User); ok && u != nil {
+		return u, nil
+	}
+
+	userID, ok := c.Locals("userID").(uint)
+	if !ok || userID == 0 {
+		return nil, fiber.NewError(fiber.StatusUnauthorized, "User not authenticated")
+	}
+
+	var user models.User
+	if err := h.db.Preload("Roles.Permissions").First(&user, userID).Error; err != nil {
+		return nil, fiber.NewError(fiber.StatusUnauthorized, "User not found")
+	}
+
+	return &user, nil
+}
+
+func canManageTeacherAttendance(user *models.User) bool {
+	return user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi")
+}
+
 // dateRange returns start (inclusive) and end (exclusive) for a date string.
 // This avoids using DATE() function which prevents index usage.
 func dateRange(dateStr string) (string, string) {
@@ -232,6 +254,14 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 
 // SubmitTeacherAttendance saves teacher attendance for both formal and diniyyah
 func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canManageTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru"})
+	}
+
 	var req struct {
 		JadwalID uint   `json:"jadwal_id" form:"jadwal_id"`
 		Date     string `json:"date" form:"date"`
