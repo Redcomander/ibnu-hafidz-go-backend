@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -161,7 +162,24 @@ func main() {
 	app := fiber.New(fiber.Config{
 		BodyLimit:    50 * 1024 * 1024, // 50MB for file uploads
 		ErrorHandler: handlers.ErrorHandler,
+		ProxyHeader:  fiber.HeaderXForwardedFor,
 	})
+
+	clientIP := func(c *fiber.Ctx) string {
+		if forwarded := c.Get("CF-Connecting-IP"); forwarded != "" {
+			return forwarded
+		}
+		if forwarded := c.Get("X-Forwarded-For"); forwarded != "" {
+			parts := strings.Split(forwarded, ",")
+			if len(parts) > 0 {
+				return strings.TrimSpace(parts[0])
+			}
+		}
+		if realIP := c.Get("X-Real-IP"); realIP != "" {
+			return realIP
+		}
+		return c.IP()
+	}
 
 	// Global middleware
 	app.Use(logger.New())
@@ -185,7 +203,8 @@ func main() {
 		AllowCredentials: true,
 	}))
 	app.Use(limiter.New(limiter.Config{
-		Max: 100, // 100 requests per minute
+		Max:          100, // 100 requests per minute per client IP
+		KeyGenerator: clientIP,
 	}))
 
 	// Setup routes
