@@ -40,6 +40,15 @@ func Auth(cfg *config.Config) fiber.Handler {
 		c.Locals("userID", claims.UserID)
 		c.Locals("email", claims.Email)
 
+		// Load the full user once when DB is already available in the request context.
+		if db, ok := c.Locals("db").(*gorm.DB); ok {
+			var user models.User
+			if err := db.Preload("Roles.Permissions").First(&user, claims.UserID).Error; err != nil {
+				return fiber.NewError(fiber.StatusUnauthorized, "User not found")
+			}
+			c.Locals("user", &user)
+		}
+
 		return c.Next()
 	}
 }
@@ -53,6 +62,17 @@ func Permission(permissionName string) fiber.Handler {
 				Error:   "unauthorized",
 				Message: "User not authenticated",
 			})
+		}
+
+		if user, ok := c.Locals("user").(*models.User); ok && user != nil {
+			if !user.HasPermission(permissionName) {
+				return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+					Error:   "forbidden",
+					Message: "You do not have permission to access this resource",
+				})
+			}
+
+			return c.Next()
 		}
 
 		// Get DB from context (we store it during request)
@@ -101,6 +121,19 @@ func PermissionAny(permissionNames ...string) fiber.Handler {
 		db, ok := c.Locals("db").(*gorm.DB)
 		if !ok {
 			return c.Next()
+		}
+
+		if user, ok := c.Locals("user").(*models.User); ok && user != nil {
+			for _, permissionName := range permissionNames {
+				if user.HasPermission(permissionName) {
+					return c.Next()
+				}
+			}
+
+			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "You do not have permission to access this resource",
+			})
 		}
 
 		var user models.User

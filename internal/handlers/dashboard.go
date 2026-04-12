@@ -16,27 +16,50 @@ func NewDashboardHandler(db *gorm.DB) *DashboardHandler {
 	return &DashboardHandler{db: db}
 }
 
+type attendanceCountSummary struct {
+	Hadir int64 `gorm:"column:hadir"`
+	Izin  int64 `gorm:"column:izin"`
+	Sakit int64 `gorm:"column:sakit"`
+	Alpha int64 `gorm:"column:alpha"`
+}
+
+func summarizeAttendance(query *gorm.DB) attendanceCountSummary {
+	var summary attendanceCountSummary
+	query.Select(`
+		COALESCE(SUM(CASE WHEN LOWER(status) = 'hadir' THEN 1 ELSE 0 END), 0) AS hadir,
+		COALESCE(SUM(CASE WHEN LOWER(status) = 'izin' THEN 1 ELSE 0 END), 0) AS izin,
+		COALESCE(SUM(CASE WHEN LOWER(status) = 'sakit' THEN 1 ELSE 0 END), 0) AS sakit,
+		COALESCE(SUM(CASE WHEN LOWER(status) IN ('alpha', 'tidak_hadir') THEN 1 ELSE 0 END), 0) AS alpha
+	`).Scan(&summary)
+	return summary
+}
+
 // Stats returns dashboard statistics based on user role
 func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
-	user := c.Locals("user").(*models.User)
-	h.db.Preload("Roles").First(&user, user.ID)
+	user, ok := c.Locals("user").(*models.User)
+	if !ok || user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "User not authenticated"})
+	}
 
 	isAdmin := user.HasRole("admin") || user.HasRole("super_admin")
 	isTeacher := user.HasRole("teacher") || user.HasRole("guru") || user.HasRole("musyrif")
 
 	// Get today's day name in Indonesian (lowercase for DB match)
 	today := time.Now()
+	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+	todayEnd := todayStart.AddDate(0, 0, 1)
 	days := []string{"ahad", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"}
 	hariIni := days[today.Weekday()]
-	todayStr := today.Format("2006-01-02")
 
 	// Accept optional month/year query params for period filtering
 	qMonth := c.QueryInt("month", int(today.Month()))
 	qYear := c.QueryInt("year", today.Year())
 
 	// Compute date range for the selected period
-	monthStart := time.Date(qYear, time.Month(qMonth), 1, 0, 0, 0, 0, today.Location()).Format("2006-01-02")
-	monthEnd := time.Date(qYear, time.Month(qMonth)+1, 0, 23, 59, 59, 0, today.Location()).Format("2006-01-02")
+	monthStartTime := time.Date(qYear, time.Month(qMonth), 1, 0, 0, 0, 0, today.Location())
+	monthEndTime := monthStartTime.AddDate(0, 1, 0)
+	monthStart := monthStartTime.Format("2006-01-02")
+	monthEnd := monthEndTime.Format("2006-01-02")
 
 	response := fiber.Map{}
 
@@ -57,11 +80,11 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 
 		// Visitor Analytics
 		h.db.Model(&models.Visitor{}).Count(&totalVisitors)
-		h.db.Model(&models.Visitor{}).Where("created_at BETWEEN ? AND ?", monthStart+" 00:00:00", monthEnd+" 23:59:59").Count(&visitorsThisMonth)
+		h.db.Model(&models.Visitor{}).Where("created_at >= ? AND created_at < ?", monthStartTime, monthEndTime).Count(&visitorsThisMonth)
 
-		lastMonthStart := time.Date(today.Year(), today.Month()-1, 1, 0, 0, 0, 0, today.Location()).Format("2006-01-02")
-		lastMonthEnd := time.Date(today.Year(), today.Month(), 0, 23, 59, 59, 0, today.Location()).Format("2006-01-02")
-		h.db.Model(&models.Visitor{}).Where("created_at BETWEEN ? AND ?", lastMonthStart+" 00:00:00", lastMonthEnd+" 23:59:59").Count(&visitorsLastMonth)
+		lastMonthStartTime := monthStartTime.AddDate(0, -1, 0)
+		lastMonthEndTime := monthStartTime
+		h.db.Model(&models.Visitor{}).Where("created_at >= ? AND created_at < ?", lastMonthStartTime, lastMonthEndTime).Count(&visitorsLastMonth)
 
 		visitorTrend := 0.0
 		if visitorsLastMonth > 0 {
@@ -81,11 +104,9 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 			Find(&schedules)
 
 		// 2. Global Today's Attendance Summary
-		var hadirCount, izinCount, sakitCount, alpaCount int64
-		h.db.Model(&models.TeacherAttendance{}).Where("DATE(date) = ? AND status = ?", todayStr, "Hadir").Count(&hadirCount)
-		h.db.Model(&models.TeacherAttendance{}).Where("DATE(date) = ? AND status = ?", todayStr, "Izin").Count(&izinCount)
-		h.db.Model(&models.TeacherAttendance{}).Where("DATE(date) = ? AND status = ?", todayStr, "Sakit").Count(&sakitCount)
-		h.db.Model(&models.TeacherAttendance{}).Where("DATE(date) = ? AND status = ?", todayStr, "Alpha").Count(&alpaCount)
+		todayAttendance := summarizeAttendance(
+			h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ?", todayStart, todayEnd),
+		)
 
 		// 3. Recent Published Articles
 		var recentArticles []models.Article
@@ -115,11 +136,11 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 			"items": schedules,
 		}
 		response["attendance"] = fiber.Map{
-			"hadir": hadirCount,
-			"izin":  izinCount,
-			"sakit": sakitCount,
-			"alpa":  alpaCount,
-			"total": hadirCount + izinCount + sakitCount + alpaCount,
+			"hadir": todayAttendance.Hadir,
+			"izin":  todayAttendance.Izin,
+			"sakit": todayAttendance.Sakit,
+			"alpa":  todayAttendance.Alpha,
+			"total": todayAttendance.Hadir + todayAttendance.Izin + todayAttendance.Sakit + todayAttendance.Alpha,
 		}
 		response["recent_articles"] = recentArticles
 	}
@@ -127,28 +148,28 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	// ==========================================
 	// GLOBAL ATTENDANCE (Formal, Diniyyah, Halaqoh)
 	// ==========================================
-	var gFHadir, gFIzin, gFSakit, gFAlpa, gFPengganti int64
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&gFHadir)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd, []string{"Izin", "izin"}).Count(&gFIzin)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&gFSakit)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&gFAlpa)
-	h.db.Model(&models.SubstituteLog{}).Where("date BETWEEN ? AND ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd).Count(&gFPengganti)
+	globalFormal := summarizeAttendance(
+		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd),
+	)
+	var gFPengganti int64
+	h.db.Model(&models.SubstituteLog{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd).Count(&gFPengganti)
+	gFHadir, gFIzin, gFSakit, gFAlpa := globalFormal.Hadir, globalFormal.Izin, globalFormal.Sakit, globalFormal.Alpha
 	gFTotal := gFHadir + gFIzin + gFSakit + gFAlpa
 
-	var gdHadir, gdIzin, gdSakit, gdAlpa, gdPengganti int64
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&gdHadir)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd, []string{"Izin", "izin"}).Count(&gdIzin)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&gdSakit)
-	h.db.Model(&models.TeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&gdAlpa)
-	h.db.Model(&models.SubstituteLog{}).Where("date BETWEEN ? AND ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd).Count(&gdPengganti)
+	globalDiniyyah := summarizeAttendance(
+		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd),
+	)
+	var gdPengganti int64
+	h.db.Model(&models.SubstituteLog{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd).Count(&gdPengganti)
+	gdHadir, gdIzin, gdSakit, gdAlpa := globalDiniyyah.Hadir, globalDiniyyah.Izin, globalDiniyyah.Sakit, globalDiniyyah.Alpha
 	gdTotal := gdHadir + gdIzin + gdSakit + gdAlpa
 
-	var ghHadir, ghIzin, ghSakit, ghAlpa, ghPengganti int64
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ?", monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&ghHadir)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ?", monthStart, monthEnd, []string{"Izin", "izin"}).Count(&ghIzin)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ?", monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&ghSakit)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date BETWEEN ? AND ? AND status IN ?", monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&ghAlpa)
-	h.db.Model(&models.HalaqohSubstituteLog{}).Where("date BETWEEN ? AND ?", monthStart, monthEnd).Count(&ghPengganti)
+	globalHalaqoh := summarizeAttendance(
+		h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date >= ? AND date < ?", monthStart, monthEnd),
+	)
+	var ghPengganti int64
+	h.db.Model(&models.HalaqohSubstituteLog{}).Where("date >= ? AND date < ?", monthStart, monthEnd).Count(&ghPengganti)
+	ghHadir, ghIzin, ghSakit, ghAlpa := globalHalaqoh.Hadir, globalHalaqoh.Izin, globalHalaqoh.Sakit, globalHalaqoh.Alpha
 	ghTotal := ghHadir + ghIzin + ghSakit + ghAlpa
 
 	calcGlobPct := func(hadir, total int64) float64 {
@@ -204,30 +225,30 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		// 2. Personal Attendance Stats Breakdown
 
 	// 2a. Formal Stats
-	var fHadir, fIzin, fSakit, fAlpa, fPengganti int64
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&fHadir)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Izin", "izin"}).Count(&fIzin)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&fSakit)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&fAlpa)
-	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date BETWEEN ? AND ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&fPengganti)
+	personalFormal := summarizeAttendance(
+		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd),
+	)
+	var fPengganti int64
+	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&fPengganti)
+	fHadir, fIzin, fSakit, fAlpa := personalFormal.Hadir, personalFormal.Izin, personalFormal.Sakit, personalFormal.Alpha
 	fTotal := fHadir + fIzin + fSakit + fAlpa
 
 	// 2b. Diniyyah Stats
-	var dHadir, dIzin, dSakit, dAlpa, dPengganti int64
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&dHadir)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Izin", "izin"}).Count(&dIzin)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&dSakit)
-	h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&dAlpa)
-	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date BETWEEN ? AND ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&dPengganti)
+	personalDiniyyah := summarizeAttendance(
+		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd),
+	)
+	var dPengganti int64
+	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&dPengganti)
+	dHadir, dIzin, dSakit, dAlpa := personalDiniyyah.Hadir, personalDiniyyah.Izin, personalDiniyyah.Sakit, personalDiniyyah.Alpha
 	dTotal := dHadir + dIzin + dSakit + dAlpa
 
 	// 2c. Halaqoh Stats
-	var hHadir, hIzin, hSakit, hAlpa, hPengganti int64
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ?", user.ID, monthStart, monthEnd, []string{"Hadir", "hadir"}).Count(&hHadir)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ?", user.ID, monthStart, monthEnd, []string{"Izin", "izin"}).Count(&hIzin)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ?", user.ID, monthStart, monthEnd, []string{"Sakit", "sakit"}).Count(&hSakit)
-	h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date BETWEEN ? AND ? AND status IN ?", user.ID, monthStart, monthEnd, []string{"Alpha", "alpha", "tidak_hadir"}).Count(&hAlpa)
-	h.db.Model(&models.HalaqohSubstituteLog{}).Where("substitute_teacher_id = ? AND date BETWEEN ? AND ?", user.ID, monthStart, monthEnd).Count(&hPengganti)
+	personalHalaqoh := summarizeAttendance(
+		h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ?", user.ID, monthStart, monthEnd),
+	)
+	var hPengganti int64
+	h.db.Model(&models.HalaqohSubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ?", user.ID, monthStart, monthEnd).Count(&hPengganti)
+	hHadir, hIzin, hSakit, hAlpa := personalHalaqoh.Hadir, personalHalaqoh.Izin, personalHalaqoh.Sakit, personalHalaqoh.Alpha
 	hTotal := hHadir + hIzin + hSakit + hAlpa
 
 	// Calculate Percentages safely
