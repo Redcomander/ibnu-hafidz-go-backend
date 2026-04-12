@@ -17,6 +17,33 @@ func NewScheduleHandler(db *gorm.DB) *ScheduleHandler {
 	return &ScheduleHandler{db: db}
 }
 
+func (h *ScheduleHandler) getUserFromContext(c *fiber.Ctx) (*models.User, error) {
+	if u, ok := c.Locals("user").(*models.User); ok && u != nil {
+		return u, nil
+	}
+
+	userID, ok := c.Locals("userID").(uint)
+	if !ok || userID == 0 {
+		return nil, fiber.NewError(fiber.StatusUnauthorized, "User not authenticated")
+	}
+
+	var user models.User
+	if err := h.db.Preload("Roles.Permissions").First(&user, userID).Error; err != nil {
+		return nil, fiber.NewError(fiber.StatusUnauthorized, "User not found")
+	}
+
+	return &user, nil
+}
+
+func canViewAllSchedules(user *models.User) bool {
+	return user.HasPermission("jadwal_formal.view_all") ||
+		user.HasPermission("jadwal_diniyyah.view_all") ||
+		user.HasRole("super_admin") ||
+		user.HasRole("admin") ||
+		user.HasRole("staff") ||
+		user.HasRole("tim_presensi")
+}
+
 func normalizedFormalScheduleType(typeStr string) string {
 	v := strings.TrimSpace(strings.ToLower(typeStr))
 	if v == "ramadhan" || v == "ramadan" {
@@ -27,6 +54,12 @@ func normalizedFormalScheduleType(typeStr string) string {
 
 // List returns schedules with attendance status
 func (h *ScheduleHandler) List(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
+	canViewAll := canViewAllSchedules(user)
 	scheduleType := c.Query("type", "formal")
 	classID := c.Query("class_id")
 	teacherID := c.Query("teacher_id")
@@ -47,13 +80,16 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 			Preload("Assignment.DiniyyahLesson").
 			Preload("SubstituteTeacher")
 
-		if classID != "" || teacherID != "" || gender != "" || search != "" {
+		if !canViewAll || classID != "" || teacherID != "" || gender != "" || search != "" {
 			query = query.Joins("JOIN diniyyah_kelas_teachers dkt ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = dkt.id")
+		}
+		if !canViewAll {
+			query = query.Where("dkt.user_id = ? OR (jadwal_diniyyahs.substitute_teacher_id = ? AND DATE(jadwal_diniyyahs.substitute_date) = ?)", user.ID, user.ID, dateStr)
 		}
 		if classID != "" {
 			query = query.Where("dkt.kelas_id = ?", classID)
 		}
-		if teacherID != "" {
+		if teacherID != "" && canViewAll {
 			query = query.Where("dkt.user_id = ?", teacherID)
 		}
 		if gender != "" {
@@ -149,13 +185,16 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 		query = query.Where("jadwal_formal.type IS NULL OR jadwal_formal.type = '' OR jadwal_formal.type = 'normal' OR jadwal_formal.type = 'formal'")
 	}
 
-	if classID != "" || teacherID != "" || gender != "" || search != "" {
+	if !canViewAll || classID != "" || teacherID != "" || gender != "" || search != "" {
 		query = query.Joins("JOIN lesson_kelas_teachers lkt ON jadwal_formal.lesson_kelas_teacher_id = lkt.id")
+	}
+	if !canViewAll {
+		query = query.Where("lkt.user_id = ? OR (jadwal_formal.substitute_teacher_id = ? AND DATE(jadwal_formal.substitute_date) = ?)", user.ID, user.ID, dateStr)
 	}
 	if classID != "" {
 		query = query.Where("lkt.kelas_id = ?", classID)
 	}
-	if teacherID != "" {
+	if teacherID != "" && canViewAll {
 		query = query.Where("lkt.user_id = ?", teacherID)
 	}
 	if gender != "" {
