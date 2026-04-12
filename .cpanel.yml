@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - export REPO_ROOT="$DEPLOYPATH"
+    - /bin/bash "$REPO_ROOT/deploy/cpanel/deploy.sh"
