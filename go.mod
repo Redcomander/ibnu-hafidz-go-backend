@@ -1,6 +1,6 @@
 module github.com/ibnu-hafidz/web-v2
 
-go 1.24.0
+go 1.24
 
 require (
 	github.com/HugoSmits86/nativewebp v1.2.1
