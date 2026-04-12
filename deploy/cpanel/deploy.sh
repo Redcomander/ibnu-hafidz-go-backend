@@ -11,12 +11,18 @@ LOG_DIR="${CPANEL_BACKEND_LOG_DIR:-$HOME/logs/$APP_NAME}"
 PID_FILE="$RUNTIME_DIR/$APP_NAME.pid"
 
 find_go_bin() {
+  if [[ -n "${CPANEL_GO_BIN:-}" ]] && [[ -x "${CPANEL_GO_BIN}" ]]; then
+    echo "${CPANEL_GO_BIN}"
+    return 0
+  fi
+
   if command -v go >/dev/null 2>&1; then
     command -v go
     return 0
   fi
 
   local candidates=(
+    $HOME/.local/go/bin/go
     /usr/local/go/bin/go
     /opt/go/bin/go
     /usr/bin/go
@@ -53,6 +59,17 @@ fi
 
 export PATH="$(dirname "$GO_BIN"):$PATH"
 echo "[deploy] Menggunakan go di: $GO_BIN"
+
+GO_VERSION="$($GO_BIN version | awk '{print $3}')"
+echo "[deploy] Versi Go: $GO_VERSION"
+if [[ "$GO_VERSION" =~ ^go1\.([0-9]+) ]]; then
+  GO_MINOR="${BASH_REMATCH[1]}"
+  if (( GO_MINOR < 22 )); then
+    echo "[deploy] Versi Go terlalu lama. Minimal go1.22 diperlukan oleh dependency proyek."
+    echo "[deploy] Solusi cepat: pasang Go terbaru ke \$HOME/.local/go lalu set CPANEL_GO_BIN=\$HOME/.local/go/bin/go"
+    exit 1
+  fi
+fi
 
 echo "[deploy] Sedang build binary backend..."
 "$GO_BIN" mod download
