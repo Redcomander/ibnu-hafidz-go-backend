@@ -32,6 +32,12 @@ find_go_bin() {
     fi
   done
 
+  # Fall back to system go last (may be outdated)
+  if command -v go >/dev/null 2>&1; then
+    command -v go
+    return 0
+  fi
+
   return 1
 }
 
@@ -42,12 +48,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "[deploy] Salin deploy/cpanel/.env.production.example ke $ENV_FILE lalu isi nilai sebenarnya."
   exit 1
 fi
-
-  # Fall back to system go last (may be outdated)
-  if command -v go >/dev/null 2>&1; then
-    command -v go
-    return 0
-  fi
 
 cd "$REPO_ROOT"
 
