@@ -87,6 +87,45 @@ func Permission(permissionName string) fiber.Handler {
 	}
 }
 
+// PermissionAny checks if the authenticated user has at least one required permission.
+func PermissionAny(permissionNames ...string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		userID, ok := c.Locals("userID").(uint)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+				Error:   "unauthorized",
+				Message: "User not authenticated",
+			})
+		}
+
+		db, ok := c.Locals("db").(*gorm.DB)
+		if !ok {
+			return c.Next()
+		}
+
+		var user models.User
+		err := db.Preload("Roles.Permissions").First(&user, userID).Error
+		if err != nil {
+			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "User not found",
+			})
+		}
+
+		for _, permissionName := range permissionNames {
+			if user.HasPermission(permissionName) {
+				c.Locals("user", &user)
+				return c.Next()
+			}
+		}
+
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+			Error:   "forbidden",
+			Message: "You do not have permission to access this resource",
+		})
+	}
+}
+
 // InjectDB adds database instance to Fiber context for downstream middleware
 func InjectDB(db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {

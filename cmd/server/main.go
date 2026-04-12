@@ -303,8 +303,8 @@ func main() {
 	// Lesson Teachers (Guru Mapel)
 	ltHandler := handlers.NewLessonTeacherHandler(db)
 	kelas.Get("/:id/teachers", middleware.Permission("kelas.view"), ltHandler.ListByClass)
-	kelas.Post("/:id/teachers", middleware.Permission("kelas.edit"), ltHandler.Assign)
-	kelas.Delete("/:id/teachers/:assignment_id", middleware.Permission("kelas.edit"), ltHandler.Unassign)
+	kelas.Post(":id/teachers", middleware.PermissionAny("kelas.edit", "curriculum.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandler.Assign)
+	kelas.Delete(":id/teachers/:assignment_id", middleware.PermissionAny("kelas.edit", "curriculum.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandler.Unassign)
 
 	// Lessons (Mata Pelajaran)
 	lessonHandler := handlers.NewLessonHandler(db)
@@ -319,8 +319,8 @@ func main() {
 	// Reusing ltHandler or creating new
 	ltHandlerLesson := handlers.NewLessonTeacherHandler(db)
 	lessons.Get("/:id/assignments", middleware.Permission("lessons.view"), ltHandlerLesson.ListByLesson)
-	lessons.Post("/:id/assignments", middleware.Permission("curriculum.edit"), ltHandlerLesson.AssignToLesson)
-	lessons.Delete("/assignments/:assignment_id", middleware.Permission("curriculum.edit"), ltHandlerLesson.Unassign)
+	lessons.Post(":id/assignments", middleware.PermissionAny("curriculum.edit", "kelas.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandlerLesson.AssignToLesson)
+	lessons.Delete("/assignments/:assignment_id", middleware.PermissionAny("curriculum.edit", "kelas.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandlerLesson.Unassign)
 
 	// Dashboard
 	dashHandler := handlers.NewDashboardHandler(db)
