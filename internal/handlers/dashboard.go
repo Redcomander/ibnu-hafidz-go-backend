@@ -222,6 +222,15 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Order("jadwal_formal.jam_mulai asc").
 		Find(&personalSchedules)
 
+	var personalDiniyyahSchedules []models.DiniyyahSchedule
+	h.db.Preload("Assignment").
+		Preload("Assignment.DiniyyahLesson").
+		Preload("Assignment.Kelas").
+		Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
+		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ?", hariIni, user.ID).
+		Order("jadwal_diniyyahs.jam_mulai asc").
+		Find(&personalDiniyyahSchedules)
+
 		// 2. Personal Attendance Stats Breakdown
 
 	// 2a. Formal Stats
@@ -273,7 +282,8 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	combPct := calcPct(combHadir, combTotal)
 
 	response["teacher"] = fiber.Map{
-		"personal_schedule": personalSchedules,
+		"personal_schedule":          personalSchedules,
+		"personal_diniyyah_schedule": personalDiniyyahSchedules,
 		"formal_stats": fiber.Map{
 			"hadir":      fHadir,
 			"izin":       fIzin,
