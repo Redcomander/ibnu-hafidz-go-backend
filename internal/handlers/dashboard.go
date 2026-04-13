@@ -60,6 +60,41 @@ func countLatestSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, attenda
 	return count
 }
 
+func countScheduleSubstitutes(db *gorm.DB, monthStart, monthEnd string, attendanceType string, teacherID *uint) int64 {
+	var count int64
+
+	switch attendanceType {
+	case "diniyyah":
+		query := db.Model(&models.DiniyyahSchedule{}).
+			Where("substitute_teacher_id IS NOT NULL AND substitute_date >= ? AND substitute_date < ?", monthStart, monthEnd)
+		if teacherID != nil {
+			query = query.Where("substitute_teacher_id = ?", *teacherID)
+		}
+		query.Count(&count)
+	default:
+		query := db.Model(&models.Schedule{}).
+			Where("substitute_teacher_id IS NOT NULL AND substitute_date >= ? AND substitute_date < ?", monthStart, monthEnd)
+		if teacherID != nil {
+			query = query.Where("substitute_teacher_id = ?", *teacherID)
+		}
+		query.Count(&count)
+	}
+
+	return count
+}
+
+func countLegacyDiniyyahSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, teacherID *uint) int64 {
+	query := db.Table("substitute_logs_diniyyah").
+		Where("date >= ? AND date < ?", monthStart, monthEnd)
+	if teacherID != nil {
+		query = query.Where("substitute_teacher_id = ?", *teacherID)
+	}
+
+	var count int64
+	query.Count(&count)
+	return count
+}
+
 func countActiveHalaqohSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, teacherID *uint) int64 {
 	query := db.Model(&models.HalaqohSubstituteLog{}).
 		Where("is_active = ? AND date >= ? AND date < ?", true, monthStart, monthEnd)
@@ -189,14 +224,23 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	globalFormal := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd),
 	)
-	gFPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", nil)
+	gFPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "formal", nil)
+	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", nil); logCount > gFPengganti {
+		gFPengganti = logCount
+	}
 	gFHadir, gFIzin, gFSakit, gFAlpa := globalFormal.Hadir, globalFormal.Izin, globalFormal.Sakit, globalFormal.Alpha
 	gFTotal := gFHadir + gFIzin + gFSakit + gFAlpa
 
 	globalDiniyyah := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd),
 	)
-	gdPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", nil)
+	gdPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "diniyyah", nil)
+	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", nil); logCount > gdPengganti {
+		gdPengganti = logCount
+	}
+	if legacyLogCount := countLegacyDiniyyahSubstituteLogs(h.db, monthStart, monthEnd, nil); legacyLogCount > gdPengganti {
+		gdPengganti = legacyLogCount
+	}
 	gdHadir, gdIzin, gdSakit, gdAlpa := globalDiniyyah.Hadir, globalDiniyyah.Izin, globalDiniyyah.Sakit, globalDiniyyah.Alpha
 	gdTotal := gdHadir + gdIzin + gdSakit + gdAlpa
 
@@ -272,7 +316,10 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	personalFormal := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd),
 	)
-	fPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", &user.ID)
+	fPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "formal", &user.ID)
+	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", &user.ID); logCount > fPengganti {
+		fPengganti = logCount
+	}
 	fHadir, fIzin, fSakit, fAlpa := personalFormal.Hadir, personalFormal.Izin, personalFormal.Sakit, personalFormal.Alpha
 	fTotal := fHadir + fIzin + fSakit + fAlpa
 
@@ -280,7 +327,13 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	personalDiniyyah := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd),
 	)
-	dPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", &user.ID)
+	dPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "diniyyah", &user.ID)
+	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", &user.ID); logCount > dPengganti {
+		dPengganti = logCount
+	}
+	if legacyLogCount := countLegacyDiniyyahSubstituteLogs(h.db, monthStart, monthEnd, &user.ID); legacyLogCount > dPengganti {
+		dPengganti = legacyLogCount
+	}
 	dHadir, dIzin, dSakit, dAlpa := personalDiniyyah.Hadir, personalDiniyyah.Izin, personalDiniyyah.Sakit, personalDiniyyah.Alpha
 	dTotal := dHadir + dIzin + dSakit + dAlpa
 
