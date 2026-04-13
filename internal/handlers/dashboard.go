@@ -34,6 +34,44 @@ func summarizeAttendance(query *gorm.DB) attendanceCountSummary {
 	return summary
 }
 
+func countLatestSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, attendanceType string, teacherID *uint) int64 {
+	latestIDs := db.Model(&models.SubstituteLog{}).
+		Select("MAX(id)").
+		Where("date >= ? AND date < ?", monthStart, monthEnd)
+
+	switch attendanceType {
+	case "diniyyah":
+		latestIDs = latestIDs.
+			Where("jadwal_diniyyah_id IS NOT NULL").
+			Group("date, jadwal_diniyyah_id")
+	default:
+		latestIDs = latestIDs.
+			Where("jadwal_formal_id IS NOT NULL").
+			Group("date, jadwal_formal_id")
+	}
+
+	query := db.Model(&models.SubstituteLog{}).Where("id IN (?)", latestIDs)
+	if teacherID != nil {
+		query = query.Where("substitute_teacher_id = ?", *teacherID)
+	}
+
+	var count int64
+	query.Count(&count)
+	return count
+}
+
+func countActiveHalaqohSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, teacherID *uint) int64 {
+	query := db.Model(&models.HalaqohSubstituteLog{}).
+		Where("is_active = ? AND date >= ? AND date < ?", true, monthStart, monthEnd)
+	if teacherID != nil {
+		query = query.Where("substitute_teacher_id = ?", *teacherID)
+	}
+
+	var count int64
+	query.Count(&count)
+	return count
+}
+
 // Stats returns dashboard statistics based on user role
 func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(*models.User)
@@ -151,24 +189,21 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	globalFormal := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd),
 	)
-	var gFPengganti int64
-	h.db.Model(&models.SubstituteLog{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd).Count(&gFPengganti)
+	gFPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", nil)
 	gFHadir, gFIzin, gFSakit, gFAlpa := globalFormal.Hadir, globalFormal.Izin, globalFormal.Sakit, globalFormal.Alpha
 	gFTotal := gFHadir + gFIzin + gFSakit + gFAlpa
 
 	globalDiniyyah := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd),
 	)
-	var gdPengganti int64
-	h.db.Model(&models.SubstituteLog{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd).Count(&gdPengganti)
+	gdPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", nil)
 	gdHadir, gdIzin, gdSakit, gdAlpa := globalDiniyyah.Hadir, globalDiniyyah.Izin, globalDiniyyah.Sakit, globalDiniyyah.Alpha
 	gdTotal := gdHadir + gdIzin + gdSakit + gdAlpa
 
 	globalHalaqoh := summarizeAttendance(
 		h.db.Model(&models.HalaqohTeacherAttendance{}).Where("date >= ? AND date < ?", monthStart, monthEnd),
 	)
-	var ghPengganti int64
-	h.db.Model(&models.HalaqohSubstituteLog{}).Where("date >= ? AND date < ?", monthStart, monthEnd).Count(&ghPengganti)
+	ghPengganti := countActiveHalaqohSubstituteLogs(h.db, monthStart, monthEnd, nil)
 	ghHadir, ghIzin, ghSakit, ghAlpa := globalHalaqoh.Hadir, globalHalaqoh.Izin, globalHalaqoh.Sakit, globalHalaqoh.Alpha
 	ghTotal := ghHadir + ghIzin + ghSakit + ghAlpa
 
@@ -237,8 +272,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	personalFormal := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd),
 	)
-	var fPengganti int64
-	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&fPengganti)
+	fPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", &user.ID)
 	fHadir, fIzin, fSakit, fAlpa := personalFormal.Hadir, personalFormal.Izin, personalFormal.Sakit, personalFormal.Alpha
 	fTotal := fHadir + fIzin + fSakit + fAlpa
 
@@ -246,8 +280,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	personalDiniyyah := summarizeAttendance(
 		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd),
 	)
-	var dPengganti int64
-	h.db.Model(&models.SubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd).Count(&dPengganti)
+	dPengganti := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", &user.ID)
 	dHadir, dIzin, dSakit, dAlpa := personalDiniyyah.Hadir, personalDiniyyah.Izin, personalDiniyyah.Sakit, personalDiniyyah.Alpha
 	dTotal := dHadir + dIzin + dSakit + dAlpa
 
@@ -255,8 +288,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	personalHalaqoh := summarizeAttendance(
 		h.db.Model(&models.HalaqohTeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ?", user.ID, monthStart, monthEnd),
 	)
-	var hPengganti int64
-	h.db.Model(&models.HalaqohSubstituteLog{}).Where("substitute_teacher_id = ? AND date >= ? AND date < ?", user.ID, monthStart, monthEnd).Count(&hPengganti)
+	hPengganti := countActiveHalaqohSubstituteLogs(h.db, monthStart, monthEnd, &user.ID)
 	hHadir, hIzin, hSakit, hAlpa := personalHalaqoh.Hadir, personalHalaqoh.Izin, personalHalaqoh.Sakit, personalHalaqoh.Alpha
 	hTotal := hHadir + hIzin + hSakit + hAlpa
 

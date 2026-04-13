@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -64,8 +65,7 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 
 	query.Count(&total)
 
-	offset := (page - 1) * perPage
-	query.Limit(perPage).Offset(offset).Find(&accounts)
+	query.Find(&accounts)
 
 	type AccountWithMetrics struct {
 		models.LaundryAccount
@@ -124,12 +124,44 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 		})
 	}
 
-	// Sort results by period weight descending
-	// Note: in memory sort for pagination is not ideal for large datasets but good enough for now
-	// To do it in DB requires a complex subquery.
+	sortField := c.Query("sort", "monthly_weight")
+	sortOrder := c.Query("order", "desc")
+
+	sort.SliceStable(results, func(i, j int) bool {
+		switch sortField {
+		case "created_at":
+			if sortOrder == "asc" {
+				return results[i].CreatedAt.Before(results[j].CreatedAt)
+			}
+			return results[i].CreatedAt.After(results[j].CreatedAt)
+		case "monthly_weight":
+			fallthrough
+		default:
+			if sortOrder == "asc" {
+				if results[i].MonthlyWeight == results[j].MonthlyWeight {
+					return results[i].CreatedAt.Before(results[j].CreatedAt)
+				}
+				return results[i].MonthlyWeight < results[j].MonthlyWeight
+			}
+			if results[i].MonthlyWeight == results[j].MonthlyWeight {
+				return results[i].CreatedAt.After(results[j].CreatedAt)
+			}
+			return results[i].MonthlyWeight > results[j].MonthlyWeight
+		}
+	})
+
+	start := (page - 1) * perPage
+	if start > len(results) {
+		start = len(results)
+	}
+	end := start + perPage
+	if end > len(results) {
+		end = len(results)
+	}
+	pagedResults := results[start:end]
 
 	return c.JSON(fiber.Map{
-		"data":        results,
+		"data":        pagedResults,
 		"total":       total,
 		"page":        page,
 		"per_page":    perPage,

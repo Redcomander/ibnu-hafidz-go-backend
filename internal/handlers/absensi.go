@@ -445,6 +445,17 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 		jadwalFormalID = &req.JadwalID
 	}
 
+	cleanupLogs := tx.Where("date = ?", date)
+	if jadwalFormalID != nil {
+		cleanupLogs = cleanupLogs.Where("jadwal_formal_id = ?", *jadwalFormalID)
+	} else if jadwalDiniyyahID != nil {
+		cleanupLogs = cleanupLogs.Where("jadwal_diniyyah_id = ?", *jadwalDiniyyahID)
+	}
+	if err := cleanupLogs.Delete(&models.SubstituteLog{}).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to refresh substitute log"})
+	}
+
 	// 2. Create Substitute Log
 	if req.SubstituteTeacherID != nil {
 		logEntry := models.SubstituteLog{
