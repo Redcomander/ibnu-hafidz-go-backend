@@ -406,6 +406,7 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 	var originalTeacherID uint
 	var jadwalFormalID *uint
 	var jadwalDiniyyahID *uint
+	hasLegacyDiniyyahLogs := tx.Migrator().HasTable(&models.SubstituteDiniyyahLog{})
 
 	if req.Type == "diniyyah" {
 		var jadwal models.DiniyyahSchedule
@@ -445,32 +446,54 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 		jadwalFormalID = &req.JadwalID
 	}
 
-	cleanupLogs := tx.Where("date = ?", date)
 	if jadwalFormalID != nil {
-		cleanupLogs = cleanupLogs.Where("jadwal_formal_id = ?", *jadwalFormalID)
-	} else if jadwalDiniyyahID != nil {
-		cleanupLogs = cleanupLogs.Where("jadwal_diniyyah_id = ?", *jadwalDiniyyahID)
+		cleanupLogs := tx.Where("date = ?", date).
+			Where("jadwal_formal_id = ?", *jadwalFormalID)
+		if err := cleanupLogs.Delete(&models.SubstituteLog{}).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to refresh substitute log"})
+		}
 	}
-	if err := cleanupLogs.Delete(&models.SubstituteLog{}).Error; err != nil {
-		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to refresh substitute log"})
+
+	if jadwalDiniyyahID != nil && hasLegacyDiniyyahLogs {
+		if err := tx.Where("date = ? AND jadwal_diniyyah_id = ?", date, *jadwalDiniyyahID).Delete(&models.SubstituteDiniyyahLog{}).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to refresh diniyyah substitute log"})
+		}
 	}
 
 	// 2. Create Substitute Log
 	if req.SubstituteTeacherID != nil {
-		logEntry := models.SubstituteLog{
-			JadwalFormalID:      jadwalFormalID,
-			JadwalDiniyyahID:    jadwalDiniyyahID,
-			OriginalTeacherID:   originalTeacherID,
-			SubstituteTeacherID: *req.SubstituteTeacherID,
-			Date:                date,
-			Status:              req.Status,
-			Reason:              req.Reason,
+		if jadwalFormalID != nil {
+			logEntry := models.SubstituteLog{
+				JadwalFormalID:      jadwalFormalID,
+				OriginalTeacherID:   originalTeacherID,
+				SubstituteTeacherID: *req.SubstituteTeacherID,
+				Date:                date,
+				Status:              req.Status,
+				Reason:              req.Reason,
+			}
+			if err := tx.Create(&logEntry).Error; err != nil {
+				tx.Rollback()
+				log.Println("Failed to create log:", err)
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create log"})
+			}
 		}
-		if err := tx.Create(&logEntry).Error; err != nil {
-			tx.Rollback()
-			log.Println("Failed to create log:", err)
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create log"})
+
+		if jadwalDiniyyahID != nil && hasLegacyDiniyyahLogs {
+			legacyLogEntry := models.SubstituteDiniyyahLog{
+				JadwalDiniyyahID:    *jadwalDiniyyahID,
+				OriginalTeacherID:   originalTeacherID,
+				SubstituteTeacherID: *req.SubstituteTeacherID,
+				Date:                date,
+				Status:              req.Status,
+				Reason:              req.Reason,
+			}
+			if err := tx.Create(&legacyLogEntry).Error; err != nil {
+				tx.Rollback()
+				log.Println("Failed to create legacy diniyyah log:", err)
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create diniyyah log"})
+			}
 		}
 	}
 
