@@ -379,7 +379,7 @@ func main() {
 	attendance.Get("/", absensiHandler.GetAttendance)                                                             // Get form/data
 	attendance.Post("/", absensiHandler.SubmitAttendance)                                                         // Submit/Update
 	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                                           // Teacher Attendance
-	attendance.Post("/substitute", middleware.Permission("schedule.substitute"), absensiHandler.AssignSubstitute) // Assign Substitute
+	attendance.Post("/substitute", absensiHandler.AssignSubstitute) // Assign Substitute
 
 	// Create a test route to trigger notification (temporary)
 	protected.Post("/notifications/test", func(c *fiber.Ctx) error {

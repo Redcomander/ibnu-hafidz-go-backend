@@ -374,6 +374,16 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 
 // AssignSubstitute assigns a substitute teacher to a schedule
 func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
+	// Allow admin, super_admin, staff, tim_presensi, or users with schedule.substitute permission
+	if !(user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi") || user.HasPermission("schedule.substitute")) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk menugaskan guru pengganti"})
+	}
+
 	var req struct {
 		JadwalID            uint   `json:"jadwal_id"`
 		SubstituteTeacherID *uint  `json:"substitute_teacher_id"` // Nullable to remove
