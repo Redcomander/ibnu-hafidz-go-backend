@@ -84,6 +84,8 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 
 	weekStart := getStartOfWeek(now)
 	weekEnd := getEndOfWeek(now)
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	monthEnd := monthStart.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 
 	for _, acc := range accounts {
 		var periodWeight float64
@@ -96,8 +98,12 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, weekStart, weekEnd).
 			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&weeklyWeight)
 
-		// Replace month-specific fetch with the periodWeight fetch so that custom filtered ranges apply the 30kg limits and debts properly on the UI.
-		monthlyExcess := math.Max(0, periodWeight-MONTHLY_LIMIT_KG)
+		var monthlyWeight float64
+		h.db.Model(&models.LaundryTransaction{}).
+			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, monthStart, monthEnd).
+			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&monthlyWeight)
+
+		monthlyExcess := math.Max(0, monthlyWeight-MONTHLY_LIMIT_KG)
 		debtAmount := monthlyExcess * DEBT_PRICE_PER_KG
 
 		ownerName := "Unknown"
@@ -114,8 +120,8 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 			LaundryAccount:  acc,
 			PeriodWeight:    periodWeight,
 			WeeklyWeight:    weeklyWeight,
-			MonthlyWeight:   periodWeight, // Frontend looks at this field for table sorting/display
-			MonthlyExceeded: periodWeight > MONTHLY_LIMIT_KG,
+			MonthlyWeight:   monthlyWeight,
+			MonthlyExceeded: monthlyWeight > MONTHLY_LIMIT_KG,
 			WeeklyExceeded:  weeklyWeight > WEEKLY_LIMIT_KG,
 			ExcessKg:        monthlyExcess,
 			DebtAmount:      debtAmount,
