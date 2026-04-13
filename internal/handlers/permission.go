@@ -16,6 +16,15 @@ func NewPermissionHandler(db *gorm.DB) *PermissionHandler {
 
 // Create adds a new permission
 func (h *PermissionHandler) Create(c *fiber.Ctx) error {
+	if user, ok := c.Locals("user").(*models.User); ok && user != nil {
+		if !(user.HasRole("super_admin") || user.HasRole("admin") || user.HasPermission("permissions.create")) {
+			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "You do not have permission to access this resource",
+			})
+		}
+	}
+
 	type CreatePermissionRequest struct {
 		Name        string `json:"name"`
 		DisplayName string `json:"display_name"`

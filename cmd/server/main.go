@@ -292,7 +292,7 @@ func main() {
 	// Permissions
 	permHandler := handlers.NewPermissionHandler(db)
 	perms := protected.Group("/permissions")
-	perms.Post("/", middleware.Permission("permissions.create"), permHandler.Create)
+	perms.Post("/", permHandler.Create)
 
 	// Kamar (Rooms)
 	kamarHandler := handlers.NewKamarHandler(db)
@@ -370,16 +370,16 @@ func main() {
 	// Attendance (Absensi)
 	absensiHandler := handlers.NewAbsensiHandler(db)
 	attendance := protected.Group("/attendance")
-	attendance.Get("/statistics", absensiHandler.GetStatistics)                                                   // Statistics
-	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)                                    // Teacher Statistics
-	attendance.Get("/history", absensiHandler.GetHistory)                                                         // Paginated history
-	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                                             // Export PDF
-	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)                                         // Export Excel
-	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF)                              // Export Teacher PDF
-	attendance.Get("/", absensiHandler.GetAttendance)                                                             // Get form/data
-	attendance.Post("/", absensiHandler.SubmitAttendance)                                                         // Submit/Update
-	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                                           // Teacher Attendance
-	attendance.Post("/substitute", absensiHandler.AssignSubstitute) // Assign Substitute
+	attendance.Get("/statistics", absensiHandler.GetStatistics)                      // Statistics
+	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)       // Teacher Statistics
+	attendance.Get("/history", absensiHandler.GetHistory)                            // Paginated history
+	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                // Export PDF
+	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)            // Export Excel
+	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF) // Export Teacher PDF
+	attendance.Get("/", absensiHandler.GetAttendance)                                // Get form/data
+	attendance.Post("/", absensiHandler.SubmitAttendance)                            // Submit/Update
+	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)              // Teacher Attendance
+	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                  // Assign Substitute
 
 	// Create a test route to trigger notification (temporary)
 	protected.Post("/notifications/test", func(c *fiber.Ctx) error {
