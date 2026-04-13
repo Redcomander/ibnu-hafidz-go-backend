@@ -873,21 +873,20 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		}
 		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
-		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
-				"original.name as original_teacher, substitute_logs.status as original_status, "+
-				"substitute.name as substitute_teacher, substitute_logs.reason").
-			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
+		subQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
+				"original.name as original_teacher, substitute_logs_diniyyah.status as original_status, "+
+				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
+			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
 			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
 			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
-			Joins("JOIN users original ON original.id = substitute_logs.original_teacher_id").
-			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
-			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-			Where("substitute_logs.deleted_at IS NULL")
+			Joins("JOIN users original ON original.id = substitute_logs_diniyyah.original_teacher_id").
+			Joins("JOIN users substitute ON substitute.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 
 		if teacherID != "" {
-			subQ = subQ.Where("(substitute_logs.original_teacher_id = ? OR substitute_logs.substitute_teacher_id = ?)", teacherID, teacherID)
+			subQ = subQ.Where("(substitute_logs_diniyyah.original_teacher_id = ? OR substitute_logs_diniyyah.substitute_teacher_id = ?)", teacherID, teacherID)
 		}
 		if gender != "" {
 			subQ = subQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
@@ -895,7 +894,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		if kelasID != "" {
 			subQ = subQ.Where("dkt.kelas_id = ?", kelasID)
 		}
-		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
+		subQ.Order("substitute_logs_diniyyah.date DESC").Scan(&substituteHistory)
 	}
 
 	// Add substitute counts to teacher summary
@@ -906,32 +905,41 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		Count  int
 	}
 	var subCounts []SubCount
-	subQ := h.db.Table("substitute_logs").
-		Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
-		Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
-		Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-		Where("substitute_logs.deleted_at IS NULL")
-
 	if isDiniyyahAttendanceType(typeStr) {
-		subQ = subQ.Where("substitute_logs.jadwal_diniyyah_id IS NOT NULL")
+		subQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
+
 		if kelasID != "" {
-			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
+			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
 				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 				Where("dkt.kelas_id = ?", kelasID)
 		}
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs_diniyyah.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	} else {
-		subQ = subQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		subQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
+			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	}
-
-	if teacherID != "" {
-		subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
-	}
-	if gender != "" {
-		subQ = subQ.Where("u.gender = ?", gender)
-	}
-
-	subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 
 	inSummaryMap := make(map[uint]int) // Maps teacher ID to their index in teacherSummary
 	for i, t := range teacherSummary {
