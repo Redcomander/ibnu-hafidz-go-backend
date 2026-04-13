@@ -852,7 +852,26 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if !(user.HasPermission("halaqoh-assignments.edit") || user.HasPermission("halaqoh-assignments.delete") || user.HasRole("admin") || user.HasRole("super_admin") || user.HasRole("tim_presensi")) {
+	status := c.FormValue("status")
+	notes := c.FormValue("notes")
+	dateStr := c.FormValue("date")
+	if dateStr == "" {
+		dateStr = todayString()
+	}
+
+	var assignment models.HalaqohAssignment
+	if err := h.db.First(&assignment, assignmentID).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
+	}
+
+	var log models.HalaqohSubstituteLog
+	subErr := h.db.Where("halaqoh_assignment_id = ? AND date = ? AND session = ? AND is_active = ?",
+		assignmentID, dateStr, session, true).First(&log).Error
+
+	hasElevatedAccess := user.HasPermission("halaqoh-assignments.edit") || user.HasPermission("halaqoh-assignments.delete") || user.HasRole("admin") || user.HasRole("super_admin") || user.HasRole("tim_presensi")
+	isAssignedTeacher := user.ID == assignment.UserID
+	isActiveSubstitute := subErr == nil && user.ID == log.SubstituteTeacherID
+	if !(hasElevatedAccess || isAssignedTeacher || isActiveSubstitute) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru halaqoh"})
 	}
 
@@ -863,22 +882,6 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 			"error": fmt.Sprintf("Sesi %s hanya dapat diakses pada jam %s - %s", session, times[0], times[1]),
 		})
 	}
-
-	var assignment models.HalaqohAssignment
-	if err := h.db.First(&assignment, assignmentID).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
-	}
-
-	status := c.FormValue("status")
-	notes := c.FormValue("notes")
-	dateStr := c.FormValue("date")
-	if dateStr == "" {
-		dateStr = todayString()
-	}
-
-	var log models.HalaqohSubstituteLog
-	subErr := h.db.Where("halaqoh_assignment_id = ? AND date = ? AND session = ? AND is_active = ?",
-		assignmentID, dateStr, session, true).First(&log).Error
 
 	teacherID := assignment.UserID
 	if subErr == nil {

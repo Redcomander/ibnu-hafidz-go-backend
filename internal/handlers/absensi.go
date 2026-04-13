@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -132,6 +133,10 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 	}
 
 	// 3. Construct Response
+	sort.SliceStable(students, func(i, j int) bool {
+		return strings.ToLower(students[i].NamaLengkap) < strings.ToLower(students[j].NamaLengkap)
+	})
+
 	var response []fiber.Map
 	for _, s := range students {
 		status := "hadir" // Default
@@ -258,9 +263,6 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if !canManageTeacherAttendance(user) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru"})
-	}
 
 	var req struct {
 		JadwalID uint   `json:"jadwal_id" form:"jadwal_id"`
@@ -277,10 +279,15 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if req.Type == "" {
 		req.Type = "formal" // Default to formal for backward compatibility
 	}
+	if req.Date == "" {
+		req.Date = time.Now().Format("2006-01-02")
+	}
 
 	var originalTeacherID uint
 	var jadwalFormalID *uint
 	var jadwalDiniyyahID *uint
+	var substituteTeacherID *uint
+	var substituteDate *time.Time
 
 	if req.Type == "diniyyah" {
 		// Load DiniyyahSchedule
@@ -289,6 +296,8 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Diniyyah schedule not found"})
 		}
 		originalTeacherID = jadwal.Assignment.UserID
+		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
 		jadwalDiniyyahID = &req.JadwalID
 	} else {
 		// Load formal Schedule
@@ -297,7 +306,23 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 		}
 		originalTeacherID = jadwal.Assignment.UserID
+		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
 		jadwalFormalID = &req.JadwalID
+	}
+
+	if !canManageTeacherAttendance(user) {
+		isAssignedTeacher := user.ID == originalTeacherID
+		isSubstituteTeacher := substituteTeacherID != nil && user.ID == *substituteTeacherID
+		if !isAssignedTeacher && !isSubstituteTeacher {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru"})
+		}
+
+		if isSubstituteTeacher {
+			if substituteDate == nil || substituteDate.Format("2006-01-02") != req.Date {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda hanya dapat mengisi sebagai pengganti pada tanggal penugasan"})
+			}
+		}
 	}
 
 	date, _ := time.Parse("2006-01-02", req.Date)
