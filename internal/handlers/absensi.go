@@ -16,6 +16,13 @@ type AbsensiHandler struct {
 	db *gorm.DB
 }
 
+type assignableTeacherResponse struct {
+	ID    uint          `json:"id"`
+	Name  string        `json:"name"`
+	Email string        `json:"email"`
+	Roles []models.Role `json:"roles,omitempty"`
+}
+
 func NewAbsensiHandler(db *gorm.DB) *AbsensiHandler {
 	return &AbsensiHandler{db: db}
 }
@@ -40,6 +47,72 @@ func (h *AbsensiHandler) getUserFromContext(c *fiber.Ctx) (*models.User, error) 
 
 func canManageTeacherAttendance(user *models.User) bool {
 	return user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi")
+}
+
+// ListAssignableTeachers returns teachers/staff that can be selected as substitute teachers.
+func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canManageTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Not authorized to assign substitute teachers"})
+	}
+
+	search := strings.TrimSpace(c.Query("search"))
+	page := c.QueryInt("page", 1)
+	if page < 1 {
+		page = 1
+	}
+	perPage := c.QueryInt("per_page", 20)
+	if perPage < 1 {
+		perPage = 20
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+
+	allowedRoles := []string{"guru", "teacher", "musyrif", "staff", "tim_presensi"}
+	baseQuery := h.db.Model(&models.User{}).
+		Joins("JOIN role_user ru ON ru.user_id = users.id").
+		Joins("JOIN roles r ON r.id = ru.role_id").
+		Where("users.deleted_at IS NULL").
+		Where("r.name IN ?", allowedRoles)
+
+	if search != "" {
+		like := "%" + search + "%"
+		baseQuery = baseQuery.Where("users.name LIKE ? OR users.email LIKE ?", like, like)
+	}
+
+	var total int64
+	if err := baseQuery.Distinct("users.id").Count(&total).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to count assignable teachers"})
+	}
+
+	offset := (page - 1) * perPage
+	var users []models.User
+	if err := baseQuery.
+		Select("users.*").
+		Distinct("users.id").
+		Preload("Roles").
+		Order("users.name ASC").
+		Limit(perPage).
+		Offset(offset).
+		Find(&users).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch assignable teachers"})
+	}
+
+	result := make([]assignableTeacherResponse, 0, len(users))
+	for _, u := range users {
+		result = append(result, assignableTeacherResponse{
+			ID:    u.ID,
+			Name:  u.Name,
+			Email: u.Email,
+			Roles: u.Roles,
+		})
+	}
+
+	return c.JSON(BuildPaginatedResponse(result, total, page, perPage))
 }
 
 // dateRange returns start (inclusive) and end (exclusive) for a date string.
