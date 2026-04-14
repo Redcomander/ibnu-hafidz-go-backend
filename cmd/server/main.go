@@ -198,6 +198,35 @@ func main() {
 	})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORSOrigins,
+		AllowOriginsFunc: func(origin string) bool {
+			// Keep production strict with explicit allow-list only.
+			if cfg.Environment == "production" {
+				for _, allowed := range strings.Split(cfg.CORSOrigins, ",") {
+					if strings.TrimSpace(allowed) == origin {
+						return true
+					}
+				}
+				return false
+			}
+
+			// Development convenience for Expo/Web local testing.
+			if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "https://localhost:") {
+				return true
+			}
+			if strings.HasPrefix(origin, "http://127.0.0.1:") || strings.HasPrefix(origin, "https://127.0.0.1:") {
+				return true
+			}
+			if strings.HasPrefix(origin, "http://192.168.") || strings.HasPrefix(origin, "https://192.168.") {
+				return true
+			}
+
+			for _, allowed := range strings.Split(cfg.CORSOrigins, ",") {
+				if strings.TrimSpace(allowed) == origin {
+					return true
+				}
+			}
+			return false
+		},
 		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
 		AllowCredentials: true,
