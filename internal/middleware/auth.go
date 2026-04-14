@@ -172,7 +172,7 @@ func ActivityLog() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		// Skip noisy endpoints
 		path := c.Path()
-		if path == "/api/notifications/stream" || strings.HasPrefix(path, "/health") {
+		if path == "/api/notifications/stream" || path == "/api/activity-logs" || strings.HasPrefix(path, "/health") {
 			return c.Next()
 		}
 
