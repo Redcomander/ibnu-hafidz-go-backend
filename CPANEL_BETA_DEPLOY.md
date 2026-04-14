@@ -130,3 +130,46 @@ Catatan: karena memakai `git reset --hard`, perubahan lokal di folder clone serv
 
 - Pada beberapa paket shared hosting, proses user jangka panjang bisa dihentikan; Go API mungkin membutuhkan hosting level VPS agar stabil.
 - Simpan secret hanya di file env server (`$HOME/.local/ibnu-go-backend/.env.production`), jangan pernah di Git.
+
+## 9) Fallback tanpa inbound SSH dari GitHub (Cron Pull Deploy)
+
+Jika workflow GitHub Actions gagal `i/o timeout` ke SSH server, gunakan mode pull dari server via Cron.
+
+### Setup sekali di server
+
+Di root repo backend di server:
+
+```bash
+chmod +x deploy/cpanel/deploy.sh
+chmod +x deploy/cpanel/cron-deploy.sh
+```
+
+Tes manual:
+
+```bash
+/bin/bash deploy/cpanel/cron-deploy.sh
+```
+
+### Tambah Cron Job di cPanel
+
+Masuk cPanel -> Advanced -> Cron Jobs, tambahkan perintah:
+
+```bash
+*/3 * * * * cd /home/ibnuhafi/repositories/ibnu-go-backend && /bin/bash deploy/cpanel/cron-deploy.sh
+```
+
+Sesuaikan path repo jika berbeda.
+
+### Cara kerja
+
+1. Cron melakukan `git fetch origin main`
+2. Jika ada commit baru: `git reset --hard origin/main`
+3. Menjalankan `deploy/cpanel/deploy.sh`
+4. Jika tidak ada perubahan: langsung keluar tanpa deploy
+
+### Log
+
+```bash
+tail -n 100 "$HOME/logs/ibnu-go-backend/cron-deploy.log"
+tail -n 100 "$HOME/logs/ibnu-go-backend/app.log"
+```
