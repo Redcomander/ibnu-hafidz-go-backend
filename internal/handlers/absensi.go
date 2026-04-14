@@ -84,7 +84,7 @@ func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 		idBaseQuery = idBaseQuery.Where("users.name LIKE ? OR users.email LIKE ?", like, like)
 	}
 
-	idBaseQuery = idBaseQuery.Select("users.id").Distinct()
+	idBaseQuery = idBaseQuery.Select("users.id, users.name").Distinct()
 
 	var total int64
 	if err := h.db.Table("(?) as assignable_ids", idBaseQuery).Count(&total).Error; err != nil {
@@ -92,13 +92,22 @@ func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 	}
 
 	offset := (page - 1) * perPage
-	var ids []uint
+	type assignableTeacherRow struct {
+		ID   uint
+		Name string
+	}
+	var rows []assignableTeacherRow
 	if err := idBaseQuery.
 		Order("users.name ASC").
 		Limit(perPage).
 		Offset(offset).
-		Pluck("users.id", &ids).Error; err != nil {
+		Find(&rows).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch assignable teachers"})
+	}
+
+	ids := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
 	}
 
 	if len(ids) == 0 {
