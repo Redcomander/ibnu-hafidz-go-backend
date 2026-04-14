@@ -101,6 +101,31 @@ curl http://127.0.0.1:18080/api/public/home
 1. Di cPanel Git UI, pindahkan ke commit stabil sebelumnya.
 2. Deploy commit tersebut untuk backend dan frontend.
 
+## 8) CI/CD GitHub Actions (opsional)
+
+Repository ini sekarang punya workflow:
+
+- `.github/workflows/deploy-cpanel.yml`
+
+Workflow jalan saat push ke `main` dan juga bisa dijalankan manual (workflow_dispatch).
+
+Tambahkan GitHub Secrets di repo backend:
+
+- `CPANEL_HOST` contoh: `srv301.your-host.com`
+- `CPANEL_USER` contoh: `ibnuhafi`
+- `CPANEL_SSH_KEY` private key SSH untuk user cPanel
+- `CPANEL_PORT` opsional, default `22`
+- `CPANEL_BACKEND_REPO_PATH` contoh: `/home/ibnuhafi/repositories/ibnu-go-backend`
+
+Alur deploy otomatis:
+
+1. SSH ke server cPanel
+2. `git fetch origin main`
+3. `git reset --hard origin/main`
+4. menjalankan `deploy/cpanel/deploy.sh`
+
+Catatan: karena memakai `git reset --hard`, perubahan lokal di folder clone server akan dibuang saat deploy otomatis.
+
 ## Catatan
 
 - Pada beberapa paket shared hosting, proses user jangka panjang bisa dihentikan; Go API mungkin membutuhkan hosting level VPS agar stabil.
