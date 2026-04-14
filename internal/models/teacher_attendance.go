@@ -52,15 +52,15 @@ type SubstituteLog struct {
 func (SubstituteLog) TableName() string { return "substitute_logs" }
 
 type SubstituteDiniyyahLog struct {
-	ID                  uint           `gorm:"primaryKey" json:"id"`
-	JadwalDiniyyahID    uint           `gorm:"column:jadwal_diniyyah_id;index" json:"jadwal_diniyyah_id"`
-	OriginalTeacherID   uint           `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
-	SubstituteTeacherID uint           `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
-	Date                time.Time      `gorm:"type:date;not null" json:"date"`
-	Status              string         `gorm:"type:varchar(50)" json:"status"`
-	Reason              string         `gorm:"type:text" json:"reason"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
+	ID                  uint      `gorm:"primaryKey" json:"id"`
+	JadwalDiniyyahID    uint      `gorm:"column:jadwal_diniyyah_id;index" json:"jadwal_diniyyah_id"`
+	OriginalTeacherID   uint      `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
+	SubstituteTeacherID uint      `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
+	Date                time.Time `gorm:"type:date;not null" json:"date"`
+	Status              string    `gorm:"type:varchar(50)" json:"status"`
+	Reason              string    `gorm:"type:text" json:"reason"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 
 	JadwalDiniyyah    *DiniyyahSchedule `gorm:"foreignKey:JadwalDiniyyahID" json:"jadwal_diniyyah,omitempty"`
 	OriginalTeacher   User              `gorm:"foreignKey:OriginalTeacherID" json:"original_teacher"`
