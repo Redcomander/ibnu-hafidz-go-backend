@@ -73,7 +73,7 @@ func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 	}
 
 	allowedRoles := []string{"guru", "teacher", "musyrif", "staff", "tim_presensi"}
-	baseQuery := h.db.Model(&models.User{}).
+	idBaseQuery := h.db.Model(&models.User{}).
 		Joins("JOIN role_user ru ON ru.user_id = users.id").
 		Joins("JOIN roles r ON r.id = ru.role_id").
 		Where("users.deleted_at IS NULL").
@@ -81,29 +81,49 @@ func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 
 	if search != "" {
 		like := "%" + search + "%"
-		baseQuery = baseQuery.Where("users.name LIKE ? OR users.email LIKE ?", like, like)
+		idBaseQuery = idBaseQuery.Where("users.name LIKE ? OR users.email LIKE ?", like, like)
 	}
 
+	idBaseQuery = idBaseQuery.Select("users.id").Distinct()
+
 	var total int64
-	if err := baseQuery.Distinct("users.id").Count(&total).Error; err != nil {
+	if err := h.db.Table("(?) as assignable_ids", idBaseQuery).Count(&total).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to count assignable teachers"})
 	}
 
 	offset := (page - 1) * perPage
-	var users []models.User
-	if err := baseQuery.
-		Select("users.*").
-		Distinct("users.id").
-		Preload("Roles").
+	var ids []uint
+	if err := idBaseQuery.
 		Order("users.name ASC").
 		Limit(perPage).
 		Offset(offset).
-		Find(&users).Error; err != nil {
+		Pluck("users.id", &ids).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch assignable teachers"})
 	}
 
-	result := make([]assignableTeacherResponse, 0, len(users))
+	if len(ids) == 0 {
+		return c.JSON(BuildPaginatedResponse([]assignableTeacherResponse{}, total, page, perPage))
+	}
+
+	var users []models.User
+	if err := h.db.Model(&models.User{}).
+		Where("users.id IN ?", ids).
+		Preload("Roles").
+		Find(&users).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to load assignable teacher details"})
+	}
+
+	byID := make(map[uint]models.User, len(users))
 	for _, u := range users {
+		byID[u.ID] = u
+	}
+
+	result := make([]assignableTeacherResponse, 0, len(ids))
+	for _, id := range ids {
+		u, ok := byID[id]
+		if !ok {
+			continue
+		}
 		result = append(result, assignableTeacherResponse{
 			ID:    u.ID,
 			Name:  u.Name,
