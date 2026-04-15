@@ -49,7 +49,7 @@ func canManageTeacherAttendance(user *models.User) bool {
 	return user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi")
 }
 
-// ListAssignableTeachers returns teachers/staff that can be selected as substitute teachers.
+// ListAssignableTeachers returns all active users that can be selected as substitute teachers.
 func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
 	if err != nil {
@@ -72,12 +72,8 @@ func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 		perPage = 100
 	}
 
-	allowedRoles := []string{"guru", "teacher", "musyrif", "staff", "tim_presensi"}
 	idBaseQuery := h.db.Model(&models.User{}).
-		Joins("JOIN role_user ru ON ru.user_id = users.id").
-		Joins("JOIN roles r ON r.id = ru.role_id").
-		Where("users.deleted_at IS NULL").
-		Where("r.name IN ?", allowedRoles)
+		Where("users.deleted_at IS NULL")
 
 	if search != "" {
 		like := "%" + search + "%"
