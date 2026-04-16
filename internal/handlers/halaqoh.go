@@ -611,6 +611,27 @@ func (h *HalaqohHandler) UnassignSubstitute(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Penugasan guru pengganti berhasil dihapus"})
 }
 
+func (h *HalaqohHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat menghapus riwayat guru pengganti"})
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID riwayat tidak valid"})
+	}
+
+	if err := h.db.Delete(&models.HalaqohSubstituteLog{}, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti halaqoh"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil dihapus"})
+}
+
 // ──────────────────────────────────────────────────────────────
 // Student Attendance
 // ──────────────────────────────────────────────────────────────

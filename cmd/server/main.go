@@ -410,6 +410,7 @@ func main() {
 	attendance.Post("/", absensiHandler.SubmitAttendance)                            // Submit/Update
 	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)              // Teacher Attendance
 	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                  // Assign Substitute
+	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)     // Delete Substitute History
 
 	// Create a test route to trigger notification (temporary)
 	protected.Post("/notifications/test", func(c *fiber.Ctx) error {
@@ -437,6 +438,7 @@ func main() {
 	// Substitute
 	halaqoh.Post("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.AssignSubstitute)
 	halaqoh.Delete("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UnassignSubstitute)
+	halaqoh.Delete("/substitute-history/:id", halaqohHandler.DeleteSubstituteHistory)
 	// Student Attendance
 	halaqoh.Get("/attendance/:assignment_id", halaqohHandler.GetAttendance)
 	halaqoh.Post("/attendance/session/:session", halaqohHandler.SubmitSessionAttendance)

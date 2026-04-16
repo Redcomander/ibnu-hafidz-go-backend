@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -657,6 +658,62 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Substitute assigned successfully"})
 }
 
+// DeleteSubstituteHistory deletes a substitute history record. Only super_admin can do this.
+func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat menghapus riwayat guru pengganti"})
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID riwayat tidak valid"})
+	}
+
+	typeStr := c.Query("type", "formal")
+	tx := h.db.Begin()
+
+	if isDiniyyahAttendanceType(typeStr) {
+		var logEntry models.SubstituteDiniyyahLog
+		if err := tx.First(&logEntry, uint(id)).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti diniyyah tidak ditemukan"})
+		}
+
+		tx.Model(&models.DiniyyahSchedule{}).
+			Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", logEntry.JadwalDiniyyahID, logEntry.SubstituteTeacherID, logEntry.Date).
+			Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+
+		if err := tx.Delete(&logEntry).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti diniyyah"})
+		}
+	} else {
+		var logEntry models.SubstituteLog
+		if err := tx.First(&logEntry, uint(id)).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti formal tidak ditemukan"})
+		}
+
+		if logEntry.JadwalFormalID != nil {
+			tx.Model(&models.Schedule{}).
+				Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", *logEntry.JadwalFormalID, logEntry.SubstituteTeacherID, logEntry.Date).
+				Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+		}
+
+		if err := tx.Delete(&logEntry).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti formal"})
+		}
+	}
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti berhasil dihapus"})
+}
+
 // GetStatistics returns aggregated attendance statistics for the stats page.
 func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	typeStr := c.Query("type", "formal") // formal or diniyyah
@@ -996,6 +1053,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	// 2. Substitute History
 	type SubHistoryEntry struct {
+		ID                uint      `json:"id"`
 		Date              time.Time `json:"date"`
 		Lesson            string    `json:"lesson"`
 		Kelas             string    `json:"kelas"`
@@ -1008,7 +1066,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs.id, substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs.reason").
 			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
@@ -1030,7 +1088,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs_diniyyah.id, substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
 				"original.name as original_teacher, substitute_logs_diniyyah.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
