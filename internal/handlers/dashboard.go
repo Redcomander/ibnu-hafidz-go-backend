@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"sort"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -105,6 +106,142 @@ func countActiveHalaqohSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, 
 	var count int64
 	query.Count(&count)
 	return count
+}
+
+type DashboardSubstituteRecord struct {
+	Type            string `json:"type"`
+	Date            string `json:"date"`
+	Lesson          string `json:"lesson"`
+	Kelas           string `json:"kelas"`
+	Tingkat         string `json:"tingkat"`
+	OriginalTeacher string `json:"original_teacher"`
+	Reason          string `json:"reason"`
+	Session         string `json:"session"`
+}
+
+func getSubstituteRecords(db *gorm.DB, userID uint, monthStart string, monthEnd string) []DashboardSubstituteRecord {
+	var records []DashboardSubstituteRecord
+
+	// 1. Formal Substitute Logs
+	var formalSubs []models.SubstituteLog
+	db.Preload("JadwalFormal.Assignment.Lesson").
+		Preload("JadwalFormal.Assignment.Kelas").
+		Preload("OriginalTeacher").
+		Where("substitute_teacher_id = ? AND date >= ? AND date < ?", userID, monthStart, monthEnd).
+		Find(&formalSubs)
+
+	for _, sub := range formalSubs {
+		lessonName := "-"
+		kelasName := "-"
+		tingkat := "-"
+		if sub.JadwalFormal != nil {
+			if sub.JadwalFormal.Assignment.Lesson != nil {
+				lessonName = sub.JadwalFormal.Assignment.Lesson.Name
+			}
+			if sub.JadwalFormal.Assignment.Kelas != nil {
+				kelasName = sub.JadwalFormal.Assignment.Kelas.Nama
+				tingkat = sub.JadwalFormal.Assignment.Kelas.Tingkat
+			}
+		}
+
+		reason := sub.Reason
+		if reason == "" {
+			reason = "-"
+		}
+
+		records = append(records, DashboardSubstituteRecord{
+			Type:            "Formal",
+			Date:            sub.Date.Format("2006-01-02"),
+			Lesson:          lessonName,
+			Kelas:           kelasName,
+			Tingkat:         tingkat,
+			OriginalTeacher: sub.OriginalTeacher.Name,
+			Reason:          reason,
+			Session:         "",
+		})
+	}
+
+	// 2. Diniyyah Substitute Logs
+	var diniyyahSubs []models.SubstituteDiniyyahLog
+	db.Preload("JadwalDiniyyah.Assignment.DiniyyahLesson").
+		Preload("JadwalDiniyyah.Assignment.Kelas").
+		Preload("OriginalTeacher").
+		Where("substitute_teacher_id = ? AND date >= ? AND date < ?", userID, monthStart, monthEnd).
+		Find(&diniyyahSubs)
+
+	for _, sub := range diniyyahSubs {
+		lessonName := "-"
+		kelasName := "-"
+		tingkat := "-"
+		if sub.JadwalDiniyyah != nil {
+			if sub.JadwalDiniyyah.Assignment.DiniyyahLesson != nil {
+				lessonName = sub.JadwalDiniyyah.Assignment.DiniyyahLesson.Name
+			}
+			if sub.JadwalDiniyyah.Assignment.Kelas != nil {
+				kelasName = sub.JadwalDiniyyah.Assignment.Kelas.Nama
+				tingkat = sub.JadwalDiniyyah.Assignment.Kelas.Tingkat
+			}
+		}
+
+		reason := sub.Reason
+		if reason == "" {
+			reason = "-"
+		}
+
+		records = append(records, DashboardSubstituteRecord{
+			Type:            "Diniyyah",
+			Date:            sub.Date.Format("2006-01-02"),
+			Lesson:          lessonName,
+			Kelas:           kelasName,
+			Tingkat:         tingkat,
+			OriginalTeacher: sub.OriginalTeacher.Name,
+			Reason:          reason,
+			Session:         "",
+		})
+	}
+
+	// 3. Halaqoh Substitute Logs
+	var halaqohSubs []models.HalaqohSubstituteLog
+	db.Preload("Assignment.Teacher").
+		Where("substitute_teacher_id = ? AND date >= ? AND date < ?", userID, monthStart, monthEnd).
+		Find(&halaqohSubs)
+
+	for _, sub := range halaqohSubs {
+		sessionVal := "All"
+		if sub.Session != nil {
+			sessionVal = *sub.Session
+		}
+		
+		reason := "-"
+		if sub.Reason != nil && *sub.Reason != "" {
+			reason = *sub.Reason
+		}
+
+		origTeacher := "-"
+		if sub.Assignment.Teacher.Name != "" {
+			origTeacher = sub.Assignment.Teacher.Name
+		} else if sub.OriginalTeacher.Name != "" {
+			origTeacher = sub.OriginalTeacher.Name
+		}
+
+		records = append(records, DashboardSubstituteRecord{
+			Type:            "Halaqoh",
+			Date:            sub.Date.Format("2006-01-02"),
+			Lesson:          "Halaqoh",
+			Kelas:           "-",
+			Tingkat:         "-",
+			OriginalTeacher: origTeacher,
+			Reason:          reason,
+			Session:         sessionVal,
+		})
+	}
+
+	// Sort records by date ascending
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Date < records[j].Date
+	})
+
+	return records
 }
 
 // Stats returns dashboard statistics based on user role
@@ -366,9 +503,13 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	combTotal := fTotal + dTotal + hTotal
 	combPct := calcPct(combHadir, combTotal)
 
+	// 4. Substitute Records List
+	substituteRecords := getSubstituteRecords(h.db, user.ID, monthStart, monthEnd)
+
 	response["teacher"] = fiber.Map{
 		"personal_schedule":          personalSchedules,
 		"personal_diniyyah_schedule": personalDiniyyahSchedules,
+		"substitute_records":         substituteRecords,
 		"formal_stats": fiber.Map{
 			"hadir":      fHadir,
 			"izin":       fIzin,

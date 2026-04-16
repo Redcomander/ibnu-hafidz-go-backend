@@ -197,7 +197,7 @@ func main() {
 		return c.Next()
 	})
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     cfg.CORSOrigins,
+		AllowOrigins: cfg.CORSOrigins,
 		AllowOriginsFunc: func(origin string) bool {
 			// Keep production strict with explicit allow-list only.
 			if cfg.Environment == "production" {
