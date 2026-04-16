@@ -49,6 +49,22 @@ func canManageTeacherAttendance(user *models.User) bool {
 	return user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi")
 }
 
+func canAccessScheduledAttendance(user *models.User, originalTeacherID uint, substituteTeacherID *uint, substituteDate *time.Time, targetDate string) bool {
+	if user == nil {
+		return false
+	}
+	if canManageTeacherAttendance(user) || user.ID == originalTeacherID {
+		return true
+	}
+	if substituteTeacherID != nil && user.ID == *substituteTeacherID {
+		if substituteDate == nil {
+			return true
+		}
+		return substituteDate.Format("2006-01-02") == targetDate
+	}
+	return false
+}
+
 // ListAssignableTeachers returns all active users that can be selected as substitute teachers.
 func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
@@ -170,6 +186,11 @@ func applyFormalScheduleTypeFilter(db *gorm.DB, scheduleAlias string, typeStr st
 
 // GetAttendance retrieves the attendance form for a specific schedule and date
 func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	jadwalID := c.Query("jadwal_id")
 	dateStr := c.Query("date")
 	typeStr := c.Query("type", "formal") // formal or diniyyah
@@ -188,15 +209,17 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 	var students []models.Student
 	var assignedTeacherID uint
 	var substituteTeacherID *uint
+	var substituteDate *time.Time
 
 	if typeStr == "diniyyah" {
 		var jadwal models.DiniyyahSchedule
-		if err := h.db.Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").First(&jadwal, jadwalID).Error; err != nil {
+		if err := h.db.Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 		}
 		students = jadwal.Assignment.Kelas.Students
 		assignedTeacherID = jadwal.Assignment.UserID
-		// Diniyyah substitute logic if implemented
+		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
 	} else {
 		var jadwal models.Schedule
 		if err := h.db.Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
@@ -205,6 +228,11 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 		students = jadwal.Assignment.Kelas.Students
 		assignedTeacherID = jadwal.Assignment.UserID
 		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
+	}
+
+	if !canAccessScheduledAttendance(user, assignedTeacherID, substituteTeacherID, substituteDate, dateStr) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses ke jadwal ini"})
 	}
 
 	// 2. Fetch Existing Attendance — use date range instead of DATE()
@@ -281,6 +309,11 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 		Records  []AttendanceInput `json:"records"`
 	}
 
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	var req SubmitRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
@@ -292,6 +325,31 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	}
 
 	start, end := dateRange(req.Date)
+
+	var originalTeacherID uint
+	var substituteTeacherID *uint
+	var substituteDate *time.Time
+	if req.Type == "diniyyah" {
+		var jadwal models.DiniyyahSchedule
+		if err := h.db.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Diniyyah schedule not found"})
+		}
+		originalTeacherID = jadwal.Assignment.UserID
+		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
+	} else {
+		var jadwal models.Schedule
+		if err := h.db.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
+		}
+		originalTeacherID = jadwal.Assignment.UserID
+		substituteTeacherID = jadwal.SubstituteTeacherID
+		substituteDate = jadwal.SubstituteDate
+	}
+	if !canAccessScheduledAttendance(user, originalTeacherID, substituteTeacherID, substituteDate, req.Date) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi"})
+	}
+
 	tx := h.db.Begin()
 
 	for _, record := range req.Records {
