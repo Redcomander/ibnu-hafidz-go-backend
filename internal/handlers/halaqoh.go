@@ -55,6 +55,43 @@ func canBypassTimeRestriction(user *models.User) bool {
 		user.HasRole("tim_presensi")
 }
 
+func (h *HalaqohHandler) canAccessAssignment(user *models.User, assignment *models.HalaqohAssignment, dateStr string) bool {
+	if user == nil || assignment == nil {
+		return false
+	}
+	if canBypassTimeRestriction(user) || user.ID == assignment.UserID {
+		return true
+	}
+	if assignment.HelperTeacherID != nil && *assignment.HelperTeacherID == user.ID {
+		return true
+	}
+
+	var count int64
+	h.db.Model(&models.HalaqohSubstituteLog{}).
+		Where("halaqoh_assignment_id = ? AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
+			assignment.ID, user.ID, dateStr, true).
+		Count(&count)
+
+	return count > 0
+}
+
+func (h *HalaqohHandler) canAccessTeacherAttendance(user *models.User, assignment *models.HalaqohAssignment, dateStr string) bool {
+	if user == nil || assignment == nil {
+		return false
+	}
+	if canBypassTimeRestriction(user) || user.ID == assignment.UserID {
+		return true
+	}
+
+	var count int64
+	h.db.Model(&models.HalaqohSubstituteLog{}).
+		Where("halaqoh_assignment_id = ? AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
+			assignment.ID, user.ID, dateStr, true).
+		Count(&count)
+
+	return count > 0
+}
+
 // isWithinSessionTime checks if the current time is within the session window.
 func isWithinSessionTime(session string) bool {
 	times, ok := sessionTimes[session]
@@ -585,9 +622,17 @@ func (h *HalaqohHandler) GetAttendance(c *fiber.Ctx) error {
 		dateStr = todayString()
 	}
 
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	var assignment models.HalaqohAssignment
 	if err := h.db.Preload("Teacher").Preload("Student").First(&assignment, assignmentID).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
+	}
+	if !h.canAccessAssignment(user, &assignment, dateStr) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses ke absensi halaqoh ini"})
 	}
 
 	var allAssignments []models.HalaqohAssignment
@@ -628,11 +673,7 @@ func (h *HalaqohHandler) GetAttendance(c *fiber.Ctx) error {
 	}
 
 	// Session time info
-	user, _ := h.getUserFromContext(c)
-	canBypass := false
-	if user != nil {
-		canBypass = canBypassTimeRestriction(user)
-	}
+	canBypass := canBypassTimeRestriction(user)
 	var sessionTimeInfos []fiber.Map
 	for _, sess := range sessions {
 		times := sessionTimes[sess]
@@ -697,6 +738,16 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 
 	tx := h.db.Begin()
 	for _, record := range req.Records {
+		var assignment models.HalaqohAssignment
+		if err := tx.First(&assignment, record.HalaqohAssignmentID).Error; err != nil {
+			tx.Rollback()
+			return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
+		}
+		if !h.canAccessAssignment(user, &assignment, req.Date) {
+			tx.Rollback()
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi santri halaqoh"})
+		}
+
 		var existing models.HalaqohAttendance
 		err := tx.Where("halaqoh_assignment_id = ? AND student_id = ? AND date = ? AND session = ?",
 			record.HalaqohAssignmentID, record.StudentID, req.Date, session).
@@ -747,9 +798,17 @@ func (h *HalaqohHandler) GetTeacherAttendance(c *fiber.Ctx) error {
 		dateStr = todayString()
 	}
 
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	var assignment models.HalaqohAssignment
 	if err := h.db.Preload("Teacher").First(&assignment, assignmentID).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
+	}
+	if !h.canAccessTeacherAttendance(user, &assignment, dateStr) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses ke absensi guru halaqoh ini"})
 	}
 
 	sessions := []string{"Shubuh", "Ashar", "Isya"}
@@ -775,11 +834,7 @@ func (h *HalaqohHandler) GetTeacherAttendance(c *fiber.Ctx) error {
 		teacherAttMap[teacherAtts[i].Session] = &teacherAtts[i]
 	}
 
-	user, _ := h.getUserFromContext(c)
-	canBypass := false
-	if user != nil {
-		canBypass = canBypassTimeRestriction(user)
-	}
+	canBypass := canBypassTimeRestriction(user)
 
 	type SessionInfo struct {
 		Session          string      `json:"session"`
