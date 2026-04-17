@@ -1193,14 +1193,23 @@ func (h *HalaqohHandler) TeacherStatistics(c *fiber.Ctx) error {
 
 // ── Helper ──
 
+func jakartaLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		return time.Local
+	}
+	return loc
+}
+
 func todayString() string {
-	return time.Now().Format("2006-01-02")
+	return time.Now().In(jakartaLocation()).Format("2006-01-02")
 }
 
 func parseDate(s string) time.Time {
-	t, err := time.Parse("2006-01-02", s)
+	loc := jakartaLocation()
+	t, err := time.ParseInLocation("2006-01-02", s, loc)
 	if err != nil {
-		return time.Now()
+		return time.Now().In(loc)
 	}
 	return t
 }
