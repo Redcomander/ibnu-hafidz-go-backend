@@ -47,7 +47,10 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	// Find user by username column
 	var user models.User
-	if err := h.db.Preload("Roles.Permissions").Where("username = ?", req.Username).First(&user).Error; err != nil {
+	err := h.db.Preload("Roles.Permissions").Where("username = ?", req.Username).First(&user).Error
+	if err != nil {
+		// Dummy check to prevent timing side-channel attack (prevents user enumeration via response time)
+		utils.CheckPassword(req.Password, "$2a$10$vI8aWBnW3fID.ZQ4/zo1G.q1lRps.9cGLcZEiGDMVr5yUP1KUOYTa")
 		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
 			Error:   "unauthorized",
 			Message: "Invalid username or password",
