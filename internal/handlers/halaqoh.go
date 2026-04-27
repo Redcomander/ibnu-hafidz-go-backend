@@ -632,6 +632,67 @@ func (h *HalaqohHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil dihapus"})
 }
 
+// DeleteTeacherAttendanceRecord deletes a single halaqoh_teacher_attendance row. super_admin only.
+func (h *HalaqohHandler) DeleteTeacherAttendanceRecord(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat menghapus data absensi guru halaqoh"})
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+	var record models.HalaqohTeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi halaqoh tidak ditemukan"})
+	}
+	if err := h.db.Delete(&record).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus data absensi halaqoh"})
+	}
+	return c.JSON(fiber.Map{"message": "Data absensi guru halaqoh berhasil dihapus"})
+}
+
+// UpdateTeacherAttendanceRecord updates status/notes of a halaqoh_teacher_attendance. super_admin only.
+func (h *HalaqohHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat mengubah data absensi guru halaqoh"})
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+	var record models.HalaqohTeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi halaqoh tidak ditemukan"})
+	}
+	var req struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Body permintaan tidak valid"})
+	}
+	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true}
+	if req.Status != "" && !validStatuses[req.Status] {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
+	}
+	updates := map[string]interface{}{"notes": req.Notes}
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+	if err := h.db.Model(&record).Updates(updates).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal mengubah data absensi halaqoh"})
+	}
+	return c.JSON(fiber.Map{"message": "Data absensi guru halaqoh berhasil diperbarui"})
+}
+
 // ──────────────────────────────────────────────────────────────
 // Student Attendance
 // ──────────────────────────────────────────────────────────────

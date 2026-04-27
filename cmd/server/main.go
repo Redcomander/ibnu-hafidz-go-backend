@@ -411,6 +411,8 @@ func main() {
 	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)              // Teacher Attendance
 	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                  // Assign Substitute
 	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)     // Delete Substitute History
+	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord) // Delete teacher absence record
+	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)    // Update teacher absence record
 
 	// Create a test route to trigger notification (temporary)
 	protected.Post("/notifications/test", func(c *fiber.Ctx) error {
@@ -439,6 +441,8 @@ func main() {
 	halaqoh.Post("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.AssignSubstitute)
 	halaqoh.Delete("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UnassignSubstitute)
 	halaqoh.Delete("/substitute-history/:id", halaqohHandler.DeleteSubstituteHistory)
+	halaqoh.Delete("/teacher-attendance-record/:id", halaqohHandler.DeleteTeacherAttendanceRecord) // Delete halaqoh teacher absence record
+	halaqoh.Put("/teacher-attendance-record/:id", halaqohHandler.UpdateTeacherAttendanceRecord)    // Update halaqoh teacher absence record
 	// Student Attendance
 	halaqoh.Get("/attendance/:assignment_id", halaqohHandler.GetAttendance)
 	halaqoh.Post("/attendance/session/:session", halaqohHandler.SubmitSessionAttendance)

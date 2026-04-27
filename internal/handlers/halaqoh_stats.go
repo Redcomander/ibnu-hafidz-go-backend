@@ -291,12 +291,44 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 		teacherSummaries = append(teacherSummaries, *ts)
 	}
 
+	// Absence History (Izin, Sakit, Alpha) for table display
+	type AbsenceEntry struct {
+		ID      uint   `json:"id"`
+		Date    string `json:"date"`
+		Teacher string `json:"teacher"`
+		Session string `json:"session"`
+		Status  string `json:"status"`
+		Notes   string `json:"notes"`
+	}
+	var absenceHistory []AbsenceEntry
+	for _, a := range attendances {
+		if a.Status != "Hadir" {
+			notes := ""
+			if a.Notes != nil {
+				notes = *a.Notes
+			}
+			tName := ""
+			if a.Teacher.ID != 0 {
+				tName = a.Teacher.Name
+			}
+			absenceHistory = append(absenceHistory, AbsenceEntry{
+				ID:      a.ID,
+				Date:    a.Date.Format("2006-01-02"),
+				Teacher: tName,
+				Session: a.Session,
+				Status:  a.Status,
+				Notes:   notes,
+			})
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"stats":             stats,
 		"sessionStats":      sessionStats,
 		"substitutionCount": substitutionCount,
 		"teachers":          teacherSummaries,
 		"history":           history,
+		"absence_history":   absenceHistory,
 	})
 }
 

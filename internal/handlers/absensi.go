@@ -1192,9 +1192,127 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		}
 	}
 
+	// 3. Absence History (Izin, Sakit, Alpha) for table display
+	type AbsenceEntry struct {
+		ID      uint      `json:"id"`
+		Date    time.Time `json:"date"`
+		Teacher string    `json:"teacher"`
+		Lesson  string    `json:"lesson"`
+		Kelas   string    `json:"kelas"`
+		Status  string    `json:"status"`
+		Notes   string    `json:"notes"`
+	}
+	var absenceHistory []AbsenceEntry
+
+	if !isDiniyyahAttendanceType(typeStr) {
+		absQ := h.db.Table("teacher_attendances ta").
+			Select("ta.id, ta.date, u.name as teacher, lessons.nama as lesson, kelas.nama as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Joins("JOIN users u ON u.id = ta.user_id").
+			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
+			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
+			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
+			Joins("JOIN kelas ON kelas.id = lkt.kelas_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_formal_id IS NOT NULL").
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+		absQ = applyFormalScheduleTypeFilter(absQ, "jf", typeStr)
+		if teacherID != "" {
+			absQ = absQ.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			absQ = absQ.Where("u.gender = ?", gender)
+		}
+		absQ.Order("ta.date DESC").Scan(&absenceHistory)
+	} else {
+		absQ := h.db.Table("teacher_attendances ta").
+			Select("ta.id, ta.date, u.name as teacher, diniyyah_lessons.nama as lesson, kelas.nama as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Joins("JOIN users u ON u.id = ta.user_id").
+			Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
+			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_diniyyah_id IS NOT NULL").
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+		if teacherID != "" {
+			absQ = absQ.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			absQ = absQ.Where("u.gender = ?", gender)
+		}
+		if kelasID != "" {
+			absQ = absQ.Where("dkt.kelas_id = ?", kelasID)
+		}
+		absQ.Order("ta.date DESC").Scan(&absenceHistory)
+	}
+
 	return c.JSON(fiber.Map{
 		"teacher_counts":     teacherCountsMap,
 		"teacher_summary":    teacherSummary,
 		"substitute_history": substituteHistory,
+		"absence_history":    absenceHistory,
 	})
+}
+
+// DeleteTeacherAttendanceRecord hard-deletes a teacher_attendance row. super_admin only.
+func (h *AbsensiHandler) DeleteTeacherAttendanceRecord(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat menghapus data absensi guru"})
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+	var record models.TeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
+	}
+	if err := h.db.Delete(&record).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus data absensi"})
+	}
+	return c.JSON(fiber.Map{"message": "Data absensi guru berhasil dihapus"})
+}
+
+// UpdateTeacherAttendanceRecord updates status/notes of a teacher_attendance. super_admin only.
+func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !user.HasRole("super_admin") {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat mengubah data absensi guru"})
+	}
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
+	}
+	var record models.TeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
+	}
+	var req struct {
+		Status string `json:"status"`
+		Notes  string `json:"notes"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Body permintaan tidak valid"})
+	}
+	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true}
+	if req.Status != "" && !validStatuses[req.Status] {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
+	}
+	updates := map[string]interface{}{"notes": req.Notes}
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+	if err := h.db.Model(&record).Updates(updates).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal mengubah data absensi"})
+	}
+	return c.JSON(fiber.Map{"message": "Data absensi guru berhasil diperbarui"})
 }
