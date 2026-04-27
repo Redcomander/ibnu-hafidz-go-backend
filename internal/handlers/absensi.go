@@ -1084,7 +1084,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		subQ = applyFormalScheduleTypeFilter(subQ, "jadwal_formal", typeStr)
 
 		if teacherID != "" {
-			subQ = subQ.Where("(substitute_logs.original_teacher_id = ? OR substitute_logs.substitute_teacher_id = ?)", teacherID, teacherID)
+			subQ = subQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
 		}
 		if gender != "" {
 			subQ = subQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
@@ -1104,7 +1104,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 
 		if teacherID != "" {
-			subQ = subQ.Where("(substitute_logs_diniyyah.original_teacher_id = ? OR substitute_logs_diniyyah.substitute_teacher_id = ?)", teacherID, teacherID)
+			subQ = subQ.Where("substitute_logs_diniyyah.original_teacher_id = ?", teacherID)
 		}
 		if gender != "" {
 			subQ = subQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
