@@ -47,7 +47,11 @@ func (h *AbsensiHandler) getUserFromContext(c *fiber.Ctx) (*models.User, error) 
 }
 
 func canManageTeacherAttendance(user *models.User) bool {
-	return user.HasRole("super_admin") || user.HasRole("admin") || user.HasRole("staff") || user.HasRole("tim_presensi")
+	return user.HasRole("super_admin") ||
+		user.HasRole("admin") ||
+		user.HasRole("staff") ||
+		user.HasRole("tim_presensi") ||
+		user.HasPermission("schedule.substitute")
 }
 
 func canAccessScheduledAttendance(user *models.User, originalTeacherID uint, substituteTeacherID *uint, substituteDate *time.Time, targetDate string) bool {
