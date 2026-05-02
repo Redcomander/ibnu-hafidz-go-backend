@@ -78,8 +78,10 @@ func Permission(permissionName string) fiber.Handler {
 		// Get DB from context (we store it during request)
 		db, ok := c.Locals("db").(*gorm.DB)
 		if !ok {
-			// Fallback: permission check skipped if DB not in context
-			return c.Next()
+			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "Permission check unavailable",
+			})
 		}
 
 		// Load user with roles and permissions
@@ -120,7 +122,10 @@ func PermissionAny(permissionNames ...string) fiber.Handler {
 
 		db, ok := c.Locals("db").(*gorm.DB)
 		if !ok {
-			return c.Next()
+			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+				Error:   "forbidden",
+				Message: "Permission check unavailable",
+			})
 		}
 
 		if user, ok := c.Locals("user").(*models.User); ok && user != nil {
