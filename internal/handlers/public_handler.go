@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -79,6 +80,15 @@ func NewPublicHandler(db *gorm.DB) *PublicHandler {
 	return &PublicHandler{db: db}
 }
 
+// getCmsValue retrieves a CMS setting value by key. Returns empty string if not found.
+func (h *PublicHandler) getCmsValue(key string) string {
+	var setting models.CmsSetting
+	if err := h.db.Where("`key` = ?", key).First(&setting).Error; err != nil {
+		return ""
+	}
+	return setting.Value
+}
+
 func (h *PublicHandler) GetHome(c *fiber.Ctx) error {
 	var studentCount int64
 	var teacherCount int64
@@ -118,9 +128,18 @@ func (h *PublicHandler) GetHome(c *fiber.Ctx) error {
 			},
 			"articles":    articles,
 			"hero_images": heroImages,
-			"content":     buildPublicHomeContent(),
+			"content":     h.getHomeContent(),
 		},
 	})
+}
+
+// getHomeContent returns DB-stored content if available, else the hardcoded default.
+func (h *PublicHandler) getHomeContent() interface{} {
+	if val := h.getCmsValue("home_content"); val != "" {
+		// Return raw JSON string so client receives the stored JSON directly.
+		return json.RawMessage(val)
+	}
+	return buildPublicHomeContent()
 }
 
 func (h *PublicHandler) GetProfile(c *fiber.Ctx) error {
@@ -143,9 +162,17 @@ func (h *PublicHandler) GetProfile(c *fiber.Ctx) error {
 				"tenaga_pengajar": teacherCount,
 				"tahun_berdiri":   yearsEstablished,
 			},
-			"content": buildPublicProfileContent(),
+			"content": h.getProfileContent(),
 		},
 	})
+}
+
+// getProfileContent returns DB-stored content if available, else the hardcoded default.
+func (h *PublicHandler) getProfileContent() interface{} {
+	if val := h.getCmsValue("profile_content"); val != "" {
+		return json.RawMessage(val)
+	}
+	return buildPublicProfileContent()
 }
 
 func (h *PublicHandler) GetPrestasi(c *fiber.Ctx) error {

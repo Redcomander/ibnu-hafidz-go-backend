@@ -8,21 +8,46 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/ibnu-hafidz/web-v2/internal/config"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
+	"github.com/ibnu-hafidz/web-v2/internal/utils"
 	"gorm.io/gorm"
 )
 
 type NotificationHandler struct {
 	db      *gorm.DB
+	cfg     *config.Config
 	clients map[uint]map[chan string]bool // map[UserID]map[Channel]bool
 	mu      sync.Mutex
 }
 
-func NewNotificationHandler(db *gorm.DB) *NotificationHandler {
+func NewNotificationHandler(db *gorm.DB, cfg *config.Config) *NotificationHandler {
 	return &NotificationHandler{
 		db:      db,
+		cfg:     cfg,
 		clients: make(map[uint]map[chan string]bool),
 	}
+}
+
+// IssueSSETicket issues a short-lived (30-second) JWT for SSE authentication.
+// The client uses this token in the SSE URL query param (?token=...) so that
+// the long-lived access token never appears in server logs or browser history.
+func (h *NotificationHandler) IssueSSETicket(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(uint)
+	email, _ := c.Locals("email").(string)
+
+	token, err := utils.GenerateSSEToken(userID, email, h.cfg.JWTSecret)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "token_error",
+			Message: "Failed to generate SSE ticket",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"ticket":     token,
+		"expires_in": 30,
+	})
 }
 
 // List returns notifications for the current user

@@ -68,6 +68,24 @@ func ValidateToken(tokenString, secret string) (*JWTClaims, error) {
 	return claims, nil
 }
 
+// GenerateSSEToken creates a very short-lived JWT (30 seconds) for SSE auth.
+// This token is intended for single-use URL query param so the long-lived
+// access token never appears in server logs or browser history.
+func GenerateSSEToken(userID uint, email, secret string) (string, error) {
+	claims := JWTClaims{
+		UserID: userID,
+		Email:  email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * time.Second)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "ibnu-hafidz-api",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
 // HashPassword hashes a password using bcrypt (compatible with Laravel)
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

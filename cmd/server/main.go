@@ -129,6 +129,10 @@ func main() {
 		log.Printf("Warning: prestasi migration: %v", err)
 	}
 
+	if err := db.AutoMigrate(&models.CmsSetting{}); err != nil {
+		log.Printf("Warning: cms_settings migration: %v", err)
+	}
+
 	// Drop 'name' column if it exists (cleanup from previous migration artifact)
 	// We ignore the error in case it's already dropped
 	// Drop 'name' column if it exists (cleanup from previous migration artifact)
@@ -382,9 +386,10 @@ func main() {
 	protected.Post("/arrivals/reset-students", middleware.Permission("dashboard.view"), arrivalHandler.ResetStudentArrivals)
 
 	// Notifications
-	notifHandler := handlers.NewNotificationHandler(db)
+	notifHandler := handlers.NewNotificationHandler(db, cfg)
 	protected.Get("/notifications", notifHandler.List)
 	protected.Put("/notifications/:id/read", notifHandler.MarkRead)
+	protected.Post("/notifications/stream/ticket", notifHandler.IssueSSETicket)
 	protected.Get("/notifications/stream", notifHandler.Stream)
 
 	// Schedules
@@ -578,6 +583,14 @@ func main() {
 	prestasi.Post("/", middleware.Permission("prestasi.create"), prestasiHandler.CreatePrestasi)
 	prestasi.Put("/:id", middleware.Permission("prestasi.edit"), prestasiHandler.UpdatePrestasi)
 	prestasi.Delete("/:id", middleware.Permission("prestasi.delete"), prestasiHandler.DeletePrestasi)
+
+	// CMS Settings — editable public content (home/profile page copy)
+	cmsHandler := handlers.NewCmsHandler(db)
+	cms := protected.Group("/cms")
+	cms.Get("/settings", middleware.Permission("content.view"), cmsHandler.List)
+	cms.Get("/settings/:key", middleware.Permission("content.view"), cmsHandler.Get)
+	cms.Put("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Upsert)
+	cms.Delete("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Delete)
 
 	// Serve uploaded files
 	app.Static("/uploads", uploadPath)

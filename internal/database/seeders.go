@@ -97,4 +97,3 @@ func SeedPermissions(db *gorm.DB) error {
 	log.Println("✅ Permissions seeded successfully")
 	return nil
 }
-

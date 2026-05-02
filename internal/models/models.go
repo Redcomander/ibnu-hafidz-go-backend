@@ -194,6 +194,20 @@ type ErrorResponse struct {
 }
 
 // ──────────────────────────────────────────────────────────────
+// CmsSetting — key/value store for editable public content.
+// Keys: "home_content", "profile_content" (JSON blobs).
+// When a key is absent the backend falls back to hardcoded defaults.
+// ──────────────────────────────────────────────────────────────
+type CmsSetting struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Key       string    `gorm:"column:key;size:100;uniqueIndex;not null" json:"key"`
+	Value     string    `gorm:"column:value;type:longtext;not null" json:"value"`
+	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
+
+func (CmsSetting) TableName() string { return "cms_settings" }
+
+// ──────────────────────────────────────────────────────────────
 // Visitor — for dashboard analytics
 // ──────────────────────────────────────────────────────────────
 type Visitor struct {
