@@ -1167,19 +1167,21 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	for _, sc := range subCounts {
 		if idx, exists := inSummaryMap[sc.ID]; exists {
 			teacherSummary[idx].Substitute = sc.Count
+			teacherSummary[idx].Hadir += sc.Count // substitute sessions count as hadir
 		} else {
-			// Teacher only has substitute records
+			// Teacher only has substitute records — substitute sessions count as hadir
 			teacherSummary = append(teacherSummary, TeacherSummaryEntry{
 				ID:         sc.ID,
 				Name:       sc.Name,
 				Avatar:     sc.Avatar,
-				Hadir:      0,
+				Hadir:      sc.Count,
 				Izin:       0,
 				Sakit:      0,
 				Alpha:      0,
 				Substitute: sc.Count,
 			})
 		}
+		teacherCountsMap["Hadir"] += sc.Count
 	}
 
 	// Update Substitute Total Count
