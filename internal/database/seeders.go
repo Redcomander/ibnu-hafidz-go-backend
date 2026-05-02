@@ -7,19 +7,43 @@ import (
 	"gorm.io/gorm"
 )
 
-// SeedPermissions seeds the database with default permissions
+// SeedPermissions seeds the database with all permissions used in the app.
+// Safe to run multiple times — all operations are idempotent.
 func SeedPermissions(db *gorm.DB) error {
 	permissions := []string{
-		"kelas.view",
-		"kelas.create",
-		"kelas.edit",
-		"kelas.delete",
-		"prestasi.view",
-		"prestasi.create",
-		"prestasi.edit",
-		"prestasi.delete",
+		// Kelas
+		"kelas.view", "kelas.create", "kelas.edit", "kelas.delete",
+		// Prestasi
+		"prestasi.view", "prestasi.create", "prestasi.edit", "prestasi.delete",
+		// Students
+		"students.view", "students.create", "students.edit", "students.delete",
+		// Users & Roles
+		"users.view", "users.create", "users.edit", "users.delete",
+		"roles.view", "roles.create", "roles.edit", "roles.delete",
+		"permissions.create",
+		// Dashboard
+		"dashboard.view",
+		// Kamar
+		"kamar.view", "kamar.create", "kamar.edit", "kamar.delete",
+		// Curriculum & Lessons
+		"curriculum.create", "curriculum.edit", "curriculum.delete",
+		"lessons.view",
+		// Jadwal Formal
+		"jadwal_formal.create", "jadwal_formal.edit", "jadwal_formal.delete", "jadwal_formal.view_all",
+		// Jadwal Diniyyah
+		"jadwal_diniyyah.edit", "jadwal_diniyyah.view_all",
+		// Halaqoh
+		"halaqoh-assignments.create", "halaqoh-assignments.edit", "halaqoh-assignments.delete",
+		"halaqoh.view_all",
+		// Schedule / Attendance
+		"schedule.substitute",
+		// Articles
+		"article.edit", "article.delete",
+		// Absensi Ekstra
+		"absensi_ekstra.view_all",
 	}
 
+	// Ensure all permissions exist (idempotent via FirstOrCreate)
 	for _, permName := range permissions {
 		var perm models.Permission
 		if err := db.FirstOrCreate(&perm, models.Permission{Name: permName}).Error; err != nil {
@@ -28,14 +52,49 @@ func SeedPermissions(db *gorm.DB) error {
 		}
 	}
 
-	// Assign to Admin role (assuming ID 1 or name 'admin')
-	var adminRole models.Role
-	if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
-		var perms []models.Permission
-		db.Where("name IN ?", permissions).Find(&perms)
-		db.Model(&adminRole).Association("Permissions").Append(perms)
+	// Load all permissions from DB into a map
+	var allPerms []models.Permission
+	if err := db.Where("name IN ?", permissions).Find(&allPerms).Error; err != nil {
+		return err
+	}
+
+	// Assign to both admin and super_admin roles
+	roleNames := []string{"admin", "super_admin"}
+	for _, roleName := range roleNames {
+		var role models.Role
+		if err := db.Where("name = ?", roleName).First(&role).Error; err != nil {
+			log.Printf("Role '%s' not found, skipping: %v", roleName, err)
+			continue
+		}
+
+		// Load existing role permissions to diff — avoids duplicate pivot rows
+		var existing []models.Permission
+		db.Model(&role).Association("Permissions").Find(&existing)
+		existingSet := make(map[uint]bool, len(existing))
+		for _, p := range existing {
+			existingSet[p.ID] = true
+		}
+
+		// Only append permissions not already assigned
+		var toAdd []models.Permission
+		for _, p := range allPerms {
+			if !existingSet[p.ID] {
+				toAdd = append(toAdd, p)
+			}
+		}
+
+		if len(toAdd) > 0 {
+			if err := db.Model(&role).Association("Permissions").Append(toAdd); err != nil {
+				log.Printf("Failed to assign permissions to role '%s': %v", roleName, err)
+				return err
+			}
+			log.Printf("✅ Assigned %d new permissions to role '%s'", len(toAdd), roleName)
+		} else {
+			log.Printf("✅ Role '%s' already has all permissions, nothing to add", roleName)
+		}
 	}
 
 	log.Println("✅ Permissions seeded successfully")
 	return nil
 }
+
