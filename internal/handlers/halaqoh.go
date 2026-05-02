@@ -308,12 +308,13 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 
 	// ── Batch: substitute info per teacher for today ──
 	type SubstituteInfo struct {
-		TeacherID      uint   `json:"teacher_id"`
-		Session        string `json:"session"`
-		SubstituteName string `json:"substitute_name"`
-		Status         string `json:"status"`
-		Reason         string `json:"reason"`
-		HasSubstitute  bool   `json:"has_substitute"`
+		TeacherID           uint   `json:"teacher_id"`
+		SubstituteTeacherID uint   `json:"substitute_teacher_id"`
+		Session             string `json:"session"`
+		SubstituteName      string `json:"substitute_name"`
+		Status              string `json:"status"`
+		Reason              string `json:"reason"`
+		HasSubstitute       bool   `json:"has_substitute"`
 	}
 	var allSubInfos []SubstituteInfo
 	if len(groupOrder) > 0 {
@@ -325,8 +326,9 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 
 		for _, log := range subLogs {
 			info := SubstituteInfo{
-				TeacherID:     log.OriginalTeacherID,
-				HasSubstitute: true,
+				TeacherID:           log.OriginalTeacherID,
+				SubstituteTeacherID: log.SubstituteTeacherID,
+				HasSubstitute:       true,
 			}
 			if log.Session != nil {
 				info.Session = *log.Session
@@ -369,18 +371,10 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 			}
 		}
 
-		// Check if current user is substitute for this teacher
+		// Check if current user is substitute for this teacher (in-memory lookup)
 		for _, s := range allSubInfos {
-			if s.TeacherID == tid {
-				// Check if the substitute is the current user
-				var count int64
-				h.db.Model(&models.HalaqohSubstituteLog{}).
-					Where("original_teacher_id = ? AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
-						tid, user.ID, dateStr, true).
-					Count(&count)
-				if count > 0 {
-					isSub = true
-				}
+			if s.TeacherID == tid && s.SubstituteTeacherID == user.ID {
+				isSub = true
 				break
 			}
 		}

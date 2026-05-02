@@ -374,7 +374,9 @@ func main() {
 	dashHandler := handlers.NewDashboardHandler(db)
 	protected.Get("/dashboard/stats", middleware.Permission("dashboard.view"), dashHandler.Stats)
 	protected.Get("/dashboard/visitor-stats", middleware.Permission("dashboard.view"), dashHandler.VisitorStats)
-	protected.Get("/dashboard/debug-schema", dashHandler.DebugSchema) // Temporary debug route
+	if cfg.Environment != "production" {
+		protected.Get("/dashboard/debug-schema", dashHandler.DebugSchema) // Temporary debug route, non-production only
+	}
 	protected.Get("/arrivals/dashboard", middleware.Permission("dashboard.view"), arrivalHandler.Dashboard)
 	protected.Post("/arrivals/deadline", middleware.Permission("dashboard.view"), arrivalHandler.UpdateStudentDeadline)
 	protected.Post("/arrivals/reset-students", middleware.Permission("dashboard.view"), arrivalHandler.ResetStudentArrivals)

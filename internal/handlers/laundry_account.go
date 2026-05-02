@@ -87,21 +87,50 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	monthEnd := monthStart.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
 
+	// Batch: collect all account IDs for GROUP BY queries
+	type weightRow struct {
+		LaundryAccountID uint
+		TotalWeight      float64
+	}
+	var accountIDs []uint
 	for _, acc := range accounts {
-		var periodWeight float64
-		h.db.Model(&models.LaundryTransaction{}).
-			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, dateFrom, dateTo).
-			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&periodWeight)
+		accountIDs = append(accountIDs, acc.ID)
+	}
 
-		var weeklyWeight float64
-		h.db.Model(&models.LaundryTransaction{}).
-			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, weekStart, weekEnd).
-			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&weeklyWeight)
+	periodWeightMap := make(map[uint]float64)
+	weeklyWeightMap := make(map[uint]float64)
+	monthlyWeightMap := make(map[uint]float64)
 
-		var monthlyWeight float64
+	if len(accountIDs) > 0 {
+		var periodRows, weeklyRows, monthlyRows []weightRow
 		h.db.Model(&models.LaundryTransaction{}).
-			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, monthStart, monthEnd).
-			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&monthlyWeight)
+			Select("laundry_account_id, COALESCE(SUM(berat_kg), 0) AS total_weight").
+			Where("laundry_account_id IN ? AND tanggal BETWEEN ? AND ?", accountIDs, dateFrom, dateTo).
+			Group("laundry_account_id").Scan(&periodRows)
+		h.db.Model(&models.LaundryTransaction{}).
+			Select("laundry_account_id, COALESCE(SUM(berat_kg), 0) AS total_weight").
+			Where("laundry_account_id IN ? AND tanggal BETWEEN ? AND ?", accountIDs, weekStart, weekEnd).
+			Group("laundry_account_id").Scan(&weeklyRows)
+		h.db.Model(&models.LaundryTransaction{}).
+			Select("laundry_account_id, COALESCE(SUM(berat_kg), 0) AS total_weight").
+			Where("laundry_account_id IN ? AND tanggal BETWEEN ? AND ?", accountIDs, monthStart, monthEnd).
+			Group("laundry_account_id").Scan(&monthlyRows)
+
+		for _, r := range periodRows {
+			periodWeightMap[r.LaundryAccountID] = r.TotalWeight
+		}
+		for _, r := range weeklyRows {
+			weeklyWeightMap[r.LaundryAccountID] = r.TotalWeight
+		}
+		for _, r := range monthlyRows {
+			monthlyWeightMap[r.LaundryAccountID] = r.TotalWeight
+		}
+	}
+
+	for _, acc := range accounts {
+		periodWeight := periodWeightMap[acc.ID]
+		weeklyWeight := weeklyWeightMap[acc.ID]
+		monthlyWeight := monthlyWeightMap[acc.ID]
 
 		monthlyExcess := math.Max(0, monthlyWeight-MONTHLY_LIMIT_KG)
 		debtAmount := monthlyExcess * DEBT_PRICE_PER_KG
