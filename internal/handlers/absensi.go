@@ -1184,6 +1184,99 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		teacherCountsMap["Hadir"] += sc.Count
 	}
 
+	// Add original-teacher absence status counts from substitute logs
+	type OriginalSubStatusCount struct {
+		ID     uint
+		Name   string
+		Avatar string
+		Status string
+		Count  int
+	}
+	var originalSubStatusCounts []OriginalSubStatusCount
+	if isDiniyyahAttendanceType(typeStr) {
+		origQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.status, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.original_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
+
+		if kelasID != "" {
+			origQ = origQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+				Where("dkt.kelas_id = ?", kelasID)
+		}
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs_diniyyah.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Group("substitute_logs_diniyyah.original_teacher_id, u.name, u.foto_guru, substitute_logs_diniyyah.status").Scan(&originalSubStatusCounts)
+	} else {
+		origQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
+			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Group("substitute_logs.original_teacher_id, u.name, u.foto_guru, substitute_logs.status").Scan(&originalSubStatusCounts)
+	}
+
+	for _, oc := range originalSubStatusCounts {
+		status := strings.TrimSpace(strings.ToLower(oc.Status))
+		if status != "izin" && status != "sakit" && status != "alpha" {
+			continue
+		}
+
+		if idx, exists := inSummaryMap[oc.ID]; exists {
+			switch status {
+			case "izin":
+				teacherSummary[idx].Izin += oc.Count
+				teacherCountsMap["Izin"] += oc.Count
+			case "sakit":
+				teacherSummary[idx].Sakit += oc.Count
+				teacherCountsMap["Sakit"] += oc.Count
+			case "alpha":
+				teacherSummary[idx].Alpha += oc.Count
+				teacherCountsMap["Alpha"] += oc.Count
+			}
+			continue
+		}
+
+		entry := TeacherSummaryEntry{
+			ID:         oc.ID,
+			Name:       oc.Name,
+			Avatar:     oc.Avatar,
+			Hadir:      0,
+			Izin:       0,
+			Sakit:      0,
+			Alpha:      0,
+			Substitute: 0,
+		}
+
+		switch status {
+		case "izin":
+			entry.Izin = oc.Count
+			teacherCountsMap["Izin"] += oc.Count
+		case "sakit":
+			entry.Sakit = oc.Count
+			teacherCountsMap["Sakit"] += oc.Count
+		case "alpha":
+			entry.Alpha = oc.Count
+			teacherCountsMap["Alpha"] += oc.Count
+		}
+
+		teacherSummary = append(teacherSummary, entry)
+		inSummaryMap[oc.ID] = len(teacherSummary) - 1
+	}
+
 	// Update Substitute Total Count
 	for _, sub := range substituteHistory {
 		// Only count substitute_teacher matches if teacher_id is filtered
