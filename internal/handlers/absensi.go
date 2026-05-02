@@ -903,7 +903,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		h.db.Table("substitute_logs").
-			Select("substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
+			Select("substitute_logs.date, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
 			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
 			Joins("JOIN lesson_kelas_teachers ON lesson_kelas_teachers.id = jadwal_formal.lesson_kelas_teacher_id").
 			Joins("JOIN lessons ON lessons.id = lesson_kelas_teachers.lesson_id").
@@ -917,7 +917,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 			Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
 		h.db.Table("substitute_logs").
-			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
+			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, original.name as original_teacher, substitute.name as substitute_teacher, substitute_logs.status, substitute_logs.reason").
 			Joins("JOIN jadwal_diniyyahs ON jadwal_diniyyahs.id = substitute_logs.jadwal_diniyyah_id").
 			Joins("JOIN diniyyah_kelas_teachers ON diniyyah_kelas_teachers.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
 			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = diniyyah_kelas_teachers.diniyyah_lesson_id").
@@ -1070,7 +1070,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.id, substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs.id, substitute_logs.date, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs.reason").
 			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
@@ -1092,7 +1092,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.id, substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs_diniyyah.id, substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
 				"original.name as original_teacher, substitute_logs_diniyyah.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
@@ -1206,7 +1206,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		absQ := h.db.Table("teacher_attendances ta").
-			Select("ta.id, ta.date, u.name as teacher, lessons.nama as lesson, kelas.nama as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Select("ta.id, ta.date, u.name as teacher, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
 			Joins("JOIN users u ON u.id = ta.user_id").
 			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
 			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
@@ -1226,7 +1226,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		absQ.Order("ta.date DESC").Scan(&absenceHistory)
 	} else {
 		absQ := h.db.Table("teacher_attendances ta").
-			Select("ta.id, ta.date, u.name as teacher, diniyyah_lessons.nama as lesson, kelas.nama as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Select("ta.id, ta.date, u.name as teacher, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
 			Joins("JOIN users u ON u.id = ta.user_id").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
 			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").

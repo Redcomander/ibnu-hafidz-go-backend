@@ -611,7 +611,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		subHistQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.date, lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs.date, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs.reason").
 			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
@@ -632,7 +632,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		subHistQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
 		subHistQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, kelas.nama as kelas, "+
+			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
 				"original.name as original_teacher, substitute_logs.status as original_status, "+
 				"substitute.name as substitute_teacher, substitute_logs.reason").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
