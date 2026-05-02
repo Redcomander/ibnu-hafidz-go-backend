@@ -576,7 +576,10 @@ func (h *HalaqohHandler) AssignSubstitute(c *fiber.Ctx) error {
 		err := h.db.Where("halaqoh_assignment_id = ? AND date = ? AND session = ? AND is_active = ?",
 			id, req.SubstituteDate, session, true).First(&existing).Error
 
-		status := strings.Title(req.SubstituteStatus)
+		var status string
+		if s := req.SubstituteStatus; len(s) > 0 {
+			status = strings.ToUpper(s[:1]) + s[1:]
+		}
 		if err == nil {
 			h.db.Model(&existing).Updates(map[string]interface{}{
 				"substitute_teacher_id": req.SubstituteTeacherID,

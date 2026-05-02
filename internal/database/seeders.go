@@ -38,9 +38,15 @@ func SeedPermissions(db *gorm.DB) error {
 		// Schedule / Attendance
 		"schedule.substitute",
 		// Articles
-		"article.edit", "article.delete",
+		"article.view", "article.create", "article.edit", "article.delete",
+		// Gallery
+		"gallery.view", "gallery.create", "gallery.edit", "gallery.delete",
+		// Laundry
+		"laundry.view", "laundry.create", "laundry.edit", "laundry.delete",
 		// Absensi Ekstra
-		"absensi_ekstra.view_all",
+		"absensi_ekstra.view_all", "absensi_ekstra.create", "absensi_ekstra.edit", "absensi_ekstra.delete",
+		// Settings
+		"settings.edit",
 	}
 
 	// Ensure all permissions exist (idempotent via FirstOrCreate)

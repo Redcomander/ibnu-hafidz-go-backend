@@ -237,7 +237,7 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	})
 
 	// Title
-	f.SetCellValue(sheet, "A1", fmt.Sprintf("Laporan Absensi %s", strings.Title(typeStr)))
+	f.SetCellValue(sheet, "A1", fmt.Sprintf("Laporan Absensi %s", strings.ToUpper(typeStr[:1])+typeStr[1:]))
 	f.SetCellValue(sheet, "A2", fmt.Sprintf("Periode: %s s/d %s", startDate, endDate))
 	f.MergeCell(sheet, "A1", "E1")
 	f.MergeCell(sheet, "A2", "E2")
@@ -403,7 +403,7 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 
 	// Title
 	pdf.SetFont("Helvetica", "B", 16)
-	pdf.CellFormat(0, 10, fmt.Sprintf("Laporan Absensi %s", strings.Title(typeStr)), "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 10, fmt.Sprintf("Laporan Absensi %s", strings.ToUpper(typeStr[:1])+typeStr[1:]), "", 1, "C", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
 	pdf.CellFormat(0, 7, fmt.Sprintf("Periode: %s s/d %s", startDate, endDate), "", 1, "C", false, 0, "")
 	pdf.Ln(5)

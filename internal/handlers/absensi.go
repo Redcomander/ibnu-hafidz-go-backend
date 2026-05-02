@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -515,8 +516,12 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	// Handle Photo Upload
 	photoPath := ""
 	if file, err := c.FormFile("photo"); err == nil {
+		uploadDir := "./uploads"
+		if v := os.Getenv("UPLOAD_PATH"); v != "" {
+			uploadDir = v
+		}
 		filename := "teacher_attendance/" + req.Date + "_" + file.Filename
-		if err := c.SaveFile(file, "./public/uploads/"+filename); err == nil {
+		if err := c.SaveFile(file, uploadDir+"/"+filename); err == nil {
 			photoPath = "uploads/" + filename
 		}
 	}
