@@ -24,6 +24,13 @@ type attendanceCountSummary struct {
 	Alpha int64 `gorm:"column:alpha"`
 }
 
+type dashboardAttendanceSummary struct {
+	Hadir int64
+	Izin  int64
+	Sakit int64
+	Alpha int64
+}
+
 func summarizeAttendance(query *gorm.DB) attendanceCountSummary {
 	var summary attendanceCountSummary
 	query.Select(`
@@ -32,6 +39,58 @@ func summarizeAttendance(query *gorm.DB) attendanceCountSummary {
 		COALESCE(SUM(CASE WHEN LOWER(status) = 'sakit' THEN 1 ELSE 0 END), 0) AS sakit,
 		COALESCE(SUM(CASE WHEN LOWER(status) IN ('alpha', 'tidak_hadir') THEN 1 ELSE 0 END), 0) AS alpha
 	`).Scan(&summary)
+	return summary
+}
+
+func getTeacherAttendanceSummaryWithSubstitutes(db *gorm.DB, monthStart, monthEnd string, attendanceType string, teacherID *uint) dashboardAttendanceSummary {
+	summary := dashboardAttendanceSummary{}
+
+	baseQuery := db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ?", monthStart, monthEnd)
+	substituteQuery := db.Table("substitute_logs")
+	statusQuery := db.Table("substitute_logs")
+
+	switch attendanceType {
+	case "diniyyah":
+		baseQuery = baseQuery.Where("jadwal_diniyyah_id IS NOT NULL")
+		substituteQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd)
+		statusQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd)
+		if teacherID != nil {
+			baseQuery = baseQuery.Where("user_id = ?", *teacherID)
+			substituteQuery = substituteQuery.Where("substitute_teacher_id = ?", *teacherID)
+			statusQuery = statusQuery.Where("original_teacher_id = ?", *teacherID)
+		}
+	default:
+		baseQuery = baseQuery.Where("jadwal_formal_id IS NOT NULL")
+		substituteQuery = substituteQuery.
+			Where("date >= ? AND date < ?", monthStart, monthEnd).
+			Where("deleted_at IS NULL").
+			Where("jadwal_formal_id IS NOT NULL")
+		statusQuery = statusQuery.
+			Where("date >= ? AND date < ?", monthStart, monthEnd).
+			Where("deleted_at IS NULL").
+			Where("jadwal_formal_id IS NOT NULL")
+		if teacherID != nil {
+			baseQuery = baseQuery.Where("user_id = ?", *teacherID)
+			substituteQuery = substituteQuery.Where("substitute_teacher_id = ?", *teacherID)
+			statusQuery = statusQuery.Where("original_teacher_id = ?", *teacherID)
+		}
+	}
+
+	base := summarizeAttendance(baseQuery)
+	summary.Hadir = base.Hadir
+	summary.Izin = base.Izin
+	summary.Sakit = base.Sakit
+	summary.Alpha = base.Alpha
+
+	var substituteCount int64
+	substituteQuery.Count(&substituteCount)
+	summary.Hadir += substituteCount
+
+	statusSummary := summarizeAttendance(statusQuery)
+	summary.Izin += statusSummary.Izin
+	summary.Sakit += statusSummary.Sakit
+	summary.Alpha += statusSummary.Alpha
+
 	return summary
 }
 
@@ -358,9 +417,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	// ==========================================
 	// GLOBAL ATTENDANCE (Formal, Diniyyah, Halaqoh)
 	// ==========================================
-	globalFormal := summarizeAttendance(
-		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", monthStart, monthEnd),
-	)
+	globalFormal := getTeacherAttendanceSummaryWithSubstitutes(h.db, monthStart, monthEnd, "formal", nil)
 	gFPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "formal", nil)
 	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", nil); logCount > gFPengganti {
 		gFPengganti = logCount
@@ -368,9 +425,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	gFHadir, gFIzin, gFSakit, gFAlpa := globalFormal.Hadir, globalFormal.Izin, globalFormal.Sakit, globalFormal.Alpha
 	gFTotal := gFHadir + gFIzin + gFSakit + gFAlpa
 
-	globalDiniyyah := summarizeAttendance(
-		h.db.Model(&models.TeacherAttendance{}).Where("date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", monthStart, monthEnd),
-	)
+	globalDiniyyah := getTeacherAttendanceSummaryWithSubstitutes(h.db, monthStart, monthEnd, "diniyyah", nil)
 	gdPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "diniyyah", nil)
 	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", nil); logCount > gdPengganti {
 		gdPengganti = logCount
@@ -450,9 +505,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		// 2. Personal Attendance Stats Breakdown
 
 	// 2a. Formal Stats
-	personalFormal := summarizeAttendance(
-		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_formal_id IS NOT NULL", user.ID, monthStart, monthEnd),
-	)
+	personalFormal := getTeacherAttendanceSummaryWithSubstitutes(h.db, monthStart, monthEnd, "formal", &user.ID)
 	fPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "formal", &user.ID)
 	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "formal", &user.ID); logCount > fPengganti {
 		fPengganti = logCount
@@ -461,9 +514,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	fTotal := fHadir + fIzin + fSakit + fAlpa
 
 	// 2b. Diniyyah Stats
-	personalDiniyyah := summarizeAttendance(
-		h.db.Model(&models.TeacherAttendance{}).Where("user_id = ? AND date >= ? AND date < ? AND jadwal_diniyyah_id IS NOT NULL", user.ID, monthStart, monthEnd),
-	)
+	personalDiniyyah := getTeacherAttendanceSummaryWithSubstitutes(h.db, monthStart, monthEnd, "diniyyah", &user.ID)
 	dPengganti := countScheduleSubstitutes(h.db, monthStart, monthEnd, "diniyyah", &user.ID)
 	if logCount := countLatestSubstituteLogs(h.db, monthStart, monthEnd, "diniyyah", &user.ID); logCount > dPengganti {
 		dPengganti = logCount
