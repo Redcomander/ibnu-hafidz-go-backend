@@ -1319,6 +1319,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		Kelas   string    `json:"kelas"`
 		Status  string    `json:"status"`
 		Notes   string    `json:"notes"`
+		Source  string    `json:"source,omitempty"`
 	}
 	var absenceHistory []AbsenceEntry
 
@@ -1365,6 +1366,58 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		}
 		absQ.Order("ta.date DESC").Scan(&absenceHistory)
 	}
+
+	for i := range absenceHistory {
+		absenceHistory[i].Source = "teacher_attendance"
+	}
+
+	var substituteAbsenceHistory []AbsenceEntry
+	if !isDiniyyahAttendanceType(typeStr) {
+		subAbsQ := h.db.Table("substitute_logs sl").
+			Select("0 as id, sl.date, original.name as teacher, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sl.status, COALESCE(sl.reason, '') as notes, 'substitute_log' as source").
+			Joins("JOIN jadwal_formal jf ON jf.id = sl.jadwal_formal_id").
+			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
+			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
+			Joins("JOIN kelas ON kelas.id = lkt.kelas_id").
+			Joins("JOIN users original ON original.id = sl.original_teacher_id").
+			Where("sl.date >= ? AND sl.date < ?", startDate, endExclusive).
+			Where("sl.deleted_at IS NULL").
+			Where("sl.jadwal_formal_id IS NOT NULL").
+			Where("sl.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+		subAbsQ = applyFormalScheduleTypeFilter(subAbsQ, "jf", typeStr)
+		if teacherID != "" {
+			subAbsQ = subAbsQ.Where("sl.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subAbsQ = subAbsQ.Where("original.gender = ?", gender)
+		}
+		subAbsQ.Scan(&substituteAbsenceHistory)
+	} else {
+		subAbsQ := h.db.Table("substitute_logs_diniyyah sld").
+			Select("0 as id, sld.date, original.name as teacher, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sld.status, COALESCE(sld.reason, '') as notes, 'substitute_log' as source").
+			Joins("JOIN jadwal_diniyyahs jd ON jd.id = sld.jadwal_diniyyah_id").
+			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
+			Joins("JOIN users original ON original.id = sld.original_teacher_id").
+			Where("sld.date >= ? AND sld.date < ?", startDate, endExclusive).
+			Where("sld.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+		if teacherID != "" {
+			subAbsQ = subAbsQ.Where("sld.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subAbsQ = subAbsQ.Where("original.gender = ?", gender)
+		}
+		if kelasID != "" {
+			subAbsQ = subAbsQ.Where("dkt.kelas_id = ?", kelasID)
+		}
+		subAbsQ.Scan(&substituteAbsenceHistory)
+	}
+
+	absenceHistory = append(absenceHistory, substituteAbsenceHistory...)
+	sort.SliceStable(absenceHistory, func(i, j int) bool {
+		return absenceHistory[i].Date.After(absenceHistory[j].Date)
+	})
 
 	return c.JSON(fiber.Map{
 		"teacher_counts":     teacherCountsMap,
