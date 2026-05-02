@@ -92,6 +92,20 @@ func (h *HalaqohHandler) canAccessTeacherAttendance(user *models.User, assignmen
 	return count > 0
 }
 
+func canManageHalaqohTeacherAttendance(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+
+	return user.HasRole("super_admin") ||
+		user.HasRole("admin") ||
+		user.HasRole("staff") ||
+		user.HasRole("tim_presensi") ||
+		user.HasPermission("halaqoh.view_all") ||
+		user.HasPermission("halaqoh-assignments.edit") ||
+		user.HasPermission("halaqoh-assignments.delete")
+}
+
 // isWithinSessionTime checks if the current time is within the session window.
 func isWithinSessionTime(session string) bool {
 	times, ok := sessionTimes[session]
@@ -999,11 +1013,8 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	subErr := h.db.Where("halaqoh_assignment_id = ? AND date = ? AND session = ? AND is_active = ?",
 		assignmentID, dateStr, session, true).First(&log).Error
 
-	hasElevatedAccess := user.HasPermission("halaqoh-assignments.edit") || user.HasPermission("halaqoh-assignments.delete") || user.HasRole("admin") || user.HasRole("super_admin") || user.HasRole("tim_presensi")
-	isAssignedTeacher := user.ID == assignment.UserID
-	isActiveSubstitute := subErr == nil && user.ID == log.SubstituteTeacherID
-	if !(hasElevatedAccess || isAssignedTeacher || isActiveSubstitute) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengisi absensi guru halaqoh"})
+	if !canManageHalaqohTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Absensi guru halaqoh hanya dapat diisi oleh tim presensi/admin"})
 	}
 
 	// ── Time restriction check ──

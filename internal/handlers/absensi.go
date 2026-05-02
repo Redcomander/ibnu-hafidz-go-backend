@@ -489,6 +489,29 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	date, _ := time.Parse("2006-01-02", req.Date)
 	start, end := dateRange(req.Date)
 
+	// Prevent duplicate teacher-attendance data when this schedule/date already has a substitute assignment log.
+	var substituteLogCount int64
+	if req.Type == "diniyyah" {
+		if err := h.db.Table("substitute_logs_diniyyah").
+			Where("jadwal_diniyyah_id = ? AND date >= ? AND date < ?", req.JadwalID, start, end).
+			Count(&substituteLogCount).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to validate substitute log"})
+		}
+	} else {
+		if err := h.db.Table("substitute_logs").
+			Where("jadwal_formal_id = ? AND date >= ? AND date < ?", req.JadwalID, start, end).
+			Where("deleted_at IS NULL").
+			Count(&substituteLogCount).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to validate substitute log"})
+		}
+	}
+
+	if substituteLogCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error": "Absensi guru tidak dapat disimpan karena jadwal ini sudah memiliki data guru pengganti pada tanggal tersebut",
+		})
+	}
+
 	// Handle Photo Upload
 	photoPath := ""
 	if file, err := c.FormFile("photo"); err == nil {
