@@ -532,12 +532,18 @@ func (h *PublicHandler) GetArticleDetail(c *fiber.Ctx) error {
 		})
 	}
 
-	// Record view (no deduplication — matches legacy behaviour)
-	h.db.Create(&models.ArticleView{
-		ArticleID: article.ID,
-		IPAddress: c.IP(),
-		UserAgent: c.Get("User-Agent"),
-	})
+	// Record view — deduplicate same IP within 1 hour
+	var existingViewCount int64
+	h.db.Model(&models.ArticleView{}).
+		Where("article_id = ? AND ip_address = ? AND created_at >= ?", article.ID, c.IP(), time.Now().Add(-time.Hour)).
+		Count(&existingViewCount)
+	if existingViewCount == 0 {
+		h.db.Create(&models.ArticleView{
+			ArticleID: article.ID,
+			IPAddress: c.IP(),
+			UserAgent: c.Get("User-Agent"),
+		})
+	}
 
 	var totalViews, uniqueViews int64
 	h.db.Model(&models.ArticleView{}).Where("article_id = ?", article.ID).Count(&totalViews)
@@ -623,7 +629,7 @@ func (h *PublicHandler) CreateArticleComment(c *fiber.Ctx) error {
 		Name:       payload.Name,
 		Email:      payload.Email,
 		Body:       payload.Body,
-		IsApproved: true,
+		IsApproved: false,
 		LikesCount: 0,
 	}
 
@@ -677,7 +683,7 @@ func (h *PublicHandler) ReplyArticleComment(c *fiber.Ctx) error {
 		Name:       payload.Name,
 		Email:      payload.Email,
 		Body:       payload.Body,
-		IsApproved: true,
+		IsApproved: false,
 		LikesCount: 0,
 	}
 

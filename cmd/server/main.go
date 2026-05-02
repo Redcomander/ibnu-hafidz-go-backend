@@ -401,18 +401,18 @@ func main() {
 	// Attendance (Absensi)
 	absensiHandler := handlers.NewAbsensiHandler(db)
 	attendance := protected.Group("/attendance")
-	attendance.Get("/statistics", absensiHandler.GetStatistics)                      // Statistics
-	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)       // Teacher Statistics
-	attendance.Get("/history", absensiHandler.GetHistory)                            // Paginated history
-	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                // Export PDF
-	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)            // Export Excel
-	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF) // Export Teacher PDF
-	attendance.Get("/assignable-teachers", absensiHandler.ListAssignableTeachers)    // Substitute teacher picker
-	attendance.Get("/", absensiHandler.GetAttendance)                                // Get form/data
-	attendance.Post("/", absensiHandler.SubmitAttendance)                            // Submit/Update
-	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)              // Teacher Attendance
-	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                  // Assign Substitute
-	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)     // Delete Substitute History
+	attendance.Get("/statistics", absensiHandler.GetStatistics)                            // Statistics
+	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)             // Teacher Statistics
+	attendance.Get("/history", absensiHandler.GetHistory)                                  // Paginated history
+	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                      // Export PDF
+	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)                  // Export Excel
+	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF)       // Export Teacher PDF
+	attendance.Get("/assignable-teachers", absensiHandler.ListAssignableTeachers)          // Substitute teacher picker
+	attendance.Get("/", absensiHandler.GetAttendance)                                      // Get form/data
+	attendance.Post("/", absensiHandler.SubmitAttendance)                                  // Submit/Update
+	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                    // Teacher Attendance
+	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                        // Assign Substitute
+	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)           // Delete Substitute History
 	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord) // Delete teacher absence record
 	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)    // Update teacher absence record
 
@@ -567,6 +567,9 @@ func main() {
 	articles.Put("/:id", articleHandler.UpdateArticle)
 	articles.Delete("/:id", articleHandler.DeleteArticle)
 	articles.Get("/:id/analytics", articleHandler.GetAnalytics)
+	articles.Get("/comments/pending", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.ListPendingComments)
+	articles.Put("/comments/:id/approve", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.ApproveComment)
+	articles.Delete("/comments/:id", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.DeleteComment)
 
 	// Prestasi
 	prestasiHandler := handlers.NewPrestasiHandler(db, uploadPath)

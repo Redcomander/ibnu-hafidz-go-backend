@@ -466,3 +466,57 @@ func (h *ArticleHandler) GetAnalytics(c *fiber.Ctx) error {
 		"views_by_day": viewsByDay,
 	})
 }
+
+// ────────────────── Comment Moderation ──────────────────
+
+// ListPendingComments returns all unapproved comments for admin review.
+func (h *ArticleHandler) ListPendingComments(c *fiber.Ctx) error {
+	page := c.QueryInt("page", 1)
+	perPage := c.QueryInt("per_page", 20)
+	offset := (page - 1) * perPage
+
+	var comments []models.Comment
+	var total int64
+
+	query := h.db.Model(&models.Comment{}).Where("is_approved = ?", false).Preload("Article")
+	query.Count(&total)
+	query.Order("created_at desc").Offset(offset).Limit(perPage).Find(&comments)
+
+	return c.JSON(fiber.Map{
+		"data":        comments,
+		"total":       total,
+		"page":        page,
+		"per_page":    perPage,
+		"total_pages": (total + int64(perPage) - 1) / int64(perPage),
+	})
+}
+
+// ApproveComment sets is_approved = true for the given comment.
+func (h *ArticleHandler) ApproveComment(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var comment models.Comment
+	if err := h.db.First(&comment, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found", "message": "Comment not found"})
+	}
+
+	if err := h.db.Model(&comment).Update("is_approved", true).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "server_error", "message": "Failed to approve comment"})
+	}
+
+	return c.JSON(fiber.Map{"success": true, "data": comment})
+}
+
+// DeleteComment hard-deletes a comment (admin action).
+func (h *ArticleHandler) DeleteComment(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var comment models.Comment
+	if err := h.db.First(&comment, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found", "message": "Comment not found"})
+	}
+
+	// Delete replies first to avoid FK constraint errors
+	h.db.Where("parent_id = ?", comment.ID).Delete(&models.Comment{})
+	h.db.Delete(&comment)
+
+	return c.JSON(fiber.Map{"success": true, "message": "Comment deleted"})
+}
