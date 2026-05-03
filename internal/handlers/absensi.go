@@ -690,9 +690,24 @@ func (h *AbsensiHandler) upsertFormalSubstituteSnapshot(tx *gorm.DB, logID uint,
 	if originalTeacher == "" {
 		originalTeacher = "-"
 	}
-	return tx.Where("substitute_log_id = ?", logID).
+	err := tx.Where("substitute_log_id = ?", logID).
 		Assign(models.SubstituteLogSnapshot{Lesson: lesson, Kelas: kelas, StartTime: startTime, EndTime: endTime, OriginalTeacher: originalTeacher}).
 		FirstOrCreate(&models.SubstituteLogSnapshot{}).Error
+	if err == nil {
+		return nil
+	}
+
+	// Backward-compatible fallback for legacy schemas that don't have jam_* snapshot columns yet.
+	log.Printf("upsertFormalSubstituteSnapshot: full upsert failed logID=%d err=%v; trying legacy fallback", logID, err)
+	legacyErr := tx.Exec(
+		"INSERT INTO substitute_log_snapshots (substitute_log_id, lesson, kelas, original_teacher, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW()) ON DUPLICATE KEY UPDATE lesson=VALUES(lesson), kelas=VALUES(kelas), original_teacher=VALUES(original_teacher), updated_at=NOW()",
+		logID, lesson, kelas, originalTeacher,
+	).Error
+	if legacyErr == nil {
+		return nil
+	}
+
+	return err
 }
 
 func (h *AbsensiHandler) upsertDiniyyahSubstituteSnapshot(tx *gorm.DB, logID uint, lesson, kelas, startTime, endTime, originalTeacher string) error {
@@ -711,9 +726,24 @@ func (h *AbsensiHandler) upsertDiniyyahSubstituteSnapshot(tx *gorm.DB, logID uin
 	if originalTeacher == "" {
 		originalTeacher = "-"
 	}
-	return tx.Where("substitute_diniyyah_log_id = ?", logID).
+	err := tx.Where("substitute_diniyyah_log_id = ?", logID).
 		Assign(models.SubstituteDiniyyahLogSnapshot{Lesson: lesson, Kelas: kelas, StartTime: startTime, EndTime: endTime, OriginalTeacher: originalTeacher}).
 		FirstOrCreate(&models.SubstituteDiniyyahLogSnapshot{}).Error
+	if err == nil {
+		return nil
+	}
+
+	// Backward-compatible fallback for legacy schemas that don't have jam_* snapshot columns yet.
+	log.Printf("upsertDiniyyahSubstituteSnapshot: full upsert failed logID=%d err=%v; trying legacy fallback", logID, err)
+	legacyErr := tx.Exec(
+		"INSERT INTO substitute_diniyyah_log_snapshots (substitute_diniyyah_log_id, lesson, kelas, original_teacher, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW()) ON DUPLICATE KEY UPDATE lesson=VALUES(lesson), kelas=VALUES(kelas), original_teacher=VALUES(original_teacher), updated_at=NOW()",
+		logID, lesson, kelas, originalTeacher,
+	).Error
+	if legacyErr == nil {
+		return nil
+	}
+
+	return err
 }
 
 // AssignSubstitute assigns a substitute teacher to a schedule

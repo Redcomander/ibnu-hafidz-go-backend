@@ -174,6 +174,12 @@ func main() {
 	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_mulai TIME NULL")
 	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_selesai TIME NULL")
 
+	// Ensure substitute snapshot jam columns exist for recap UI/history edit flows
+	db.Exec("ALTER TABLE substitute_log_snapshots ADD COLUMN IF NOT EXISTS jam_mulai VARCHAR(16) NOT NULL DEFAULT '-'")
+	db.Exec("ALTER TABLE substitute_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
+	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_mulai VARCHAR(16) NOT NULL DEFAULT '-'")
+	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
+
 	// Seed Permissions
 	if err := database.SeedPermissions(db); err != nil {
 		log.Printf("Failed to seed permissions: %v", err)
