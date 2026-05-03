@@ -65,6 +65,7 @@ func main() {
 		&models.Absensi{},
 		&models.AbsensiDiniyyah{},
 		&models.TeacherAttendance{},
+		&models.TeacherAttendanceSnapshot{},
 		&models.SubstituteLog{},
 	); err != nil {
 		log.Fatalf("Failed to migrate attendance: %v", err)

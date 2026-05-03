@@ -28,6 +28,19 @@ type TeacherAttendance struct {
 
 func (TeacherAttendance) TableName() string { return "teacher_attendances" }
 
+// TeacherAttendanceSnapshot keeps immutable lesson/kelas labels at attendance write time,
+// so historical records remain stable even if the schedule assignment is edited later.
+type TeacherAttendanceSnapshot struct {
+	ID                  uint      `gorm:"primaryKey" json:"id"`
+	TeacherAttendanceID uint      `gorm:"column:teacher_attendance_id;uniqueIndex;not null" json:"teacher_attendance_id"`
+	Lesson              string    `gorm:"column:lesson;type:varchar(255);not null" json:"lesson"`
+	Kelas               string    `gorm:"column:kelas;type:varchar(255);not null" json:"kelas"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+func (TeacherAttendanceSnapshot) TableName() string { return "teacher_attendance_snapshots" }
+
 // SubstituteLog records history of substitute assignments
 type SubstituteLog struct {
 	ID                  uint           `gorm:"primaryKey" json:"id"`

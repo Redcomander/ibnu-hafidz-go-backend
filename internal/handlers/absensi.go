@@ -558,7 +558,51 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 		h.db.Save(&attendance)
 	}
 
+	if lessonName, kelasName, err := h.resolveAttendanceSnapshotLabels(req.Type, req.JadwalID); err == nil {
+		h.db.Where("teacher_attendance_id = ?", attendance.ID).
+			Assign(models.TeacherAttendanceSnapshot{Lesson: lessonName, Kelas: kelasName}).
+			FirstOrCreate(&models.TeacherAttendanceSnapshot{})
+	} else {
+		log.Printf("warning: failed to store teacher attendance snapshot for attendance_id=%d: %v", attendance.ID, err)
+	}
+
 	return c.JSON(fiber.Map{"message": "Teacher attendance saved"})
+}
+
+func (h *AbsensiHandler) resolveAttendanceSnapshotLabels(attType string, jadwalID uint) (string, string, error) {
+	if isDiniyyahAttendanceType(attType) {
+		var row struct {
+			Lesson string
+			Kelas  string
+		}
+		err := h.db.Table("jadwal_diniyyahs jd").
+			Select("diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas").
+			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
+			Where("jd.id = ?", jadwalID).
+			Take(&row).Error
+		if err != nil {
+			return "", "", err
+		}
+		return row.Lesson, row.Kelas, nil
+	}
+
+	var row struct {
+		Lesson string
+		Kelas  string
+	}
+	err := h.db.Table("jadwal_formal jf").
+		Select("lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas").
+		Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
+		Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
+		Joins("JOIN kelas ON kelas.id = lkt.kelas_id").
+		Where("jf.id = ?", jadwalID).
+		Take(&row).Error
+	if err != nil {
+		return "", "", err
+	}
+	return row.Lesson, row.Kelas, nil
 }
 
 // AssignSubstitute assigns a substitute teacher to a schedule
@@ -1352,8 +1396,9 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		absQ := h.db.Table("teacher_attendances ta").
-			Select("ta.id, ta.date, u.name as teacher, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Select("ta.id, ta.date, u.name as teacher, COALESCE(tas.lesson, lessons.nama) as lesson, COALESCE(tas.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat)) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
 			Joins("JOIN users u ON u.id = ta.user_id").
+			Joins("LEFT JOIN teacher_attendance_snapshots tas ON tas.teacher_attendance_id = ta.id").
 			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
 			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
 			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
@@ -1372,8 +1417,9 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		absQ.Order("ta.date DESC").Scan(&absenceHistory)
 	} else {
 		absQ := h.db.Table("teacher_attendances ta").
-			Select("ta.id, ta.date, u.name as teacher, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
+			Select("ta.id, ta.date, u.name as teacher, COALESCE(tas.lesson, diniyyah_lessons.nama) as lesson, COALESCE(tas.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat)) as kelas, ta.status, COALESCE(ta.notes, '') as notes").
 			Joins("JOIN users u ON u.id = ta.user_id").
+			Joins("LEFT JOIN teacher_attendance_snapshots tas ON tas.teacher_attendance_id = ta.id").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
 			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
