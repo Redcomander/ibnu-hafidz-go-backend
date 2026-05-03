@@ -505,39 +505,39 @@ func main() {
 	// Laundry Routes
 	laundry := protected.Group("/laundry")
 	// Vendors
-	laundry.Get("/vendors", middleware.Permission("laundry.view"), laundryVendorHandler.List)
-	laundry.Post("/vendors", middleware.Permission("laundry.create"), laundryVendorHandler.Create)
-	laundry.Put("/vendors/:id", middleware.Permission("laundry.edit"), laundryVendorHandler.Update)
-	laundry.Delete("/vendors/:id", middleware.Permission("laundry.delete"), laundryVendorHandler.Delete)
-	laundry.Get("/vendors/statistics", middleware.Permission("laundry.view"), laundryVendorHandler.Statistics)
-	laundry.Get("/vendors/statistics/:id", middleware.Permission("laundry.view"), laundryVendorHandler.Statistics)
+	laundry.Get("/vendors", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.List)
+	laundry.Post("/vendors", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryVendorHandler.Create)
+	laundry.Put("/vendors/:id", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryVendorHandler.Update)
+	laundry.Delete("/vendors/:id", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryVendorHandler.Delete)
+	laundry.Get("/vendors/statistics", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.Statistics)
+	laundry.Get("/vendors/statistics/:id", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.Statistics)
 
 	// Accounts
-	laundry.Get("/accounts", middleware.Permission("laundry.view"), laundryAccountHandler.List)
-	laundry.Get("/accounts/trashed", middleware.Permission("laundry.view"), laundryAccountHandler.ListTrashed)
-	laundry.Post("/accounts", middleware.Permission("laundry.create"), laundryAccountHandler.Create)
-	laundry.Put("/accounts/:id", middleware.Permission("laundry.edit"), laundryAccountHandler.Update)
-	laundry.Put("/accounts/:id/restore", middleware.Permission("laundry.edit"), laundryAccountHandler.Restore)
-	laundry.Delete("/accounts/:id", middleware.Permission("laundry.delete"), laundryAccountHandler.Delete) // Soft Delete
-	laundry.Delete("/accounts/:id/force", middleware.Permission("laundry.delete"), laundryAccountHandler.ForceDelete)
-	laundry.Post("/accounts/bulk", middleware.Permission("laundry.create"), laundryAccountHandler.BulkCreate)
-	laundry.Put("/accounts/:id/toggle-block", middleware.Permission("laundry.edit"), laundryAccountHandler.ToggleBlock)
+	laundry.Get("/accounts", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryAccountHandler.List)
+	laundry.Get("/accounts/trashed", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryAccountHandler.ListTrashed)
+	laundry.Post("/accounts", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryAccountHandler.Create)
+	laundry.Put("/accounts/:id", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryAccountHandler.Update)
+	laundry.Put("/accounts/:id/restore", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryAccountHandler.Restore)
+	laundry.Delete("/accounts/:id", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryAccountHandler.Delete) // Soft Delete
+	laundry.Delete("/accounts/:id/force", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryAccountHandler.ForceDelete)
+	laundry.Post("/accounts/bulk", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryAccountHandler.BulkCreate)
+	laundry.Put("/accounts/:id/toggle-block", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryAccountHandler.ToggleBlock)
 
 	// Transactions
-	laundry.Get("/transactions", middleware.Permission("laundry.view"), laundryTransactionHandler.List)
-	laundry.Get("/transactions/stats", middleware.Permission("laundry.view"), laundryTransactionHandler.GetAccountStats)
-	laundry.Post("/transactions", middleware.Permission("laundry.create"), laundryTransactionHandler.Create)
-	laundry.Put("/transactions/:id/pickup", middleware.Permission("laundry.edit"), laundryTransactionHandler.MarkAsPickedUp)
-	laundry.Post("/transactions/bulk-pickup", middleware.Permission("laundry.edit"), laundryTransactionHandler.BulkMarkAsPickedUp)
-	laundry.Delete("/transactions/:id", middleware.Permission("laundry.delete"), laundryTransactionHandler.Delete)
+	laundry.Get("/transactions", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryTransactionHandler.List)
+	laundry.Get("/transactions/stats", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryTransactionHandler.GetAccountStats)
+	laundry.Post("/transactions", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryTransactionHandler.Create)
+	laundry.Put("/transactions/:id/pickup", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryTransactionHandler.MarkAsPickedUp)
+	laundry.Post("/transactions/bulk-pickup", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryTransactionHandler.BulkMarkAsPickedUp)
+	laundry.Delete("/transactions/:id", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryTransactionHandler.Delete)
 
 	// Exports
-	laundry.Get("/export/vendors/excel", middleware.Permission("laundry.view"), laundryExportHandler.ExportVendorStatisticsExcel)
-	laundry.Get("/export/vendors/pdf", middleware.Permission("laundry.view"), laundryExportHandler.ExportVendorStatisticsPDF)
-	laundry.Get("/export/vendors/weekly/pdf", middleware.Permission("laundry.view"), laundryExportHandler.ExportWeeklyVendorStatisticsPDF)
-	laundry.Get("/export/vendors/all-weekly/pdf", middleware.Permission("laundry.view"), laundryExportHandler.ExportAllWeeklyVendorStatisticsPDF)
-	laundry.Get("/export/accounts/all/pdf", middleware.Permission("laundry.view"), laundryExportHandler.ExportAllAccountsPDF)
-	laundry.Get("/export/accounts/exceeded/excel", middleware.Permission("laundry.view"), laundryExportHandler.ExportExceededAccountsExcel)
+	laundry.Get("/export/vendors/excel", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportVendorStatisticsExcel)
+	laundry.Get("/export/vendors/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportVendorStatisticsPDF)
+	laundry.Get("/export/vendors/weekly/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportWeeklyVendorStatisticsPDF)
+	laundry.Get("/export/vendors/all-weekly/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportAllWeeklyVendorStatisticsPDF)
+	laundry.Get("/export/accounts/all/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportAllAccountsPDF)
+	laundry.Get("/export/accounts/exceeded/excel", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportExceededAccountsExcel)
 
 	// Absensi Ekstra
 	ekstraGroupHandler := handlers.NewAbsensiEkstraGroupHandler(db)
@@ -626,12 +626,15 @@ func main() {
 	cms.Put("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Upsert)
 	cms.Delete("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Delete)
 
+	// OCR result links persistence (stored in Go DB, not proxied to OCR microservice)
+	ocrResultLinkHandler := handlers.NewOCRResultLinkHandler(db)
+	ocrResultLinks := api.Group("/ocr-result-links", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+	ocrResultLinks.Get("/", ocrResultLinkHandler.List)
+	ocrResultLinks.Post("/", ocrResultLinkHandler.Create)
+
 	// OCR Service proxy — all routes require authentication; OCR service runs with auth disabled
 	ocrProxyHandler := handlers.NewOCRProxyHandler(cfg)
-	ocrResultLinkHandler := handlers.NewOCRResultLinkHandler(db)
 	ocr := api.Group("/ocr", middleware.Auth(cfg))
-	ocr.Get("/result-links", ocrResultLinkHandler.List)
-	ocr.Post("/result-links", ocrResultLinkHandler.Create)
 	ocr.All("/*", ocrProxyHandler.Proxy)
 
 	// Serve uploaded files
