@@ -164,6 +164,7 @@ func main() {
 
 	// Make substitute log foreign keys nullable for manual (no-schedule) entries
 	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jadwal_formal_id BIGINT UNSIGNED NULL")
+	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jadwal_diniyyah_id BIGINT UNSIGNED NULL")
 	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jadwal_diniyyah_id BIGINT UNSIGNED NULL")
 	db.Exec("ALTER TABLE halaqoh_substitute_logs MODIFY COLUMN halaqoh_assignment_id BIGINT UNSIGNED NULL")
 

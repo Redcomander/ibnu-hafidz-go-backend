@@ -1058,6 +1058,10 @@ func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
 		if req.OriginalTeacherID != nil && *req.OriginalTeacherID != 0 {
 			originalTeacherID = *req.OriginalTeacherID
 		}
+		if originalTeacherID == 0 {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "original_teacher_id wajib diisi untuk riwayat tanpa jadwal"})
+		}
 		oldLog.OriginalTeacherID = originalTeacherID
 		oldLog.SubstituteTeacherID = req.SubstituteTeacherID
 		oldLog.Date = date
@@ -1163,6 +1167,7 @@ func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
 		oldLog.Status = req.Status
 		oldLog.Reason = req.Reason
 		if err := tx.Save(&oldLog).Error; err != nil {
+			log.Printf("UpdateSubstituteHistory(formal) save failed id=%d jadwal_formal_id=%v jadwal_diniyyah_id=%v date=%s err=%v", oldLog.ID, oldLog.JadwalFormalID, oldLog.JadwalDiniyyahID, oldLog.Date.Format("2006-01-02"), err)
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui riwayat guru pengganti formal"})
 		}
