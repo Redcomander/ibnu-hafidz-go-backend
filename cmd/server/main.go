@@ -167,6 +167,12 @@ func main() {
 	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jadwal_diniyyah_id BIGINT UNSIGNED NULL")
 	db.Exec("ALTER TABLE halaqoh_substitute_logs MODIFY COLUMN halaqoh_assignment_id BIGINT UNSIGNED NULL")
 
+	// Fix substitute_logs jam columns that GORM may have created as DATETIME instead of TIME
+	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jam_mulai TIME NULL")
+	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jam_selesai TIME NULL")
+	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_mulai TIME NULL")
+	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_selesai TIME NULL")
+
 	// Seed Permissions
 	if err := database.SeedPermissions(db); err != nil {
 		log.Printf("Failed to seed permissions: %v", err)
