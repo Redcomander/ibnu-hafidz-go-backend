@@ -1911,7 +1911,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
 		absQ = applyFormalScheduleTypeFilter(absQ, "jf", typeStr)
 		if teacherID != "" {
 			absQ = absQ.Where("ta.user_id = ?", teacherID)
@@ -1932,7 +1932,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_diniyyah_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
 		if teacherID != "" {
 			absQ = absQ.Where("ta.user_id = ?", teacherID)
 		}
@@ -1961,7 +1961,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("sl.date >= ? AND sl.date < ?", startDate, endExclusive).
 			Where("sl.deleted_at IS NULL").
 			Where("sl.jadwal_formal_id IS NOT NULL").
-			Where("sl.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+			Where("sl.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
 		subAbsQ = applyFormalScheduleTypeFilter(subAbsQ, "jf", typeStr)
 		if teacherID != "" {
 			subAbsQ = subAbsQ.Where("sl.original_teacher_id = ?", teacherID)
@@ -1979,7 +1979,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
 			Joins("JOIN users original ON original.id = sld.original_teacher_id").
 			Where("sld.date >= ? AND sld.date < ?", startDate, endExclusive).
-			Where("sld.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+			Where("sld.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
 		if teacherID != "" {
 			subAbsQ = subAbsQ.Where("sld.original_teacher_id = ?", teacherID)
 		}
@@ -2094,14 +2094,14 @@ func (h *AbsensiHandler) DeleteTeacherAttendanceRecord(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Data absensi guru berhasil dihapus"})
 }
 
-// UpdateTeacherAttendanceRecord updates status/notes of a teacher_attendance. super_admin only.
+// UpdateTeacherAttendanceRecord updates status/notes of a teacher_attendance.
 func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
 	if err != nil {
 		return err
 	}
-	if !user.HasRole("super_admin") {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya super_admin yang dapat mengubah data absensi guru"})
+	if !canManageTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengubah data absensi guru"})
 	}
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil || id == 0 {
