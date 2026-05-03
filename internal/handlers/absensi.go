@@ -2119,7 +2119,7 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	}
 
 	if source == "substitute_log" {
-		validStatuses := map[string]bool{"Izin": true, "Sakit": true, "Alpha": true}
+		validStatuses := map[string]bool{"Izin": true, "Sakit": true, "Alpha": true, "Dinas Luar": true}
 		if req.Status != "" && !validStatuses[req.Status] {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status riwayat guru pengganti tidak valid"})
 		}
@@ -2155,7 +2155,7 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
 	}
 
-	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true}
+	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true, "Dinas Luar": true}
 	if req.Status != "" && !validStatuses[req.Status] {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
 	}
