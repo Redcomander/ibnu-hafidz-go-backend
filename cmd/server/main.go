@@ -179,6 +179,8 @@ func main() {
 	db.Exec("ALTER TABLE substitute_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
 	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_mulai VARCHAR(16) NOT NULL DEFAULT '-'")
 	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
+	// Extend teacher_attendances status enum to include Dinas Luar
+	db.Exec("ALTER TABLE teacher_attendances MODIFY COLUMN status ENUM('Hadir', 'Izin', 'Sakit', 'Alpha', 'Dinas Luar') NOT NULL")
 
 	// Seed Permissions
 	if err := database.SeedPermissions(db); err != nil {

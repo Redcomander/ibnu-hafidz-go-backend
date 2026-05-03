@@ -13,7 +13,7 @@ type TeacherAttendance struct {
 	JadwalDiniyyahID *uint          `gorm:"column:jadwal_diniyyah_id;index" json:"jadwal_diniyyah_id"`
 	UserID           uint           `gorm:"column:user_id;not null;index" json:"user_id"` // Original Assigned Teacher
 	Date             time.Time      `gorm:"type:date;not null;index" json:"date"`
-	Status           string         `gorm:"type:enum('Hadir', 'Izin', 'Sakit', 'Alpha');not null" json:"status"`
+	Status           string         `gorm:"type:enum('Hadir', 'Izin', 'Sakit', 'Alpha', 'Dinas Luar');not null" json:"status"`
 	Notes            string         `gorm:"type:text" json:"notes"`
 	PhotoPath        string         `gorm:"type:varchar(255)" json:"photo_path"`
 	CreatedAt        time.Time      `json:"created_at"`
