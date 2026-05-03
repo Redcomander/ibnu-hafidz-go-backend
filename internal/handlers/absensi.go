@@ -715,9 +715,20 @@ func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti diniyyah tidak ditemukan"})
 		}
 
-		tx.Model(&models.DiniyyahSchedule{}).
+		updates := map[string]interface{}{
+			"substitute_teacher_id": nil,
+			"substitute_date":       nil,
+			"substitute_status":     nil,
+			"substitute_reason":     nil,
+		}
+		if err := tx.Model(&models.DiniyyahSchedule{}).
 			Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", logEntry.JadwalDiniyyahID, logEntry.SubstituteTeacherID, logEntry.Date).
-			Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+			Updates(updates).Error; err != nil {
+			// Backward-compatible fallback for schemas that only have teacher/date columns.
+			tx.Model(&models.DiniyyahSchedule{}).
+				Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", logEntry.JadwalDiniyyahID, logEntry.SubstituteTeacherID, logEntry.Date).
+				Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+		}
 
 		if err := tx.Delete(&logEntry).Error; err != nil {
 			tx.Rollback()
@@ -731,9 +742,20 @@ func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 		}
 
 		if logEntry.JadwalFormalID != nil {
-			tx.Model(&models.Schedule{}).
+			updates := map[string]interface{}{
+				"substitute_teacher_id": nil,
+				"substitute_date":       nil,
+				"substitute_status":     nil,
+				"substitute_reason":     nil,
+			}
+			if err := tx.Model(&models.Schedule{}).
 				Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", *logEntry.JadwalFormalID, logEntry.SubstituteTeacherID, logEntry.Date).
-				Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+				Updates(updates).Error; err != nil {
+				// Backward-compatible fallback for schemas that only have teacher/date columns.
+				tx.Model(&models.Schedule{}).
+					Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", *logEntry.JadwalFormalID, logEntry.SubstituteTeacherID, logEntry.Date).
+					Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+			}
 		}
 
 		if err := tx.Delete(&logEntry).Error; err != nil {
@@ -1379,7 +1401,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	var substituteAbsenceHistory []AbsenceEntry
 	if !isDiniyyahAttendanceType(typeStr) {
 		subAbsQ := h.db.Table("substitute_logs sl").
-			Select("0 as id, sl.date, original.name as teacher, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sl.status, COALESCE(sl.reason, '') as notes, 'substitute_log' as source").
+			Select("sl.id, sl.date, original.name as teacher, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sl.status, COALESCE(sl.reason, '') as notes, 'substitute_log' as source").
 			Joins("JOIN jadwal_formal jf ON jf.id = sl.jadwal_formal_id").
 			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
 			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
@@ -1399,7 +1421,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		subAbsQ.Scan(&substituteAbsenceHistory)
 	} else {
 		subAbsQ := h.db.Table("substitute_logs_diniyyah sld").
-			Select("0 as id, sld.date, original.name as teacher, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sld.status, COALESCE(sld.reason, '') as notes, 'substitute_log' as source").
+			Select("sld.id, sld.date, original.name as teacher, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, sld.status, COALESCE(sld.reason, '') as notes, 'substitute_log' as source").
 			Joins("JOIN jadwal_diniyyahs jd ON jd.id = sld.jadwal_diniyyah_id").
 			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
@@ -1445,6 +1467,72 @@ func (h *AbsensiHandler) DeleteTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err != nil || id == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
 	}
+
+	source := strings.TrimSpace(strings.ToLower(c.Query("source", "teacher_attendance")))
+	typeStr := c.Query("type", "formal")
+	if source == "substitute_log" {
+		tx := h.db.Begin()
+
+		if isDiniyyahAttendanceType(typeStr) {
+			var logEntry models.SubstituteDiniyyahLog
+			if err := tx.First(&logEntry, uint(id)).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti diniyyah tidak ditemukan"})
+			}
+
+			updates := map[string]interface{}{
+				"substitute_teacher_id": nil,
+				"substitute_date":       nil,
+				"substitute_status":     nil,
+				"substitute_reason":     nil,
+			}
+			if err := tx.Model(&models.DiniyyahSchedule{}).
+				Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", logEntry.JadwalDiniyyahID, logEntry.SubstituteTeacherID, logEntry.Date).
+				Updates(updates).Error; err != nil {
+				// Backward-compatible fallback for schemas that only have teacher/date columns.
+				tx.Model(&models.DiniyyahSchedule{}).
+					Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", logEntry.JadwalDiniyyahID, logEntry.SubstituteTeacherID, logEntry.Date).
+					Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+			}
+
+			if err := tx.Delete(&logEntry).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti diniyyah"})
+			}
+		} else {
+			var logEntry models.SubstituteLog
+			if err := tx.First(&logEntry, uint(id)).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti formal tidak ditemukan"})
+			}
+
+			if logEntry.JadwalFormalID != nil {
+				updates := map[string]interface{}{
+					"substitute_teacher_id": nil,
+					"substitute_date":       nil,
+					"substitute_status":     nil,
+					"substitute_reason":     nil,
+				}
+				if err := tx.Model(&models.Schedule{}).
+					Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", *logEntry.JadwalFormalID, logEntry.SubstituteTeacherID, logEntry.Date).
+					Updates(updates).Error; err != nil {
+					// Backward-compatible fallback for schemas that only have teacher/date columns.
+					tx.Model(&models.Schedule{}).
+						Where("id = ? AND substitute_teacher_id = ? AND substitute_date = ?", *logEntry.JadwalFormalID, logEntry.SubstituteTeacherID, logEntry.Date).
+						Updates(map[string]interface{}{"substitute_teacher_id": nil, "substitute_date": nil})
+				}
+			}
+
+			if err := tx.Delete(&logEntry).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti formal"})
+			}
+		}
+
+		tx.Commit()
+		return c.JSON(fiber.Map{"message": "Riwayat guru pengganti berhasil dihapus"})
+	}
+
 	var record models.TeacherAttendance
 	if err := h.db.First(&record, uint(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
@@ -1468,10 +1556,9 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err != nil || id == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
 	}
-	var record models.TeacherAttendance
-	if err := h.db.First(&record, uint(id)).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
-	}
+
+	source := strings.TrimSpace(strings.ToLower(c.Query("source", "teacher_attendance")))
+	typeStr := c.Query("type", "formal")
 	var req struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
@@ -1479,6 +1566,44 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Body permintaan tidak valid"})
 	}
+
+	if source == "substitute_log" {
+		validStatuses := map[string]bool{"Izin": true, "Sakit": true, "Alpha": true}
+		if req.Status != "" && !validStatuses[req.Status] {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status riwayat guru pengganti tidak valid"})
+		}
+
+		updates := map[string]interface{}{"reason": req.Notes}
+		if req.Status != "" {
+			updates["status"] = req.Status
+		}
+
+		if isDiniyyahAttendanceType(typeStr) {
+			var logEntry models.SubstituteDiniyyahLog
+			if err := h.db.First(&logEntry, uint(id)).Error; err != nil {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti diniyyah tidak ditemukan"})
+			}
+			if err := h.db.Model(&logEntry).Updates(updates).Error; err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal mengubah riwayat guru pengganti diniyyah"})
+			}
+		} else {
+			var logEntry models.SubstituteLog
+			if err := h.db.First(&logEntry, uint(id)).Error; err != nil {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti formal tidak ditemukan"})
+			}
+			if err := h.db.Model(&logEntry).Updates(updates).Error; err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal mengubah riwayat guru pengganti formal"})
+			}
+		}
+
+		return c.JSON(fiber.Map{"message": "Riwayat guru pengganti berhasil diperbarui"})
+	}
+
+	var record models.TeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
+	}
+
 	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true}
 	if req.Status != "" && !validStatuses[req.Status] {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
