@@ -138,6 +138,10 @@ func main() {
 		log.Printf("Warning: cms_settings migration: %v", err)
 	}
 
+	if err := db.AutoMigrate(&models.OCRResultLink{}); err != nil {
+		log.Printf("Warning: ocr_result_links migration: %v", err)
+	}
+
 	// Drop 'name' column if it exists (cleanup from previous migration artifact)
 	// We ignore the error in case it's already dropped
 	// Drop 'name' column if it exists (cleanup from previous migration artifact)
@@ -624,7 +628,10 @@ func main() {
 
 	// OCR Service proxy — all routes require authentication; OCR service runs with auth disabled
 	ocrProxyHandler := handlers.NewOCRProxyHandler(cfg)
+	ocrResultLinkHandler := handlers.NewOCRResultLinkHandler(db)
 	ocr := api.Group("/ocr", middleware.Auth(cfg))
+	ocr.Get("/result-links", ocrResultLinkHandler.List)
+	ocr.Post("/result-links", ocrResultLinkHandler.Create)
 	ocr.All("/*", ocrProxyHandler.Proxy)
 
 	// Serve uploaded files
