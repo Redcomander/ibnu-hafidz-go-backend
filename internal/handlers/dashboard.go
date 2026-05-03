@@ -270,7 +270,7 @@ func getSubstituteRecords(db *gorm.DB, userID uint, monthStart string, monthEnd 
 		if sub.Session != nil {
 			sessionVal = *sub.Session
 		}
-		
+
 		reason := "-"
 		if sub.Reason != nil && *sub.Reason != "" {
 			reason = *sub.Reason
