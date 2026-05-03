@@ -70,6 +70,18 @@ func canAccessScheduledAttendance(user *models.User, originalTeacherID uint, sub
 	}
 	return false
 }
+func normalizeOptionalTime(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" || value == "-" {
+		return "", nil
+	}
+	for _, layout := range []string{"15:04", "15:04:05"} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t.Format("15:04:05"), nil
+		}
+	}
+	return "", fmt.Errorf("format waktu tidak valid")
+}
 
 func upsertFormalScheduleSubstitute(tx *gorm.DB, scheduleID uint, substituteTeacherID *uint, date *time.Time, status string, reason string) error {
 	updates := map[string]interface{}{
@@ -753,8 +765,16 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 
 	lessonLabel := strings.TrimSpace(req.Lesson)
 	kelasLabel := strings.TrimSpace(req.Kelas)
-	startTimeLabel := strings.TrimSpace(req.StartTime)
-	endTimeLabel := strings.TrimSpace(req.EndTime)
+	startTimeLabel, err := normalizeOptionalTime(req.StartTime)
+	if err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format jam_mulai tidak valid. Gunakan HH:MM"})
+	}
+	endTimeLabel, err := normalizeOptionalTime(req.EndTime)
+	if err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format jam_selesai tidak valid. Gunakan HH:MM"})
+	}
 
 	if isDiniyyah {
 		if req.JadwalID != 0 {
@@ -978,8 +998,14 @@ func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
 
 	lessonLabel := strings.TrimSpace(req.Lesson)
 	kelasLabel := strings.TrimSpace(req.Kelas)
-	startTimeLabel := strings.TrimSpace(req.StartTime)
-	endTimeLabel := strings.TrimSpace(req.EndTime)
+	startTimeLabel, err := normalizeOptionalTime(req.StartTime)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format jam_mulai tidak valid. Gunakan HH:MM"})
+	}
+	endTimeLabel, err := normalizeOptionalTime(req.EndTime)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format jam_selesai tidak valid. Gunakan HH:MM"})
+	}
 
 	tx := h.db.Begin()
 	if isDiniyyahAttendanceType(req.Type) {
