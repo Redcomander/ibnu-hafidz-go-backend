@@ -57,7 +57,7 @@ func Load() *Config {
 		S3AccessKey: getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
 
-		OCRBaseURL: getEnv("OCR_BASE_URL", "http://localhost:3099"),
+		OCRBaseURL: getEnv("OCR_BASE_URL", "http://localhost:3099/api"),
 		OCRAPIKey:  getEnv("OCR_API_KEY", ""),
 	}
 }
