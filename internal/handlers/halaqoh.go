@@ -846,6 +846,7 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 			record.HalaqohAssignmentID, record.StudentID, req.Date, session).
 			First(&existing).Error
 
+		var attendanceID uint
 		if err == gorm.ErrRecordNotFound {
 			notes := record.Notes
 			var notesPtr *string
@@ -853,7 +854,7 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 				notesPtr = &notes
 			}
 			sid := record.StudentID
-			tx.Create(&models.HalaqohAttendance{
+			newAtt := models.HalaqohAttendance{
 				HalaqohAssignmentID: record.HalaqohAssignmentID,
 				StudentID:           &sid,
 				Date:                parseDate(req.Date),
@@ -861,7 +862,12 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 				Status:              record.Status,
 				Notes:               notesPtr,
 				SubmittedBy:         &user.ID,
-			})
+			}
+			if err := tx.Create(&newAtt).Error; err != nil {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to create halaqoh attendance"})
+			}
+			attendanceID = newAtt.ID
 		} else if err == nil {
 			updates := map[string]interface{}{
 				"status":       record.Status,
@@ -872,7 +878,31 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 			} else {
 				updates["notes"] = nil
 			}
-			tx.Model(&existing).Updates(updates)
+			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to update halaqoh attendance"})
+			}
+			attendanceID = existing.ID
+		} else {
+			tx.Rollback()
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to load halaqoh attendance"})
+		}
+
+		teacherName := ""
+		tx.Table("users").Select("name").Where("id = ?", assignment.UserID).Scan(&teacherName)
+		studentName := ""
+		tx.Table("students").Select("nama_lengkap").Where("id = ?", record.StudentID).Scan(&studentName)
+
+		if attendanceID != 0 {
+			if err := tx.Where("halaqoh_attendance_id = ?", attendanceID).
+				Assign(models.HalaqohAttendanceSnapshot{
+					TeacherName: teacherName,
+					StudentName: studentName,
+				}).
+				FirstOrCreate(&models.HalaqohAttendanceSnapshot{}).Error; err != nil {
+				tx.Rollback()
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to save halaqoh attendance snapshot"})
+			}
 		}
 	}
 	tx.Commit()
@@ -1092,6 +1122,7 @@ func (h *HalaqohHandler) StudentHistory(c *fiber.Ctx) error {
 	query := h.db.Model(&models.HalaqohAttendance{}).
 		Preload("HalaqohAssignment.Student").
 		Preload("HalaqohAssignment.Teacher").
+		Preload("Snapshot").
 		Preload("Submitter")
 
 	if sid := c.Query("student_id"); sid != "" {

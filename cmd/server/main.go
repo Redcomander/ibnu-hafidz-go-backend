@@ -85,6 +85,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&models.HalaqohAssignment{},
 		&models.HalaqohAttendance{},
+		&models.HalaqohAttendanceSnapshot{},
 		&models.HalaqohTeacherAttendance{},
 		&models.HalaqohSubstituteLog{},
 	); err != nil {
