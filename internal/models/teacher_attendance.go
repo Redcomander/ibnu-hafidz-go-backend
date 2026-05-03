@@ -49,6 +49,8 @@ type SubstituteLog struct {
 	OriginalTeacherID   uint           `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
 	SubstituteTeacherID uint           `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
 	Date                time.Time      `gorm:"type:date;not null" json:"date"`
+	StartTime           *string        `gorm:"column:jam_mulai;type:time" json:"jam_mulai"`
+	EndTime             *string        `gorm:"column:jam_selesai;type:time" json:"jam_selesai"`
 	Status              string         `gorm:"type:varchar(50)" json:"status"` // Status of original teacher (Sakit/Izin/etc)
 	Reason              string         `gorm:"type:text" json:"reason"`
 	CreatedAt           time.Time      `json:"created_at"`
@@ -71,6 +73,8 @@ type SubstituteLogSnapshot struct {
 	SubstituteLogID uint      `gorm:"column:substitute_log_id;uniqueIndex;not null" json:"substitute_log_id"`
 	Lesson          string    `gorm:"column:lesson;type:varchar(255);not null" json:"lesson"`
 	Kelas           string    `gorm:"column:kelas;type:varchar(255);not null" json:"kelas"`
+	StartTime       string    `gorm:"column:jam_mulai;type:varchar(16);not null;default:'-'" json:"jam_mulai"`
+	EndTime         string    `gorm:"column:jam_selesai;type:varchar(16);not null;default:'-'" json:"jam_selesai"`
 	OriginalTeacher string    `gorm:"column:original_teacher;type:varchar(255);not null" json:"original_teacher"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
@@ -84,6 +88,8 @@ type SubstituteDiniyyahLog struct {
 	OriginalTeacherID   uint      `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
 	SubstituteTeacherID uint      `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
 	Date                time.Time `gorm:"type:date;not null" json:"date"`
+	StartTime           *string   `gorm:"column:jam_mulai;type:time" json:"jam_mulai"`
+	EndTime             *string   `gorm:"column:jam_selesai;type:time" json:"jam_selesai"`
 	Status              string    `gorm:"type:varchar(50)" json:"status"`
 	Reason              string    `gorm:"type:text" json:"reason"`
 	CreatedAt           time.Time `json:"created_at"`
@@ -101,6 +107,8 @@ type SubstituteDiniyyahLogSnapshot struct {
 	SubstituteDiniyyahLogID uint      `gorm:"column:substitute_diniyyah_log_id;uniqueIndex;not null" json:"substitute_diniyyah_log_id"`
 	Lesson                  string    `gorm:"column:lesson;type:varchar(255);not null" json:"lesson"`
 	Kelas                   string    `gorm:"column:kelas;type:varchar(255);not null" json:"kelas"`
+	StartTime               string    `gorm:"column:jam_mulai;type:varchar(16);not null;default:'-'" json:"jam_mulai"`
+	EndTime                 string    `gorm:"column:jam_selesai;type:varchar(16);not null;default:'-'" json:"jam_selesai"`
 	OriginalTeacher         string    `gorm:"column:original_teacher;type:varchar(255);not null" json:"original_teacher"`
 	CreatedAt               time.Time `json:"created_at"`
 	UpdatedAt               time.Time `json:"updated_at"`
