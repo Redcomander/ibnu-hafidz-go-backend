@@ -59,7 +59,7 @@ func (h *HalaqohHandler) canAccessAssignment(user *models.User, assignment *mode
 	if user == nil || assignment == nil {
 		return false
 	}
-	if canBypassTimeRestriction(user) || user.ID == assignment.UserID {
+	if canBypassTimeRestriction(user) || canManageHalaqohAssignments(user) || user.ID == assignment.UserID {
 		return true
 	}
 	if assignment.HelperTeacherID != nil && *assignment.HelperTeacherID == user.ID {
@@ -104,6 +104,29 @@ func canManageHalaqohTeacherAttendance(user *models.User) bool {
 		user.HasPermission("halaqoh.view_all") ||
 		user.HasPermission("halaqoh-assignments.edit") ||
 		user.HasPermission("halaqoh-assignments.delete")
+}
+
+func canManageHalaqohAssignments(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+
+	return user.HasPermission("halaqoh-assignments.edit") ||
+		user.HasPermission("halaqoh-assignments.delete") ||
+		user.HasRole("admin") ||
+		user.HasRole("super_admin") ||
+		user.HasRole("tim_presensi")
+}
+
+func canSubmitHalaqohTeacherAttendance(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+
+	return user.HasRole("super_admin") ||
+		user.HasRole("admin") ||
+		user.HasRole("tim_presensi") ||
+		user.HasPermission("halaqoh.view_all")
 }
 
 // isWithinSessionTime checks if the current time is within the session window.
@@ -369,9 +392,7 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 		IsHelper            bool `json:"is_helper"`
 	}
 	var accessInfos []AccessInfo
-	canManage := user.HasPermission("halaqoh-assignments.edit") ||
-		user.HasPermission("halaqoh-assignments.delete") ||
-		user.HasRole("admin") || user.HasRole("super_admin") || user.HasRole("tim_presensi")
+	canManage := canManageHalaqohAssignments(user)
 
 	for _, tid := range groupOrder {
 		isOwn := user.ID == tid
@@ -1171,7 +1192,7 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	subErr := h.db.Where("halaqoh_assignment_id = ? AND date = ? AND session = ? AND is_active = ?",
 		assignmentID, dateStr, session, true).First(&log).Error
 
-	if !canManageHalaqohTeacherAttendance(user) {
+	if !canSubmitHalaqohTeacherAttendance(user) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Absensi guru halaqoh hanya dapat diisi oleh tim presensi/admin"})
 	}
 
