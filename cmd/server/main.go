@@ -622,6 +622,11 @@ func main() {
 	cms.Put("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Upsert)
 	cms.Delete("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Delete)
 
+	// OCR Service proxy — all routes require authentication; OCR service runs with auth disabled
+	ocrProxyHandler := handlers.NewOCRProxyHandler(cfg)
+	ocr := api.Group("/ocr", middleware.Auth(cfg))
+	ocr.All("/*", ocrProxyHandler.Proxy)
+
 	// Serve uploaded files
 	app.Static("/uploads", uploadPath)
 
