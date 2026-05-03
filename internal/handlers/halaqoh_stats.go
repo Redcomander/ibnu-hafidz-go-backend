@@ -299,6 +299,7 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 		Session string `json:"session"`
 		Status  string `json:"status"`
 		Notes   string `json:"notes"`
+		Source  string `json:"source,omitempty"`
 	}
 	var absenceHistory []AbsenceEntry
 	for _, a := range attendances {
@@ -318,8 +319,40 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 				Session: a.Session,
 				Status:  a.Status,
 				Notes:   notes,
+				Source:  "teacher_attendance",
 			})
 		}
+	}
+
+	for _, log := range subLogs {
+		if log.Status == nil {
+			continue
+		}
+		status := capitalize(*log.Status)
+		if status == "Hadir" || status == "" {
+			continue
+		}
+		if teacherID != 0 && log.OriginalTeacherID != teacherID {
+			continue
+		}
+
+		notes := ""
+		if log.Reason != nil {
+			notes = *log.Reason
+		}
+		sess := ""
+		if log.Session != nil {
+			sess = *log.Session
+		}
+		absenceHistory = append(absenceHistory, AbsenceEntry{
+			ID:      log.ID,
+			Date:    log.Date.Format("2006-01-02"),
+			Teacher: log.OriginalTeacher.Name,
+			Session: sess,
+			Status:  status,
+			Notes:   notes,
+			Source:  "substitute_log",
+		})
 	}
 
 	return c.JSON(fiber.Map{

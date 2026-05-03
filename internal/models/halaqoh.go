@@ -51,9 +51,9 @@ type HalaqohAttendance struct {
 	UpdatedAt           time.Time `gorm:"column:updated_at" json:"updated_at"`
 
 	// Relationships
-	HalaqohAssignment HalaqohAssignment `gorm:"foreignKey:HalaqohAssignmentID" json:"halaqoh_assignment,omitempty"`
-	Student           *Student          `gorm:"foreignKey:StudentID" json:"student,omitempty"`
-	Submitter         *User             `gorm:"foreignKey:SubmittedBy" json:"submitter,omitempty"`
+	HalaqohAssignment HalaqohAssignment          `gorm:"foreignKey:HalaqohAssignmentID" json:"halaqoh_assignment,omitempty"`
+	Student           *Student                   `gorm:"foreignKey:StudentID" json:"student,omitempty"`
+	Submitter         *User                      `gorm:"foreignKey:SubmittedBy" json:"submitter,omitempty"`
 	Snapshot          *HalaqohAttendanceSnapshot `gorm:"foreignKey:HalaqohAttendanceID" json:"snapshot,omitempty"`
 }
 
@@ -62,12 +62,12 @@ func (HalaqohAttendance) TableName() string { return "halaqoh_attendances" }
 // HalaqohAttendanceSnapshot stores immutable labels at submit-time.
 // This keeps history stable if assignment teacher/student mapping changes later.
 type HalaqohAttendanceSnapshot struct {
-	ID                 uint      `gorm:"primaryKey" json:"id"`
+	ID                  uint      `gorm:"primaryKey" json:"id"`
 	HalaqohAttendanceID uint      `gorm:"column:halaqoh_attendance_id;uniqueIndex;not null" json:"halaqoh_attendance_id"`
-	TeacherName        string    `gorm:"column:teacher_name;type:varchar(255);not null" json:"teacher_name"`
-	StudentName        string    `gorm:"column:student_name;type:varchar(255);not null" json:"student_name"`
-	CreatedAt          time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt          time.Time `gorm:"column:updated_at" json:"updated_at"`
+	TeacherName         string    `gorm:"column:teacher_name;type:varchar(255);not null" json:"teacher_name"`
+	StudentName         string    `gorm:"column:student_name;type:varchar(255);not null" json:"student_name"`
+	CreatedAt           time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt           time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (HalaqohAttendanceSnapshot) TableName() string { return "halaqoh_attendance_snapshots" }

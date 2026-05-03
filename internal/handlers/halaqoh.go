@@ -656,6 +656,13 @@ func (h *HalaqohHandler) DeleteTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err != nil || id == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
 	}
+	source := strings.ToLower(strings.TrimSpace(c.Query("source", "teacher_attendance")))
+	if source == "substitute_log" {
+		if err := h.db.Delete(&models.HalaqohSubstituteLog{}, uint(id)).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti halaqoh"})
+		}
+		return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil dihapus"})
+	}
 	var record models.HalaqohTeacherAttendance
 	if err := h.db.First(&record, uint(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi halaqoh tidak ditemukan"})
@@ -679,10 +686,7 @@ func (h *HalaqohHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err != nil || id == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID tidak valid"})
 	}
-	var record models.HalaqohTeacherAttendance
-	if err := h.db.First(&record, uint(id)).Error; err != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi halaqoh tidak ditemukan"})
-	}
+	source := strings.ToLower(strings.TrimSpace(c.Query("source", "teacher_attendance")))
 	var req struct {
 		Status string `json:"status"`
 		Notes  string `json:"notes"`
@@ -693,6 +697,29 @@ func (h *HalaqohHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true}
 	if req.Status != "" && !validStatuses[req.Status] {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
+	}
+	if source == "substitute_log" {
+		var log models.HalaqohSubstituteLog
+		if err := h.db.First(&log, uint(id)).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti halaqoh tidak ditemukan"})
+		}
+		updates := map[string]interface{}{"reason": nil}
+		if req.Notes != "" {
+			updates["reason"] = req.Notes
+		}
+		if req.Status != "" {
+			s := strings.ToLower(req.Status)
+			updates["status"] = &s
+		}
+		if err := h.db.Model(&log).Updates(updates).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal mengubah riwayat guru pengganti halaqoh"})
+		}
+		return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil diperbarui"})
+	}
+
+	var record models.HalaqohTeacherAttendance
+	if err := h.db.First(&record, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi halaqoh tidak ditemukan"})
 	}
 	updates := map[string]interface{}{"notes": req.Notes}
 	if req.Status != "" {
