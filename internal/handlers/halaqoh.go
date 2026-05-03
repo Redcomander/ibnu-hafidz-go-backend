@@ -588,7 +588,7 @@ func (h *HalaqohHandler) AssignSubstitute(c *fiber.Ctx) error {
 			})
 		} else {
 			h.db.Create(&models.HalaqohSubstituteLog{
-				HalaqohAssignmentID: uint(id),
+				HalaqohAssignmentID: func() *uint { v := uint(id); return &v }(),
 				OriginalTeacherID:   assignment.UserID,
 				SubstituteTeacherID: req.SubstituteTeacherID,
 				Date:                parseDate(req.SubstituteDate),
@@ -641,6 +641,104 @@ func (h *HalaqohHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil dihapus"})
+}
+
+// AddSubstituteHistoryManual creates a manual halaqoh substitute history record without requiring an assignment.
+func (h *HalaqohHandler) AddSubstituteHistoryManual(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canManageHalaqohTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk menambah riwayat guru pengganti halaqoh"})
+	}
+
+	var req struct {
+		OriginalTeacherID   uint   `json:"original_teacher_id"`
+		SubstituteTeacherID uint   `json:"substitute_teacher_id"`
+		Date                string `json:"date"`
+		Session             string `json:"session"`
+		Status              string `json:"status"`
+		Reason              string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	if req.OriginalTeacherID == 0 || req.SubstituteTeacherID == 0 || req.Date == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "original_teacher_id, substitute_teacher_id, dan date wajib diisi"})
+	}
+
+	date := parseDate(req.Date)
+	status := req.Status
+	session := req.Session
+	reason := req.Reason
+	logEntry := models.HalaqohSubstituteLog{
+		HalaqohAssignmentID: nil,
+		OriginalTeacherID:   req.OriginalTeacherID,
+		SubstituteTeacherID: req.SubstituteTeacherID,
+		Date:                date,
+		Session:             &session,
+		Status:              &status,
+		Reason:              &reason,
+		IsActive:            true,
+	}
+	if err := h.db.Create(&logEntry).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal membuat riwayat guru pengganti halaqoh"})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil ditambahkan"})
+}
+
+// UpdateSubstituteHistoryManual updates a manual halaqoh substitute history record.
+func (h *HalaqohHandler) UpdateSubstituteHistoryManual(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canManageHalaqohTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengubah riwayat guru pengganti halaqoh"})
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID riwayat tidak valid"})
+	}
+
+	var req struct {
+		OriginalTeacherID   uint   `json:"original_teacher_id"`
+		SubstituteTeacherID uint   `json:"substitute_teacher_id"`
+		Date                string `json:"date"`
+		Session             string `json:"session"`
+		Status              string `json:"status"`
+		Reason              string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	if req.SubstituteTeacherID == 0 || req.Date == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "substitute_teacher_id dan date wajib diisi"})
+	}
+
+	var log models.HalaqohSubstituteLog
+	if err := h.db.First(&log, uint(id)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat tidak ditemukan"})
+	}
+
+	date := parseDate(req.Date)
+	status := req.Status
+	session := req.Session
+	reason := req.Reason
+	log.Date = date
+	log.Session = &session
+	log.Status = &status
+	log.Reason = &reason
+	log.SubstituteTeacherID = req.SubstituteTeacherID
+	if req.OriginalTeacherID != 0 {
+		log.OriginalTeacherID = req.OriginalTeacherID
+	}
+	if err := h.db.Save(&log).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui riwayat guru pengganti halaqoh"})
+	}
+	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti halaqoh berhasil diperbarui"})
 }
 
 // DeleteTeacherAttendanceRecord deletes a single halaqoh_teacher_attendance row. super_admin only.

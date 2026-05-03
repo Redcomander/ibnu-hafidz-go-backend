@@ -71,6 +71,52 @@ func canAccessScheduledAttendance(user *models.User, originalTeacherID uint, sub
 	return false
 }
 
+func upsertFormalScheduleSubstitute(tx *gorm.DB, scheduleID uint, substituteTeacherID *uint, date *time.Time, status string, reason string) error {
+	updates := map[string]interface{}{
+		"substitute_teacher_id": substituteTeacherID,
+		"substitute_date":       date,
+		"substitute_status":     nil,
+		"substitute_reason":     nil,
+	}
+	if substituteTeacherID != nil {
+		updates["substitute_status"] = status
+		updates["substitute_reason"] = reason
+	}
+	if err := tx.Model(&models.Schedule{}).Where("id = ?", scheduleID).Updates(updates).Error; err != nil {
+		fallback := map[string]interface{}{
+			"substitute_teacher_id": substituteTeacherID,
+			"substitute_date":       date,
+		}
+		if err2 := tx.Model(&models.Schedule{}).Where("id = ?", scheduleID).Updates(fallback).Error; err2 != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func upsertDiniyyahScheduleSubstitute(tx *gorm.DB, scheduleID uint, substituteTeacherID *uint, date *time.Time, status string, reason string) error {
+	updates := map[string]interface{}{
+		"substitute_teacher_id": substituteTeacherID,
+		"substitute_date":       date,
+		"substitute_status":     nil,
+		"substitute_reason":     nil,
+	}
+	if substituteTeacherID != nil {
+		updates["substitute_status"] = status
+		updates["substitute_reason"] = reason
+	}
+	if err := tx.Model(&models.DiniyyahSchedule{}).Where("id = ?", scheduleID).Updates(updates).Error; err != nil {
+		fallback := map[string]interface{}{
+			"substitute_teacher_id": substituteTeacherID,
+			"substitute_date":       date,
+		}
+		if err2 := tx.Model(&models.DiniyyahSchedule{}).Where("id = ?", scheduleID).Updates(fallback).Error; err2 != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ListAssignableTeachers returns all active users that can be selected as substitute teachers.
 func (h *AbsensiHandler) ListAssignableTeachers(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
@@ -605,6 +651,47 @@ func (h *AbsensiHandler) resolveAttendanceSnapshotLabels(attType string, jadwalI
 	return row.Lesson, row.Kelas, nil
 }
 
+func (h *AbsensiHandler) resolveUserNameByID(userID uint) string {
+	if userID == 0 {
+		return ""
+	}
+	var user models.User
+	if err := h.db.Select("id", "name").First(&user, userID).Error; err != nil {
+		return ""
+	}
+	return user.Name
+}
+
+func (h *AbsensiHandler) upsertFormalSubstituteSnapshot(tx *gorm.DB, logID uint, lesson, kelas, originalTeacher string) error {
+	if lesson == "" {
+		lesson = "-"
+	}
+	if kelas == "" {
+		kelas = "-"
+	}
+	if originalTeacher == "" {
+		originalTeacher = "-"
+	}
+	return tx.Where("substitute_log_id = ?", logID).
+		Assign(models.SubstituteLogSnapshot{Lesson: lesson, Kelas: kelas, OriginalTeacher: originalTeacher}).
+		FirstOrCreate(&models.SubstituteLogSnapshot{}).Error
+}
+
+func (h *AbsensiHandler) upsertDiniyyahSubstituteSnapshot(tx *gorm.DB, logID uint, lesson, kelas, originalTeacher string) error {
+	if lesson == "" {
+		lesson = "-"
+	}
+	if kelas == "" {
+		kelas = "-"
+	}
+	if originalTeacher == "" {
+		originalTeacher = "-"
+	}
+	return tx.Where("substitute_diniyyah_log_id = ?", logID).
+		Assign(models.SubstituteDiniyyahLogSnapshot{Lesson: lesson, Kelas: kelas, OriginalTeacher: originalTeacher}).
+		FirstOrCreate(&models.SubstituteDiniyyahLogSnapshot{}).Error
+}
+
 // AssignSubstitute assigns a substitute teacher to a schedule
 func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
@@ -624,6 +711,9 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 		Reason              string `json:"reason"`
 		Status              string `json:"status"` // Status of original teacher (Sakit/Izin)
 		Type                string `json:"type"`   // "formal" or "diniyyah"
+		Lesson              string `json:"lesson"`
+		Kelas               string `json:"kelas"`
+		OriginalTeacherID   *uint  `json:"original_teacher_id"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -635,49 +725,86 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 	}
 
 	tx := h.db.Begin()
-	date, _ := time.Parse("2006-01-02", req.Date)
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format tanggal tidak valid"})
+	}
+
 	var originalTeacherID uint
 	var jadwalFormalID *uint
 	var jadwalDiniyyahID *uint
 	hasLegacyDiniyyahLogs := tx.Migrator().HasTable(&models.SubstituteDiniyyahLog{})
+	isDiniyyah := isDiniyyahAttendanceType(req.Type)
 
-	if req.Type == "diniyyah" {
-		var jadwal models.DiniyyahSchedule
-		if err := tx.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
-			tx.Rollback()
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Diniyyah schedule not found"})
-		}
-		jadwal.SubstituteTeacherID = req.SubstituteTeacherID
-		if req.SubstituteTeacherID != nil {
-			jadwal.SubstituteDate = &date
+	lessonLabel := strings.TrimSpace(req.Lesson)
+	kelasLabel := strings.TrimSpace(req.Kelas)
+
+	if isDiniyyah {
+		if req.JadwalID != 0 {
+			var jadwal models.DiniyyahSchedule
+			if err := tx.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Diniyyah schedule not found"})
+			}
+			var scheduleDate *time.Time
+			if req.SubstituteTeacherID != nil {
+				scheduleDate = &date
+			}
+			if err := upsertDiniyyahScheduleSubstitute(tx, jadwal.ID, req.SubstituteTeacherID, scheduleDate, req.Status, req.Reason); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update schedule"})
+			}
+			originalTeacherID = jadwal.Assignment.UserID
+			if req.OriginalTeacherID != nil && *req.OriginalTeacherID != 0 {
+				originalTeacherID = *req.OriginalTeacherID
+			}
+			jadwalDiniyyahID = &req.JadwalID
 		} else {
-			jadwal.SubstituteDate = nil
+			if req.OriginalTeacherID == nil || *req.OriginalTeacherID == 0 {
+				tx.Rollback()
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "original_teacher_id wajib diisi untuk entri manual diniyyah"})
+			}
+			originalTeacherID = *req.OriginalTeacherID
 		}
-		if err := tx.Save(&jadwal).Error; err != nil {
-			tx.Rollback()
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update schedule"})
-		}
-		originalTeacherID = jadwal.Assignment.UserID
-		jadwalDiniyyahID = &req.JadwalID
-	} else {
+	} else if req.JadwalID != 0 {
 		var jadwal models.Schedule
 		if err := tx.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
 			tx.Rollback()
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 		}
-		jadwal.SubstituteTeacherID = req.SubstituteTeacherID
+		var scheduleDate *time.Time
 		if req.SubstituteTeacherID != nil {
-			jadwal.SubstituteDate = &date
-		} else {
-			jadwal.SubstituteDate = nil
+			scheduleDate = &date
 		}
-		if err := tx.Save(&jadwal).Error; err != nil {
+		if err := upsertFormalScheduleSubstitute(tx, jadwal.ID, req.SubstituteTeacherID, scheduleDate, req.Status, req.Reason); err != nil {
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update schedule"})
 		}
 		originalTeacherID = jadwal.Assignment.UserID
+		if req.OriginalTeacherID != nil && *req.OriginalTeacherID != 0 {
+			originalTeacherID = *req.OriginalTeacherID
+		}
 		jadwalFormalID = &req.JadwalID
+	} else {
+		if req.OriginalTeacherID == nil || *req.OriginalTeacherID == 0 {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "original_teacher_id wajib diisi untuk entri manual"})
+		}
+		originalTeacherID = *req.OriginalTeacherID
 	}
+
+	if req.JadwalID != 0 && (lessonLabel == "" || kelasLabel == "") {
+		if fallbackLesson, fallbackKelas, err := h.resolveAttendanceSnapshotLabels(req.Type, req.JadwalID); err == nil {
+			if lessonLabel == "" {
+				lessonLabel = fallbackLesson
+			}
+			if kelasLabel == "" {
+				kelasLabel = fallbackKelas
+			}
+		}
+	}
+	originalTeacherName := h.resolveUserNameByID(originalTeacherID)
 
 	if jadwalFormalID != nil {
 		cleanupLogs := tx.Where("date = ?", date).
@@ -697,7 +824,7 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 
 	// 2. Create Substitute Log
 	if req.SubstituteTeacherID != nil {
-		if jadwalFormalID != nil {
+		if !isDiniyyah {
 			logEntry := models.SubstituteLog{
 				JadwalFormalID:      jadwalFormalID,
 				OriginalTeacherID:   originalTeacherID,
@@ -711,11 +838,15 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 				log.Println("Failed to create log:", err)
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create log"})
 			}
+			if err := h.upsertFormalSubstituteSnapshot(tx, logEntry.ID, lessonLabel, kelasLabel, originalTeacherName); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to store substitute snapshot"})
+			}
 		}
 
 		if jadwalDiniyyahID != nil && hasLegacyDiniyyahLogs {
 			legacyLogEntry := models.SubstituteDiniyyahLog{
-				JadwalDiniyyahID:    *jadwalDiniyyahID,
+				JadwalDiniyyahID:    jadwalDiniyyahID,
 				OriginalTeacherID:   originalTeacherID,
 				SubstituteTeacherID: *req.SubstituteTeacherID,
 				Date:                date,
@@ -727,11 +858,224 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 				log.Println("Failed to create legacy diniyyah log:", err)
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create diniyyah log"})
 			}
+			if err := h.upsertDiniyyahSubstituteSnapshot(tx, legacyLogEntry.ID, lessonLabel, kelasLabel, originalTeacherName); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to store diniyyah substitute snapshot"})
+			}
+		} else if isDiniyyah && hasLegacyDiniyyahLogs {
+			// Manual entry: no schedule, create log with nil JadwalDiniyyahID
+			legacyLogEntry := models.SubstituteDiniyyahLog{
+				JadwalDiniyyahID:    nil,
+				OriginalTeacherID:   originalTeacherID,
+				SubstituteTeacherID: *req.SubstituteTeacherID,
+				Date:                date,
+				Status:              req.Status,
+				Reason:              req.Reason,
+			}
+			if err := tx.Create(&legacyLogEntry).Error; err != nil {
+				tx.Rollback()
+				log.Println("Failed to create legacy diniyyah log:", err)
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create diniyyah log"})
+			}
+			if err := h.upsertDiniyyahSubstituteSnapshot(tx, legacyLogEntry.ID, lessonLabel, kelasLabel, originalTeacherName); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to store diniyyah substitute snapshot"})
+			}
 		}
 	}
 
 	tx.Commit()
 	return c.JSON(fiber.Map{"message": "Substitute assigned successfully"})
+}
+
+// UpdateSubstituteHistory updates a substitute history record and synchronizes schedule columns for old-web parity.
+func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canManageTeacherAttendance(user) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Anda tidak memiliki akses untuk mengubah riwayat guru pengganti"})
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "ID riwayat tidak valid"})
+	}
+
+	var req struct {
+		JadwalID            uint   `json:"jadwal_id"`
+		SubstituteTeacherID uint   `json:"substitute_teacher_id"`
+		Date                string `json:"date"`
+		Status              string `json:"status"`
+		Reason              string `json:"reason"`
+		Type                string `json:"type"`
+		Lesson              string `json:"lesson"`
+		Kelas               string `json:"kelas"`
+		OriginalTeacherID   *uint  `json:"original_teacher_id"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
+	}
+	if req.Type == "" {
+		req.Type = c.Query("type", "formal")
+	}
+	if req.SubstituteTeacherID == 0 || req.Date == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "substitute_teacher_id dan date wajib diisi"})
+	}
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format tanggal tidak valid"})
+	}
+
+	lessonLabel := strings.TrimSpace(req.Lesson)
+	kelasLabel := strings.TrimSpace(req.Kelas)
+
+	tx := h.db.Begin()
+	if isDiniyyahAttendanceType(req.Type) {
+		var oldLog models.SubstituteDiniyyahLog
+		if err := tx.First(&oldLog, uint(id)).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti diniyyah tidak ditemukan"})
+		}
+
+		if oldLog.JadwalDiniyyahID != nil {
+			if err := upsertDiniyyahScheduleSubstitute(tx, *oldLog.JadwalDiniyyahID, nil, nil, "", ""); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal sinkronisasi jadwal lama"})
+			}
+		}
+
+		var originalTeacherID uint
+		if req.JadwalID != 0 {
+			var jadwal models.DiniyyahSchedule
+			if err := tx.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Jadwal diniyyah tidak ditemukan"})
+			}
+			scheduleDate := date
+			subID := req.SubstituteTeacherID
+			if err := upsertDiniyyahScheduleSubstitute(tx, jadwal.ID, &subID, &scheduleDate, req.Status, req.Reason); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal sinkronisasi jadwal baru"})
+			}
+			if err := tx.Model(&models.SubstituteDiniyyahLog{}).
+				Where("jadwal_diniyyah_id = ? AND date = ? AND id <> ?", req.JadwalID, date, oldLog.ID).
+				Delete(&models.SubstituteDiniyyahLog{}).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal membersihkan duplikat riwayat"})
+			}
+			jadwalID := req.JadwalID
+			oldLog.JadwalDiniyyahID = &jadwalID
+			originalTeacherID = jadwal.Assignment.UserID
+		} else {
+			oldLog.JadwalDiniyyahID = nil
+			originalTeacherID = oldLog.OriginalTeacherID
+		}
+
+		if req.OriginalTeacherID != nil && *req.OriginalTeacherID != 0 {
+			originalTeacherID = *req.OriginalTeacherID
+		}
+		oldLog.OriginalTeacherID = originalTeacherID
+		oldLog.SubstituteTeacherID = req.SubstituteTeacherID
+		oldLog.Date = date
+		oldLog.Status = req.Status
+		oldLog.Reason = req.Reason
+		if err := tx.Save(&oldLog).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui riwayat guru pengganti diniyyah"})
+		}
+		if lessonLabel == "" || kelasLabel == "" {
+			if req.JadwalID != 0 {
+				if fallbackLesson, fallbackKelas, err := h.resolveAttendanceSnapshotLabels(req.Type, req.JadwalID); err == nil {
+					if lessonLabel == "" {
+						lessonLabel = fallbackLesson
+					}
+					if kelasLabel == "" {
+						kelasLabel = fallbackKelas
+					}
+				}
+			}
+		}
+		if err := h.upsertDiniyyahSubstituteSnapshot(tx, oldLog.ID, lessonLabel, kelasLabel, h.resolveUserNameByID(originalTeacherID)); err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui snapshot riwayat diniyyah"})
+		}
+	} else {
+		var oldLog models.SubstituteLog
+		if err := tx.First(&oldLog, uint(id)).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Riwayat guru pengganti formal tidak ditemukan"})
+		}
+
+		if oldLog.JadwalFormalID != nil {
+			if err := upsertFormalScheduleSubstitute(tx, *oldLog.JadwalFormalID, nil, nil, "", ""); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal sinkronisasi jadwal lama"})
+			}
+		}
+
+		var originalTeacherID uint
+		if req.JadwalID != 0 {
+			var jadwal models.Schedule
+			if err := tx.Preload("Assignment").First(&jadwal, req.JadwalID).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Jadwal formal tidak ditemukan"})
+			}
+			scheduleDate := date
+			subID := req.SubstituteTeacherID
+			if err := upsertFormalScheduleSubstitute(tx, jadwal.ID, &subID, &scheduleDate, req.Status, req.Reason); err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal sinkronisasi jadwal baru"})
+			}
+
+			if err := tx.Model(&models.SubstituteLog{}).
+				Where("jadwal_formal_id = ? AND date = ? AND id <> ?", req.JadwalID, date, oldLog.ID).
+				Delete(&models.SubstituteLog{}).Error; err != nil {
+				tx.Rollback()
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal membersihkan duplikat riwayat"})
+			}
+
+			jadwalID := req.JadwalID
+			oldLog.JadwalFormalID = &jadwalID
+			oldLog.JadwalDiniyyahID = nil
+			originalTeacherID = jadwal.Assignment.UserID
+		} else {
+			oldLog.JadwalFormalID = nil
+			oldLog.JadwalDiniyyahID = nil
+			originalTeacherID = oldLog.OriginalTeacherID
+		}
+
+		if req.OriginalTeacherID != nil && *req.OriginalTeacherID != 0 {
+			originalTeacherID = *req.OriginalTeacherID
+		}
+		oldLog.OriginalTeacherID = originalTeacherID
+		oldLog.SubstituteTeacherID = req.SubstituteTeacherID
+		oldLog.Date = date
+		oldLog.Status = req.Status
+		oldLog.Reason = req.Reason
+		if err := tx.Save(&oldLog).Error; err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui riwayat guru pengganti formal"})
+		}
+		if req.JadwalID != 0 && (lessonLabel == "" || kelasLabel == "") {
+			if fallbackLesson, fallbackKelas, err := h.resolveAttendanceSnapshotLabels(req.Type, req.JadwalID); err == nil {
+				if lessonLabel == "" {
+					lessonLabel = fallbackLesson
+				}
+				if kelasLabel == "" {
+					kelasLabel = fallbackKelas
+				}
+			}
+		}
+		if err := h.upsertFormalSubstituteSnapshot(tx, oldLog.ID, lessonLabel, kelasLabel, h.resolveUserNameByID(originalTeacherID)); err != nil {
+			tx.Rollback()
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui snapshot riwayat formal"})
+		}
+	}
+
+	tx.Commit()
+	return c.JSON(fiber.Map{"message": "Riwayat guru pengganti berhasil diperbarui"})
 }
 
 // DeleteSubstituteHistory deletes a substitute history record. Only super_admin can do this.
@@ -778,6 +1122,7 @@ func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti diniyyah"})
 		}
+		tx.Where("substitute_diniyyah_log_id = ?", logEntry.ID).Delete(&models.SubstituteDiniyyahLogSnapshot{})
 	} else {
 		var logEntry models.SubstituteLog
 		if err := tx.First(&logEntry, uint(id)).Error; err != nil {
@@ -806,6 +1151,7 @@ func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 			tx.Rollback()
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus riwayat guru pengganti formal"})
 		}
+		tx.Where("substitute_log_id = ?", logEntry.ID).Delete(&models.SubstituteLogSnapshot{})
 	}
 
 	tx.Commit()
@@ -1151,30 +1497,36 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	// 2. Substitute History
 	type SubHistoryEntry struct {
-		ID                uint      `json:"id"`
-		Date              time.Time `json:"date"`
-		Lesson            string    `json:"lesson"`
-		Kelas             string    `json:"kelas"`
-		OriginalTeacher   string    `json:"original_teacher"`
-		OriginalStatus    string    `json:"original_status"`
-		SubstituteTeacher string    `json:"substitute_teacher"`
-		Reason            string    `json:"reason"`
+		ID                  uint      `json:"id"`
+		JadwalID            uint      `json:"jadwal_id"`
+		Date                time.Time `json:"date"`
+		Lesson              string    `json:"lesson"`
+		Kelas               string    `json:"kelas"`
+		OriginalTeacherID   uint      `json:"original_teacher_id"`
+		OriginalTeacher     string    `json:"original_teacher"`
+		OriginalStatus      string    `json:"original_status"`
+		SubstituteTeacherID uint      `json:"substitute_teacher_id"`
+		SubstituteTeacher   string    `json:"substitute_teacher"`
+		Reason              string    `json:"reason"`
 	}
 	var substituteHistory []SubHistoryEntry
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.id, substitute_logs.date, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
-				"original.name as original_teacher, substitute_logs.status as original_status, "+
-				"substitute.name as substitute_teacher, substitute_logs.reason").
-			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
-			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
-			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
-			Joins("JOIN kelas ON kelas.id = lkt.kelas_id").
-			Joins("JOIN users original ON original.id = substitute_logs.original_teacher_id").
+			Select("substitute_logs.id, substitute_logs.jadwal_formal_id as jadwal_id, substitute_logs.date, "+
+				"COALESCE(sls.lesson, lessons.nama, '-') as lesson, COALESCE(sls.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat), '-') as kelas, "+
+				"substitute_logs.original_teacher_id, COALESCE(sls.original_teacher, original.name, '-') as original_teacher, substitute_logs.status as original_status, "+
+				"substitute_logs.substitute_teacher_id, substitute.name as substitute_teacher, substitute_logs.reason").
+			Joins("LEFT JOIN substitute_log_snapshots sls ON sls.substitute_log_id = substitute_logs.id").
+			Joins("LEFT JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
+			Joins("LEFT JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
+			Joins("LEFT JOIN lessons ON lessons.id = lkt.lesson_id").
+			Joins("LEFT JOIN kelas ON kelas.id = lkt.kelas_id").
+			Joins("LEFT JOIN users original ON original.id = substitute_logs.original_teacher_id").
 			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-			Where("substitute_logs.deleted_at IS NULL")
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jadwal_formal", typeStr)
 
 		if teacherID != "" {
@@ -1186,14 +1538,16 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		subQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.id, substitute_logs_diniyyah.date, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
-				"original.name as original_teacher, substitute_logs_diniyyah.status as original_status, "+
-				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
-			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
-			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
-			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
-			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
-			Joins("JOIN users original ON original.id = substitute_logs_diniyyah.original_teacher_id").
+			Select("substitute_logs_diniyyah.id, substitute_logs_diniyyah.jadwal_diniyyah_id as jadwal_id, substitute_logs_diniyyah.date, "+
+				"COALESCE(sdls.lesson, diniyyah_lessons.nama, '-') as lesson, COALESCE(sdls.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat), '-') as kelas, "+
+				"substitute_logs_diniyyah.original_teacher_id, COALESCE(sdls.original_teacher, original.name, '-') as original_teacher, substitute_logs_diniyyah.status as original_status, "+
+				"substitute_logs_diniyyah.substitute_teacher_id, substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
+			Joins("LEFT JOIN substitute_diniyyah_log_snapshots sdls ON sdls.substitute_diniyyah_log_id = substitute_logs_diniyyah.id").
+			Joins("LEFT JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+			Joins("LEFT JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("LEFT JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("LEFT JOIN kelas ON kelas.id = dkt.kelas_id").
+			Joins("LEFT JOIN users original ON original.id = substitute_logs_diniyyah.original_teacher_id").
 			Joins("JOIN users substitute ON substitute.id = substitute_logs_diniyyah.substitute_teacher_id").
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 
@@ -1241,8 +1595,8 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
-			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
-			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 		if teacherID != "" {
 			subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
@@ -1311,8 +1665,8 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
-			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
-			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
 		if teacherID != "" {
 			origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)

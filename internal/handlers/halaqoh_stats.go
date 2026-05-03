@@ -184,12 +184,15 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 	}
 
 	type SubstituteHistory struct {
-		ID        uint   `json:"id"`
-		Tanggal   string `json:"tanggal"`
-		Sesi      string `json:"sesi"`
-		GuruAsli  string `json:"guru_asli"`
-		Status    string `json:"status"`
-		Pengganti string `json:"pengganti"`
+		ID                  uint   `json:"id"`
+		Tanggal             string `json:"tanggal"`
+		Sesi                string `json:"sesi"`
+		GuruAsli            string `json:"guru_asli"`
+		Status              string `json:"status"`
+		Pengganti           string `json:"pengganti"`
+		OriginalTeacherID   uint   `json:"original_teacher_id"`
+		SubstituteTeacherID uint   `json:"substitute_teacher_id"`
+		Reason              string `json:"reason"`
 	}
 	var history []SubstituteHistory
 
@@ -276,12 +279,20 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 			statusLabel = *log.Status
 		}
 		history = append(history, SubstituteHistory{
-			ID:        log.ID,
-			Tanggal:   log.Date.Format("2006-01-02"),
-			Sesi:      sess,
-			GuruAsli:  log.OriginalTeacher.Name,
-			Status:    statusLabel,
-			Pengganti: penggantiName,
+			ID:                  log.ID,
+			Tanggal:             log.Date.Format("2006-01-02"),
+			Sesi:                sess,
+			GuruAsli:            log.OriginalTeacher.Name,
+			Status:              statusLabel,
+			Pengganti:           penggantiName,
+			OriginalTeacherID:   log.OriginalTeacherID,
+			SubstituteTeacherID: log.SubstituteTeacherID,
+			Reason: func() string {
+				if log.Reason != nil {
+					return *log.Reason
+				}
+				return ""
+			}(),
 		})
 	}
 

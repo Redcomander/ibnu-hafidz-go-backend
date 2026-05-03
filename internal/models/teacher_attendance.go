@@ -64,9 +64,23 @@ type SubstituteLog struct {
 
 func (SubstituteLog) TableName() string { return "substitute_logs" }
 
+// SubstituteLogSnapshot keeps immutable recap labels for substitute history,
+// so records remain editable/readable even when schedule assignment labels change.
+type SubstituteLogSnapshot struct {
+	ID              uint      `gorm:"primaryKey" json:"id"`
+	SubstituteLogID uint      `gorm:"column:substitute_log_id;uniqueIndex;not null" json:"substitute_log_id"`
+	Lesson          string    `gorm:"column:lesson;type:varchar(255);not null" json:"lesson"`
+	Kelas           string    `gorm:"column:kelas;type:varchar(255);not null" json:"kelas"`
+	OriginalTeacher string    `gorm:"column:original_teacher;type:varchar(255);not null" json:"original_teacher"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func (SubstituteLogSnapshot) TableName() string { return "substitute_log_snapshots" }
+
 type SubstituteDiniyyahLog struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
-	JadwalDiniyyahID    uint      `gorm:"column:jadwal_diniyyah_id;index" json:"jadwal_diniyyah_id"`
+	JadwalDiniyyahID    *uint     `gorm:"column:jadwal_diniyyah_id;index" json:"jadwal_diniyyah_id"`
 	OriginalTeacherID   uint      `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
 	SubstituteTeacherID uint      `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
 	Date                time.Time `gorm:"type:date;not null" json:"date"`
@@ -81,3 +95,15 @@ type SubstituteDiniyyahLog struct {
 }
 
 func (SubstituteDiniyyahLog) TableName() string { return "substitute_logs_diniyyah" }
+
+type SubstituteDiniyyahLogSnapshot struct {
+	ID                      uint      `gorm:"primaryKey" json:"id"`
+	SubstituteDiniyyahLogID uint      `gorm:"column:substitute_diniyyah_log_id;uniqueIndex;not null" json:"substitute_diniyyah_log_id"`
+	Lesson                  string    `gorm:"column:lesson;type:varchar(255);not null" json:"lesson"`
+	Kelas                   string    `gorm:"column:kelas;type:varchar(255);not null" json:"kelas"`
+	OriginalTeacher         string    `gorm:"column:original_teacher;type:varchar(255);not null" json:"original_teacher"`
+	CreatedAt               time.Time `json:"created_at"`
+	UpdatedAt               time.Time `json:"updated_at"`
+}
+
+func (SubstituteDiniyyahLogSnapshot) TableName() string { return "substitute_diniyyah_log_snapshots" }

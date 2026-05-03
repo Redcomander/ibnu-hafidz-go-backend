@@ -67,6 +67,9 @@ func main() {
 		&models.TeacherAttendance{},
 		&models.TeacherAttendanceSnapshot{},
 		&models.SubstituteLog{},
+		&models.SubstituteLogSnapshot{},
+		&models.SubstituteDiniyyahLog{},
+		&models.SubstituteDiniyyahLogSnapshot{},
 	); err != nil {
 		log.Fatalf("Failed to migrate attendance: %v", err)
 	}
@@ -419,6 +422,7 @@ func main() {
 	attendance.Post("/", absensiHandler.SubmitAttendance)                                  // Submit/Update
 	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                    // Teacher Attendance
 	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                        // Assign Substitute
+	attendance.Put("/substitute/:id", absensiHandler.UpdateSubstituteHistory)              // Update Substitute History
 	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)           // Delete Substitute History
 	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord) // Delete teacher absence record
 	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)    // Update teacher absence record
@@ -452,6 +456,8 @@ func main() {
 	halaqoh.Post("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.AssignSubstitute)
 	halaqoh.Delete("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UnassignSubstitute)
 	halaqoh.Delete("/substitute-history/:id", halaqohHandler.DeleteSubstituteHistory)
+	halaqoh.Post("/substitute-history", halaqohHandler.AddSubstituteHistoryManual)
+	halaqoh.Put("/substitute-history/:id", halaqohHandler.UpdateSubstituteHistoryManual)
 	halaqoh.Delete("/teacher-attendance-record/:id", halaqohHandler.DeleteTeacherAttendanceRecord) // Delete halaqoh teacher absence record
 	halaqoh.Put("/teacher-attendance-record/:id", halaqohHandler.UpdateTeacherAttendanceRecord)    // Update halaqoh teacher absence record
 	// Student Attendance

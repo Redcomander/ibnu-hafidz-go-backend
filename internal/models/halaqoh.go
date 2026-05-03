@@ -103,7 +103,7 @@ func (HalaqohTeacherAttendance) TableName() string { return "halaqoh_teacher_att
 // ──────────────────────────────────────────────────────────────
 type HalaqohSubstituteLog struct {
 	ID                  uint      `gorm:"primaryKey" json:"id"`
-	HalaqohAssignmentID uint      `gorm:"column:halaqoh_assignment_id;not null;index" json:"halaqoh_assignment_id"`
+	HalaqohAssignmentID *uint     `gorm:"column:halaqoh_assignment_id;index" json:"halaqoh_assignment_id"`
 	OriginalTeacherID   uint      `gorm:"column:original_teacher_id;not null;index" json:"original_teacher_id"`
 	SubstituteTeacherID uint      `gorm:"column:substitute_teacher_id;not null;index" json:"substitute_teacher_id"`
 	Date                time.Time `gorm:"column:date;type:date;not null" json:"date"`
@@ -115,9 +115,9 @@ type HalaqohSubstituteLog struct {
 	UpdatedAt           time.Time `gorm:"column:updated_at" json:"updated_at"`
 
 	// Relationships
-	Assignment        HalaqohAssignment `gorm:"foreignKey:HalaqohAssignmentID" json:"assignment,omitempty"`
-	OriginalTeacher   User              `gorm:"foreignKey:OriginalTeacherID" json:"original_teacher,omitempty"`
-	SubstituteTeacher User              `gorm:"foreignKey:SubstituteTeacherID" json:"substitute_teacher,omitempty"`
+	Assignment        *HalaqohAssignment `gorm:"foreignKey:HalaqohAssignmentID" json:"assignment,omitempty"`
+	OriginalTeacher   User               `gorm:"foreignKey:OriginalTeacherID" json:"original_teacher,omitempty"`
+	SubstituteTeacher User               `gorm:"foreignKey:SubstituteTeacherID" json:"substitute_teacher,omitempty"`
 }
 
 func (HalaqohSubstituteLog) TableName() string { return "halaqoh_substitute_logs" }
