@@ -241,6 +241,18 @@ func isRamadhanAttendanceType(typeStr string) bool {
 	return v == "ramadhan" || v == "ramadan"
 }
 
+func normalizeStudentStatus(raw string) string {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	if v == "alpha" {
+		return "alpa"
+	}
+	return v
+}
+
+func isValidStudentStatus(status string) bool {
+	return status == "hadir" || status == "izin" || status == "sakit" || status == "alpa"
+}
+
 func applyFormalScheduleTypeFilter(db *gorm.DB, scheduleAlias string, typeStr string) *gorm.DB {
 	if isRamadhanAttendanceType(typeStr) {
 		return db.Where(scheduleAlias+".type = ?", "ramadhan")
@@ -417,6 +429,12 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	tx := h.db.Begin()
 
 	for _, record := range req.Records {
+		status := normalizeStudentStatus(record.Status)
+		if !isValidStudentStatus(status) {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status absensi santri wajib diisi (hadir/izin/sakit/alpa)"})
+		}
+
 		if req.Type == "diniyyah" {
 			// Upsert Diniyyah
 			var absensi models.AbsensiDiniyyah
@@ -428,7 +446,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					JadwalDiniyyahID: &req.JadwalID,
 					StudentID:        record.StudentID,
 					Tanggal:          date,
-					Status:           record.Status,
+					Status:           status,
 					Catatan:          record.Catatan,
 				}
 				if err := tx.Create(&absensi).Error; err != nil {
@@ -436,7 +454,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save attendance"})
 				}
 			} else {
-				absensi.Status = record.Status
+				absensi.Status = status
 				absensi.Catatan = record.Catatan
 				if err := tx.Save(&absensi).Error; err != nil {
 					tx.Rollback()
@@ -455,7 +473,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					JadwalFormalID: req.JadwalID,
 					StudentID:      record.StudentID,
 					Tanggal:        date,
-					Status:         record.Status,
+					Status:         status,
 					Catatan:        record.Catatan,
 				}
 				if err := tx.Create(&absensi).Error; err != nil {
@@ -463,7 +481,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to save attendance"})
 				}
 			} else {
-				absensi.Status = record.Status
+				absensi.Status = status
 				absensi.Catatan = record.Catatan
 				if err := tx.Save(&absensi).Error; err != nil {
 					tx.Rollback()

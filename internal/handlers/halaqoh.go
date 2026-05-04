@@ -977,6 +977,12 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 
 	tx := h.db.Begin()
 	for _, record := range req.Records {
+		status := normalizeStudentStatus(record.Status)
+		if !isValidStudentStatus(status) {
+			tx.Rollback()
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status absensi santri halaqoh wajib diisi (hadir/izin/sakit/alpa)"})
+		}
+
 		var assignment models.HalaqohAssignment
 		if err := tx.First(&assignment, record.HalaqohAssignmentID).Error; err != nil {
 			tx.Rollback()
@@ -1005,7 +1011,7 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 				StudentID:           &sid,
 				Date:                parseDate(req.Date),
 				Session:             session,
-				Status:              record.Status,
+				Status:              status,
 				Notes:               notesPtr,
 				SubmittedBy:         &user.ID,
 			}
@@ -1016,7 +1022,7 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 			attendanceID = newAtt.ID
 		} else if err == nil {
 			updates := map[string]interface{}{
-				"status":       record.Status,
+				"status":       status,
 				"submitted_by": user.ID,
 			}
 			if record.Notes != "" {
