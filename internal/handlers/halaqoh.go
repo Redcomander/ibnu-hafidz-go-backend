@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -1052,12 +1053,15 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 					StudentName: studentName,
 				}).
 				FirstOrCreate(&models.HalaqohAttendanceSnapshot{}).Error; err != nil {
-				tx.Rollback()
-				return c.Status(500).JSON(fiber.Map{"error": "Failed to save halaqoh attendance snapshot"})
+				// Snapshot is auxiliary historical metadata; keep attendance saved
+				// even if snapshot table/schema has drift in production.
+				log.Printf("warning: failed to save halaqoh attendance snapshot attendance_id=%d err=%v", attendanceID, err)
 			}
 		}
 	}
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to commit halaqoh attendance"})
+	}
 
 	return c.JSON(fiber.Map{"message": fmt.Sprintf("Absensi Santri Halaqoh untuk sesi %s berhasil disimpan!", session)})
 }

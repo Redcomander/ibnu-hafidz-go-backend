@@ -22,8 +22,13 @@ func Auth(cfg *config.Config) fiber.Handler {
 			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
 				tokenString = parts[1]
 			}
-		} else if c.Path() == "/api/notifications/stream" {
+		} else if strings.HasSuffix(c.Path(), "/notifications/stream") {
+			// SSE can authenticate via short-lived query ticket to avoid exposing
+			// the access token in browser-managed EventSource reconnect requests.
 			tokenString = c.Query("token")
+			if tokenString == "" {
+				tokenString = c.Query("ticket")
+			}
 		}
 
 		if tokenString == "" {
