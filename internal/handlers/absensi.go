@@ -341,7 +341,7 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 
 	var response []fiber.Map
 	for _, s := range students {
-		status := "hadir" // Default
+		status := ""
 		catatan := ""
 		if val, ok := existingMap[s.ID]; ok {
 			status = val.Status
