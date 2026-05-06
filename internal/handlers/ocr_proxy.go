@@ -64,6 +64,9 @@ func (h *OCRProxyHandler) Proxy(c *fiber.Ctx) error {
 		req.Header.Set("Content-Type", ct)
 	}
 	req.Header.Set("Accept", c.Get("Accept", "application/json"))
+	if auth := c.Get("Authorization"); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	// Pass optional API key if configured
 	if h.cfg.OCRAPIKey != "" {
