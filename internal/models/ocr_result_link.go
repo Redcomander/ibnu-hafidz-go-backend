@@ -18,6 +18,8 @@ type OCRResultLink struct {
 	Blank    *int     `gorm:"column:blank_count" json:"blank,omitempty"`
 
 	RawResult *string `gorm:"column:raw_result;type:longtext" json:"raw_result,omitempty"`
+	// Idempotency key prevents duplicate records on client retries.
+	IdempotencyKey *string `gorm:"column:idempotency_key;size:128;uniqueIndex:uniq_ocr_scan_request" json:"idempotency_key,omitempty"`
 
 	LessonType *string `gorm:"column:lesson_type;size:30" json:"lesson_type,omitempty"`
 	LessonID   *uint   `gorm:"column:lesson_id;index" json:"lesson_id,omitempty"`
@@ -27,7 +29,7 @@ type OCRResultLink struct {
 
 	AnswerKeyID *uint `gorm:"column:answer_key_id;index" json:"answer_key_id,omitempty"`
 
-	ScannedByID uint  `gorm:"column:scanned_by_id;index;not null" json:"scanned_by_id"`
+	ScannedByID uint  `gorm:"column:scanned_by_id;index;not null;uniqueIndex:uniq_ocr_scan_request" json:"scanned_by_id"`
 	ScannedBy   *User `gorm:"foreignKey:ScannedByID" json:"scanned_by,omitempty"`
 
 	Lesson  *Lesson  `gorm:"foreignKey:LessonID" json:"lesson,omitempty"`

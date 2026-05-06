@@ -631,6 +631,7 @@ func main() {
 	ocrResultLinks := api.Group("/ocr-result-links", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
 	ocrResultLinks.Get("/", ocrResultLinkHandler.List)
 	ocrResultLinks.Post("/", ocrResultLinkHandler.Create)
+	ocrResultLinks.Put("/:id/student", ocrResultLinkHandler.UpdateStudent)
 
 	// OCR Service proxy — all routes require authentication; OCR service runs with auth disabled
 	ocrProxyHandler := handlers.NewOCRProxyHandler(cfg)

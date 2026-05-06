@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
@@ -18,6 +20,7 @@ func NewOCRResultLinkHandler(db *gorm.DB) *OCRResultLinkHandler {
 
 type createOCRResultLinkRequest struct {
 	Source string `json:"source"`
+	IdempotencyKey *string `json:"idempotency_key"`
 
 	Filename *string  `json:"filename"`
 	Score    *float64 `json:"score"`
@@ -34,6 +37,10 @@ type createOCRResultLinkRequest struct {
 	StudentID  *uint   `json:"student_id"`
 
 	AnswerKeyID *uint `json:"answer_key_id"`
+}
+
+type updateOCRResultLinkStudentRequest struct {
+	StudentID *uint `json:"student_id"`
 }
 
 func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
@@ -57,6 +64,33 @@ func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 		req.Source = "scan"
 	}
 
+	if req.IdempotencyKey != nil {
+		trimmed := strings.TrimSpace(*req.IdempotencyKey)
+		if trimmed == "" {
+			req.IdempotencyKey = nil
+		} else {
+			req.IdempotencyKey = &trimmed
+
+			var existing models.OCRResultLink
+			err := h.db.Where("scanned_by_id = ? AND idempotency_key = ?", userID, trimmed).
+				Preload("Lesson").
+				Preload("Kelas.Students").
+				Preload("Teacher").
+				Preload("Student").
+				Preload("ScannedBy").
+				First(&existing).Error
+			if err == nil {
+				return c.JSON(existing)
+			}
+			if err != nil && err != gorm.ErrRecordNotFound {
+				return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+					Error:   "server_error",
+					Message: err.Error(),
+				})
+			}
+		}
+	}
+
 	var rawResultStr *string
 	if req.RawResult != nil {
 		b, err := json.Marshal(req.RawResult)
@@ -68,6 +102,7 @@ func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 
 	record := models.OCRResultLink{
 		Source:      req.Source,
+		IdempotencyKey: req.IdempotencyKey,
 		Filename:    req.Filename,
 		Score:       req.Score,
 		Correct:     req.Correct,
@@ -84,6 +119,20 @@ func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&record).Error; err != nil {
+		if req.IdempotencyKey != nil {
+			var existing models.OCRResultLink
+			findErr := h.db.Where("scanned_by_id = ? AND idempotency_key = ?", userID, *req.IdempotencyKey).
+				Preload("Lesson").
+				Preload("Kelas.Students").
+				Preload("Teacher").
+				Preload("Student").
+				Preload("ScannedBy").
+				First(&existing).Error
+			if findErr == nil {
+				return c.JSON(existing)
+			}
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
 			Message: err.Error(),
@@ -168,4 +217,85 @@ func (h *OCRResultLinkHandler) List(c *fiber.Ctx) error {
 		"per_page":    perPage,
 		"total_pages": totalPages,
 	})
+}
+
+func (h *OCRResultLinkHandler) UpdateStudent(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid result link id",
+		})
+	}
+
+	var req updateOCRResultLinkStudentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid request body",
+		})
+	}
+
+	if req.StudentID != nil && *req.StudentID == 0 {
+		req.StudentID = nil
+	}
+
+	var record models.OCRResultLink
+	if err := h.db.First(&record, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
+				Error:   "not_found",
+				Message: "OCR result link not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: err.Error(),
+		})
+	}
+
+	if req.StudentID != nil {
+		var student models.Student
+		if err := h.db.Select("id", "kelas_id").First(&student, *req.StudentID).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+					Error:   "validation_error",
+					Message: "Student not found",
+				})
+			}
+
+			return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+				Error:   "server_error",
+				Message: err.Error(),
+			})
+		}
+
+		if record.KelasID != nil {
+			if student.KelasID == nil || *student.KelasID != *record.KelasID {
+				return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+					Error:   "validation_error",
+					Message: "Selected student is not in this class",
+				})
+			}
+		}
+	}
+
+	if err := h.db.Model(&record).Update("student_id", req.StudentID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: err.Error(),
+		})
+	}
+
+	if err := h.db.Preload("Lesson").
+		Preload("Kelas.Students").
+		Preload("Teacher").
+		Preload("Student").
+		Preload("ScannedBy").
+		First(&record, record.ID).Error; err != nil {
+		return c.JSON(record)
+	}
+
+	return c.JSON(record)
 }
