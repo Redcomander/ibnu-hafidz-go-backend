@@ -66,7 +66,14 @@ func canAccessScheduledAttendance(user *models.User, originalTeacherID uint, sub
 		if substituteDate == nil {
 			return true
 		}
-		return substituteDate.Format("2006-01-02") == targetDate
+		target, err := time.Parse("2006-01-02", targetDate)
+		if err != nil {
+			return false
+		}
+
+		sy, sm, sd := substituteDate.Date()
+		ty, tm, td := target.Date()
+		return sy == ty && sm == tm && sd == td
 	}
 	return false
 }
