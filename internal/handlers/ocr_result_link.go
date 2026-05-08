@@ -19,7 +19,7 @@ func NewOCRResultLinkHandler(db *gorm.DB) *OCRResultLinkHandler {
 }
 
 type createOCRResultLinkRequest struct {
-	Source string `json:"source"`
+	Source         string  `json:"source"`
 	IdempotencyKey *string `json:"idempotency_key"`
 
 	Filename *string  `json:"filename"`
@@ -43,6 +43,121 @@ type updateOCRResultLinkStudentRequest struct {
 	StudentID *uint `json:"student_id"`
 }
 
+func parseStringPtr(value interface{}) *string {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		return &trimmed
+	case float64:
+		trimmed := strings.TrimSpace(strconv.FormatFloat(v, 'f', -1, 64))
+		if trimmed == "" {
+			return nil
+		}
+		return &trimmed
+	case int:
+		trimmed := strconv.Itoa(v)
+		return &trimmed
+	default:
+		return nil
+	}
+}
+
+func parseFloat64Ptr(value interface{}) *float64 {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case float64:
+		return &v
+	case int:
+		n := float64(v)
+		return &n
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		n, err := strconv.ParseFloat(trimmed, 64)
+		if err != nil {
+			return nil
+		}
+		return &n
+	default:
+		return nil
+	}
+}
+
+func parseIntPtr(value interface{}) *int {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case float64:
+		n := int(v)
+		if float64(n) != v {
+			return nil
+		}
+		return &n
+	case int:
+		return &v
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		n64, err := strconv.ParseInt(trimmed, 10, 64)
+		if err != nil {
+			return nil
+		}
+		n := int(n64)
+		return &n
+	default:
+		return nil
+	}
+}
+
+func parseUintPtr(value interface{}) *uint {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case float64:
+		if v <= 0 {
+			return nil
+		}
+		n := uint(v)
+		if float64(n) != v {
+			return nil
+		}
+		return &n
+	case int:
+		if v <= 0 {
+			return nil
+		}
+		n := uint(v)
+		return &n
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil
+		}
+		n64, err := strconv.ParseUint(trimmed, 10, 64)
+		if err != nil || n64 == 0 {
+			return nil
+		}
+		n := uint(n64)
+		return &n
+	default:
+		return nil
+	}
+}
+
 func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("userID").(uint)
 	if !ok || userID == 0 {
@@ -52,12 +167,33 @@ func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 		})
 	}
 
-	var req createOCRResultLinkRequest
-	if err := c.BodyParser(&req); err != nil {
+	var body map[string]interface{}
+	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
 			Error:   "validation_error",
 			Message: "Invalid request body",
 		})
+	}
+
+	req := createOCRResultLinkRequest{
+		Source:         "",
+		IdempotencyKey: parseStringPtr(body["idempotency_key"]),
+		Filename:       parseStringPtr(body["filename"]),
+		Score:          parseFloat64Ptr(body["score"]),
+		Correct:        parseIntPtr(body["correct"]),
+		Wrong:          parseIntPtr(body["wrong"]),
+		Blank:          parseIntPtr(body["blank"]),
+		RawResult:      body["raw_result"],
+		LessonType:     parseStringPtr(body["lesson_type"]),
+		LessonID:       parseUintPtr(body["lesson_id"]),
+		KelasID:        parseUintPtr(body["kelas_id"]),
+		TeacherID:      parseUintPtr(body["teacher_id"]),
+		StudentID:      parseUintPtr(body["student_id"]),
+		AnswerKeyID:    parseUintPtr(body["answer_key_id"]),
+	}
+
+	if source := parseStringPtr(body["source"]); source != nil {
+		req.Source = *source
 	}
 
 	if req.Source == "" {
@@ -101,21 +237,21 @@ func (h *OCRResultLinkHandler) Create(c *fiber.Ctx) error {
 	}
 
 	record := models.OCRResultLink{
-		Source:      req.Source,
+		Source:         req.Source,
 		IdempotencyKey: req.IdempotencyKey,
-		Filename:    req.Filename,
-		Score:       req.Score,
-		Correct:     req.Correct,
-		Wrong:       req.Wrong,
-		Blank:       req.Blank,
-		RawResult:   rawResultStr,
-		LessonType:  req.LessonType,
-		LessonID:    req.LessonID,
-		KelasID:     req.KelasID,
-		TeacherID:   req.TeacherID,
-		StudentID:   req.StudentID,
-		AnswerKeyID: req.AnswerKeyID,
-		ScannedByID: userID,
+		Filename:       req.Filename,
+		Score:          req.Score,
+		Correct:        req.Correct,
+		Wrong:          req.Wrong,
+		Blank:          req.Blank,
+		RawResult:      rawResultStr,
+		LessonType:     req.LessonType,
+		LessonID:       req.LessonID,
+		KelasID:        req.KelasID,
+		TeacherID:      req.TeacherID,
+		StudentID:      req.StudentID,
+		AnswerKeyID:    req.AnswerKeyID,
+		ScannedByID:    userID,
 	}
 
 	if err := h.db.Create(&record).Error; err != nil {
