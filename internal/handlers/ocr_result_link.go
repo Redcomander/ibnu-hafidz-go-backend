@@ -435,3 +435,22 @@ func (h *OCRResultLinkHandler) UpdateStudent(c *fiber.Ctx) error {
 
 	return c.JSON(record)
 }
+
+func (h *OCRResultLinkHandler) Delete(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid result link id",
+		})
+	}
+
+	if err := h.db.Delete(&models.OCRResultLink{}, id).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
