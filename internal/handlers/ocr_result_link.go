@@ -43,6 +43,15 @@ type updateOCRResultLinkStudentRequest struct {
 	StudentID *uint `json:"student_id"`
 }
 
+type updateOCRResultLinkRequest struct {
+	Score       *float64    `json:"score"`
+	Correct     *int        `json:"correct"`
+	Wrong       *int        `json:"wrong"`
+	Blank       *int        `json:"blank"`
+	RawResult   interface{} `json:"raw_result"`
+	AnswerKeyID *uint       `json:"answer_key_id"`
+}
+
 func parseStringPtr(value interface{}) *string {
 	if value == nil {
 		return nil
@@ -453,4 +462,92 @@ func (h *OCRResultLinkHandler) Delete(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *OCRResultLinkHandler) Update(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil || id <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid result link id",
+		})
+	}
+
+	var body map[string]interface{}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Invalid request body",
+		})
+	}
+
+	var record models.OCRResultLink
+	if err := h.db.First(&record, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
+				Error:   "not_found",
+				Message: "OCR result link not found",
+			})
+		}
+
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: err.Error(),
+		})
+	}
+
+	updates := map[string]interface{}{}
+
+	if _, ok := body["score"]; ok {
+		updates["score"] = parseFloat64Ptr(body["score"])
+	}
+	if _, ok := body["correct"]; ok {
+		updates["correct_count"] = parseIntPtr(body["correct"])
+	}
+	if _, ok := body["wrong"]; ok {
+		updates["wrong_count"] = parseIntPtr(body["wrong"])
+	}
+	if _, ok := body["blank"]; ok {
+		updates["blank_count"] = parseIntPtr(body["blank"])
+	}
+	if _, ok := body["answer_key_id"]; ok {
+		updates["answer_key_id"] = parseUintPtr(body["answer_key_id"])
+	}
+	if raw, ok := body["raw_result"]; ok {
+		if raw == nil {
+			updates["raw_result"] = nil
+		} else {
+			b, err := json.Marshal(raw)
+			if err != nil {
+				return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+					Error:   "validation_error",
+					Message: "Invalid raw_result payload",
+				})
+			}
+			s := string(b)
+			updates["raw_result"] = &s
+		}
+	}
+
+	if len(updates) == 0 {
+		return c.JSON(record)
+	}
+
+	if err := h.db.Model(&record).Updates(updates).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: err.Error(),
+		})
+	}
+
+	if err := h.db.Preload("Lesson").
+		Preload("Kelas.Students").
+		Preload("Teacher").
+		Preload("Student").
+		Preload("ScannedBy").
+		First(&record, record.ID).Error; err != nil {
+		return c.JSON(record)
+	}
+
+	return c.JSON(record)
 }
