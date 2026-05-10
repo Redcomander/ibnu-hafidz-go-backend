@@ -30,8 +30,9 @@ type Config struct {
 	S3SecretKey string
 
 	// OCR Service
-	OCRBaseURL string
-	OCRAPIKey  string
+	OCRBaseURL       string
+	OCRAPIKey        string
+	OCRServiceToken  string
 }
 
 // Load reads configuration from environment variables
@@ -57,8 +58,9 @@ func Load() *Config {
 		S3AccessKey: getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
 
-		OCRBaseURL: getEnv("OCR_BASE_URL", "http://localhost:3099/api"),
-		OCRAPIKey:  getEnv("OCR_API_KEY", ""),
+		OCRBaseURL:      getEnv("OCR_BASE_URL", "http://localhost:3099/api"),
+		OCRAPIKey:       getEnv("OCR_API_KEY", ""),
+		OCRServiceToken: getEnv("OCR_SERVICE_TOKEN", ""),
 	}
 }
 

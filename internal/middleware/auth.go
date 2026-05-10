@@ -169,6 +169,21 @@ func PermissionAny(permissionNames ...string) fiber.Handler {
 	}
 }
 
+// ServiceToken validates service-to-service requests using the X-Service-Token header.
+// Used by internal microservices (e.g. OCR service) that do not have a user JWT.
+func ServiceToken(token string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if token == "" {
+			return fiber.NewError(fiber.StatusServiceUnavailable, "Service token not configured on this server")
+		}
+		provided := strings.TrimSpace(c.Get("X-Service-Token"))
+		if provided == "" || provided != token {
+			return fiber.NewError(fiber.StatusUnauthorized, "Invalid or missing service token")
+		}
+		return c.Next()
+	}
+}
+
 // InjectDB adds database instance to Fiber context for downstream middleware
 func InjectDB(db *gorm.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {

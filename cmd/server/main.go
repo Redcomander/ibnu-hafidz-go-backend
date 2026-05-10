@@ -141,6 +141,9 @@ func main() {
 	if err := db.AutoMigrate(&models.OCRResultLink{}); err != nil {
 		log.Printf("Warning: ocr_result_links migration: %v", err)
 	}
+	if err := db.AutoMigrate(&models.OcrAnswerKey{}); err != nil {
+		log.Printf("Warning: ocr_answer_keys migration: %v", err)
+	}
 
 	// Drop 'name' column if it exists (cleanup from previous migration artifact)
 	// We ignore the error in case it's already dropped
@@ -625,6 +628,23 @@ func main() {
 	cms.Get("/settings/:key", middleware.Permission("content.view"), cmsHandler.Get)
 	cms.Put("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Upsert)
 	cms.Delete("/settings/:key", middleware.Permission("content.edit"), cmsHandler.Delete)
+
+	// OCR answer keys — persistent storage for kunci jawaban (survives OCR service resets)
+	ocrAnswerKeyHandler := handlers.NewOcrAnswerKeyHandler(db)
+	// User-facing routes (JWT auth) for Vue frontend
+	ocrAnswerKeys := api.Group("/ocr-answer-keys", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+	ocrAnswerKeys.Get("/", ocrAnswerKeyHandler.List)
+	ocrAnswerKeys.Get("/:id", ocrAnswerKeyHandler.Get)
+	ocrAnswerKeys.Post("/", ocrAnswerKeyHandler.Create)
+	ocrAnswerKeys.Put("/:id", ocrAnswerKeyHandler.Update)
+	ocrAnswerKeys.Delete("/:id", ocrAnswerKeyHandler.Delete)
+	// Service-facing routes (service token auth) called by OCR microservice
+	ocrServiceAnswerKeys := api.Group("/ocr-service/answer-keys", middleware.ServiceToken(cfg.OCRServiceToken))
+	ocrServiceAnswerKeys.Get("/", ocrAnswerKeyHandler.List)
+	ocrServiceAnswerKeys.Get("/:id", ocrAnswerKeyHandler.Get)
+	ocrServiceAnswerKeys.Post("/", ocrAnswerKeyHandler.Create)
+	ocrServiceAnswerKeys.Put("/:id", ocrAnswerKeyHandler.Update)
+	ocrServiceAnswerKeys.Delete("/:id", ocrAnswerKeyHandler.Delete)
 
 	// OCR result links persistence (stored in Go DB, not proxied to OCR microservice)
 	ocrResultLinkHandler := handlers.NewOCRResultLinkHandler(db)
