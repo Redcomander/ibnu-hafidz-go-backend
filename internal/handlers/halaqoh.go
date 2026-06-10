@@ -69,8 +69,8 @@ func (h *HalaqohHandler) canAccessAssignment(user *models.User, assignment *mode
 
 	var count int64
 	h.db.Model(&models.HalaqohSubstituteLog{}).
-		Where("halaqoh_assignment_id = ? AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
-			assignment.ID, user.ID, dateStr, true).
+		Where("(original_teacher_id = ? OR halaqoh_assignment_id = ?) AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
+			assignment.UserID, assignment.ID, user.ID, dateStr, true).
 		Count(&count)
 
 	return count > 0
@@ -86,8 +86,8 @@ func (h *HalaqohHandler) canAccessTeacherAttendance(user *models.User, assignmen
 
 	var count int64
 	h.db.Model(&models.HalaqohSubstituteLog{}).
-		Where("halaqoh_assignment_id = ? AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
-			assignment.ID, user.ID, dateStr, true).
+		Where("(original_teacher_id = ? OR halaqoh_assignment_id = ?) AND substitute_teacher_id = ? AND date = ? AND is_active = ?",
+			assignment.UserID, assignment.ID, user.ID, dateStr, true).
 		Count(&count)
 
 	return count > 0

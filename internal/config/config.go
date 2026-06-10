@@ -30,9 +30,9 @@ type Config struct {
 	S3SecretKey string
 
 	// OCR Service
-	OCRBaseURL       string
-	OCRAPIKey        string
-	OCRServiceToken  string
+	OCRBaseURL      string
+	OCRAPIKey       string
+	OCRServiceToken string
 }
 
 // Load reads configuration from environment variables
