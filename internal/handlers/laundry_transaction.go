@@ -163,22 +163,6 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 	account.TotalTransactions++
 	account.TotalKg += trans.BeratKg
 
-	// Automatically lock/block for student if monthly weight passes 30 KG
-	if account.StudentID != nil {
-		tYear, tMonth, _ := trans.Tanggal.Date()
-		monthStart := time.Date(tYear, tMonth, 1, 0, 0, 0, 0, trans.Tanggal.Location())
-		monthEnd := monthStart.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
-
-		var monthlyWeight float64
-		tx.Model(&models.LaundryTransaction{}).
-			Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", account.ID, monthStart, monthEnd).
-			Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&monthlyWeight)
-
-		if monthlyWeight > 30.0 {
-			account.Blocked = true
-		}
-	}
-
 	if err := tx.Save(&account).Error; err != nil {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Failed to update account totals"})
@@ -195,15 +179,7 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 
 	tx.Commit()
 
-	warning := ""
-	if account.Blocked {
-		warning = "PERINGATAN: Kuota bulanan (30 Kg) telah terlampaui. Akun ini sekarang diblokir!"
-	}
-
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"transaction": trans,
-		"warning":     warning,
-	})
+	return c.Status(fiber.StatusCreated).JSON(trans)
 }
 
 // MarkAsPickedUp
