@@ -264,6 +264,25 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 		teacherAttendanceMap[id] = true
 	}
 
+	// 3. Teaching journal materi summary for the selected day
+	type MateriResult struct {
+		JadwalFormalID uint
+		Materi         string
+	}
+	var materiRows []MateriResult
+	h.db.Table("absensis").
+		Select("jadwal_formal_id, MAX(materi) as materi").
+		Where("jadwal_formal_id IN ? AND tanggal >= ? AND tanggal < ?", scheduleIDs, dateStart, dateEnd).
+		Where("deleted_at IS NULL").
+		Where("TRIM(COALESCE(materi, '')) <> ''").
+		Group("jadwal_formal_id").
+		Scan(&materiRows)
+
+	materiMap := make(map[uint]string)
+	for _, row := range materiRows {
+		materiMap[row.JadwalFormalID] = strings.TrimSpace(row.Materi)
+	}
+
 	// Populate Fields
 	for i := range schedules {
 		if statusCounts, ok := countsMap[schedules[i].ID]; ok {
@@ -276,6 +295,8 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 		if _, ok := teacherAttendanceMap[schedules[i].ID]; ok {
 			schedules[i].HasTeacherAttendance = true
 		}
+
+		schedules[i].MateriToday = materiMap[schedules[i].ID]
 	}
 
 	return c.JSON(schedules)

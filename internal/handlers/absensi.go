@@ -322,10 +322,12 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 	type AttendanceResponse struct {
 		StudentID uint   `json:"student_id"`
 		Status    string `json:"status"`
+		Materi    string `json:"materi"`
 		Catatan   string `json:"catatan"`
 	}
 	existingMap := make(map[uint]AttendanceResponse)
 	start, end := dateRange(dateStr)
+	materi := ""
 
 	if typeStr == "diniyyah" {
 		var records []models.AbsensiDiniyyah
@@ -337,7 +339,10 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 		var records []models.Absensi
 		h.db.Where("jadwal_formal_id = ? AND tanggal >= ? AND tanggal < ?", jadwalID, start, end).Find(&records)
 		for _, r := range records {
-			existingMap[r.StudentID] = AttendanceResponse{StudentID: r.StudentID, Status: r.Status, Catatan: r.Catatan}
+			if materi == "" && strings.TrimSpace(r.Materi) != "" {
+				materi = r.Materi
+			}
+			existingMap[r.StudentID] = AttendanceResponse{StudentID: r.StudentID, Status: r.Status, Materi: r.Materi, Catatan: r.Catatan}
 		}
 	}
 
@@ -371,6 +376,7 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"date":                  dateStr,
+		"materi":                materi,
 		"students":              response,
 		"assigned_teacher_id":   assignedTeacherID,
 		"substitute_teacher_id": substituteTeacherID,
@@ -388,6 +394,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	type SubmitRequest struct {
 		JadwalID uint              `json:"jadwal_id"`
 		Date     string            `json:"date"`
+		Materi   string            `json:"materi"`
 		Type     string            `json:"type"` // formal or diniyyah
 		Records  []AttendanceInput `json:"records"`
 	}
@@ -406,6 +413,8 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid date format"})
 	}
+
+	req.Materi = strings.TrimSpace(req.Materi)
 
 	start, end := dateRange(req.Date)
 
@@ -481,6 +490,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					StudentID:      record.StudentID,
 					Tanggal:        date,
 					Status:         status,
+					Materi:         req.Materi,
 					Catatan:        record.Catatan,
 				}
 				if err := tx.Create(&absensi).Error; err != nil {
@@ -489,6 +499,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 				}
 			} else {
 				absensi.Status = status
+				absensi.Materi = req.Materi
 				absensi.Catatan = record.Catatan
 				if err := tx.Save(&absensi).Error; err != nil {
 					tx.Rollback()

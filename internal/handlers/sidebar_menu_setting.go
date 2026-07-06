@@ -27,6 +27,7 @@ var sidebarMenuDefinitions = []sidebarMenuDefinition{
 	{Key: "jadwal_formal_ramadhan", Label: "Jadwal Formal Ramadhan"},
 	{Key: "absensi_formal_ramadhan", Label: "Absensi Formal Ramadhan"},
 	{Key: "absensi_formal_history", Label: "Riwayat Absensi Formal"},
+	{Key: "jurnal_mengajar", Label: "Jurnal Mengajar"},
 	{Key: "diniyyah_lesson", Label: "Pelajaran Diniyyah"},
 	{Key: "jadwal_diniyyah", Label: "Jadwal Diniyyah"},
 	{Key: "absensi_diniyyah_history", Label: "Riwayat Absensi Diniyyah"},

@@ -12,6 +12,7 @@ type Absensi struct {
 	JadwalFormalID uint           `gorm:"column:jadwal_formal_id;not null;index;uniqueIndex:idx_absensi_formal_student_date" json:"jadwal_formal_id"`
 	StudentID      uint           `gorm:"column:student_id;not null;index;uniqueIndex:idx_absensi_formal_student_date" json:"student_id"`
 	Status         string         `gorm:"type:enum('hadir', 'izin', 'sakit', 'alpa');default:'hadir';not null" json:"status"`
+	Materi         string         `gorm:"type:text" json:"materi"`
 	Catatan        string         `gorm:"type:text" json:"catatan"`
 	Tanggal        time.Time      `gorm:"type:date;not null;index;uniqueIndex:idx_absensi_formal_student_date" json:"tanggal"`
 	CreatedAt      time.Time      `json:"created_at"`

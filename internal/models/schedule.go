@@ -27,6 +27,7 @@ type Schedule struct {
 	AttendanceCounts     map[string]int64 `gorm:"-" json:"attendance_counts"`
 	HasTeacherAttendance bool             `gorm:"-" json:"has_teacher_attendance_today"`
 	HasAttendance        bool             `gorm:"-" json:"has_attendance_today"`
+	MateriToday          string           `gorm:"-" json:"materi_today"`
 }
 
 func (Schedule) TableName() string { return "jadwal_formal" }
