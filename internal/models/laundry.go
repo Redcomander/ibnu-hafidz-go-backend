@@ -48,6 +48,7 @@ type LaundryTransaction struct {
 	UpdatedAt        time.Time      `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 	LaundryAccountID uint           `gorm:"not null" json:"laundry_account_id"`
+	VendorID         *uint          `gorm:"index" json:"vendor_id,omitempty"`
 	Tanggal          time.Time      `gorm:"type:date;not null" json:"tanggal"`
 	BeratKg          float64        `gorm:"type:decimal(8,2);not null" json:"berat_kg"`
 	HargaPerKg       float64        `gorm:"type:decimal(10,2);not null" json:"harga_per_kg"`
@@ -58,6 +59,7 @@ type LaundryTransaction struct {
 	PickedUpByID     *uint          `json:"picked_up_by_id,omitempty"`
 
 	Account    *LaundryAccount `gorm:"foreignKey:LaundryAccountID" json:"account,omitempty"`
+	Vendor     *LaundryVendor  `gorm:"foreignKey:VendorID" json:"vendor,omitempty"`
 	PickedUpBy *User           `gorm:"foreignKey:PickedUpByID" json:"picked_up_by,omitempty"`
 }
 

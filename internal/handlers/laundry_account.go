@@ -275,6 +275,14 @@ func (h *LaundryAccountHandler) Update(c *fiber.Ctx) error {
 	}
 
 	if req.VendorID != 0 {
+		if req.VendorID != account.VendorID {
+			// Freeze historical transactions to the old vendor before moving account ownership.
+			if err := h.db.Model(&models.LaundryTransaction{}).
+				Where("laundry_account_id = ? AND vendor_id IS NULL", account.ID).
+				Update("vendor_id", account.VendorID).Error; err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Failed to keep historical transaction vendor"})
+			}
+		}
 		account.VendorID = req.VendorID
 	}
 	account.StudentID = req.StudentID

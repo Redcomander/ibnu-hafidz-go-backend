@@ -30,6 +30,7 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 	query := h.db.Model(&models.LaundryTransaction{}).
 		Preload("Account").
 		Preload("Account.Vendor").
+		Preload("Vendor").
 		Preload("Account.Student").
 		Preload("Account.User").
 		Preload("PickedUpBy")
@@ -146,6 +147,7 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 
 	trans := models.LaundryTransaction{
 		LaundryAccountID: req.LaundryAccountID,
+		VendorID:         &account.VendorID,
 		Tanggal:          tanggal,
 		BeratKg:          req.BeratKg,
 		HargaPerKg:       req.HargaPerKg,

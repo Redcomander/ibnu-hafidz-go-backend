@@ -545,6 +545,7 @@ func main() {
 	laundry.Get("/export/vendors/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportVendorStatisticsPDF)
 	laundry.Get("/export/vendors/weekly/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportWeeklyVendorStatisticsPDF)
 	laundry.Get("/export/vendors/all-weekly/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportAllWeeklyVendorStatisticsPDF)
+	laundry.Get("/export/vendors/:id/accounts/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportVendorAccountsPDF)
 	laundry.Get("/export/accounts/all/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportAllAccountsPDF)
 	laundry.Get("/export/accounts/exceeded/excel", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportExceededAccountsExcel)
 

@@ -238,6 +238,12 @@ func (h *LaundryVendorHandler) TransferAccountsRandom(c *fiber.Ctx) error {
 
 			moved := 0
 			if len(accountIDs) > 0 {
+				if err := tx.Model(&models.LaundryTransaction{}).
+					Where("laundry_account_id IN ? AND vendor_id IS NULL", accountIDs).
+					Update("vendor_id", source.ID).Error; err != nil {
+					return err
+				}
+
 				result := tx.Model(&models.LaundryAccount{}).
 					Where("id IN ?", accountIDs).
 					Update("vendor_id", target.ID)
@@ -414,6 +420,12 @@ func (h *LaundryVendorHandler) EqualizeAccounts(c *fiber.Ctx) error {
 				continue
 			}
 
+			if err := tx.Model(&models.LaundryTransaction{}).
+				Where("laundry_account_id IN ? AND vendor_id IS NULL", accountIDs).
+				Update("vendor_id", donor.VendorID).Error; err != nil {
+				return err
+			}
+
 			result := tx.Model(&models.LaundryAccount{}).
 				Where("id IN ?", accountIDs).
 				Update("vendor_id", receiver.VendorID)
@@ -502,7 +514,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 		// Join through LaundryAccount and LaundryTransaction
 		err := h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
-			Where("laundry_accounts.vendor_id = ?", vendor.ID).
+			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", vendor.ID).
 			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
@@ -543,7 +555,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 		var totalKg, totalRupiah float64
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
-			Where("laundry_accounts.vendor_id = ?", v.ID).
+			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
 			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)

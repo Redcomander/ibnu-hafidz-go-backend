@@ -67,7 +67,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsExcel(c *fiber.Ctx) error {
 		var totalKg, totalRupiah float64
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
-			Where("laundry_accounts.vendor_id = ?", v.ID).
+			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
 			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
@@ -159,7 +159,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 		var totalKg, totalRupiah float64
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
-			Where("laundry_accounts.vendor_id = ?", v.ID).
+			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
 			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
@@ -603,10 +603,14 @@ func (h *LaundryExportHandler) ExportAllWeeklyVendorStatisticsPDF(c *fiber.Ctx) 
 // ExportAllAccountsPDF generates a PDF list of all active laundry accounts grouped by vendor
 func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 	genderType := c.Query("gender_type")
+	vendorID := c.Query("vendor_id")
 
 	query := h.db.Model(&models.LaundryVendor{}).Where("active = ?", true)
 	if genderType != "" && genderType != "all" {
 		query = query.Where("gender_type = ?", genderType)
+	}
+	if vendorID != "" && vendorID != "all" {
+		query = query.Where("id = ?", vendorID)
 	}
 
 	var vendors []models.LaundryVendor
@@ -623,6 +627,9 @@ func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 	pdf.SetFont("Arial", "B", 16)
 
 	titleSuffix := ""
+	if vendorID != "" && vendorID != "all" {
+		titleSuffix = " - Vendor Tertentu"
+	}
 	if genderType == "banin" {
 		titleSuffix = " - Banin"
 	} else if genderType == "banat" {
@@ -692,4 +699,16 @@ func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 	c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
+}
+
+// ExportVendorAccountsPDF generates account list PDF for a single vendor.
+func (h *LaundryExportHandler) ExportVendorAccountsPDF(c *fiber.Ctx) error {
+	vendorID := c.Params("id")
+	if vendorID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Vendor ID wajib diisi"})
+	}
+
+	// Reuse the all-accounts exporter with vendor filter to keep format consistent.
+	c.Request().URI().QueryArgs().Set("vendor_id", vendorID)
+	return h.ExportAllAccountsPDF(c)
 }
