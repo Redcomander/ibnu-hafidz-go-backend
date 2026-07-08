@@ -323,11 +323,13 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 		StudentID uint   `json:"student_id"`
 		Status    string `json:"status"`
 		Materi    string `json:"materi"`
+		Rangkuman string `json:"rangkuman"`
 		Catatan   string `json:"catatan"`
 	}
 	existingMap := make(map[uint]AttendanceResponse)
 	start, end := dateRange(dateStr)
 	materi := ""
+	rangkuman := ""
 
 	if typeStr == "diniyyah" {
 		var records []models.AbsensiDiniyyah
@@ -342,7 +344,10 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 			if materi == "" && strings.TrimSpace(r.Materi) != "" {
 				materi = r.Materi
 			}
-			existingMap[r.StudentID] = AttendanceResponse{StudentID: r.StudentID, Status: r.Status, Materi: r.Materi, Catatan: r.Catatan}
+			if rangkuman == "" && strings.TrimSpace(r.Rangkuman) != "" {
+				rangkuman = r.Rangkuman
+			}
+			existingMap[r.StudentID] = AttendanceResponse{StudentID: r.StudentID, Status: r.Status, Materi: r.Materi, Rangkuman: r.Rangkuman, Catatan: r.Catatan}
 		}
 	}
 
@@ -377,6 +382,7 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"date":                  dateStr,
 		"materi":                materi,
+		"rangkuman":             rangkuman,
 		"students":              response,
 		"assigned_teacher_id":   assignedTeacherID,
 		"substitute_teacher_id": substituteTeacherID,
@@ -392,11 +398,12 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	}
 
 	type SubmitRequest struct {
-		JadwalID uint              `json:"jadwal_id"`
-		Date     string            `json:"date"`
-		Materi   string            `json:"materi"`
-		Type     string            `json:"type"` // formal or diniyyah
-		Records  []AttendanceInput `json:"records"`
+		JadwalID  uint              `json:"jadwal_id"`
+		Date      string            `json:"date"`
+		Materi    string            `json:"materi"`
+		Rangkuman string            `json:"rangkuman"`
+		Type      string            `json:"type"` // formal or diniyyah
+		Records   []AttendanceInput `json:"records"`
 	}
 
 	user, err := h.getUserFromContext(c)
@@ -415,6 +422,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 	}
 
 	req.Materi = strings.TrimSpace(req.Materi)
+	req.Rangkuman = strings.TrimSpace(req.Rangkuman)
 
 	start, end := dateRange(req.Date)
 
@@ -491,6 +499,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 					Tanggal:        date,
 					Status:         status,
 					Materi:         req.Materi,
+					Rangkuman:      req.Rangkuman,
 					Catatan:        record.Catatan,
 				}
 				if err := tx.Create(&absensi).Error; err != nil {
@@ -500,6 +509,7 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 			} else {
 				absensi.Status = status
 				absensi.Materi = req.Materi
+				absensi.Rangkuman = req.Rangkuman
 				absensi.Catatan = record.Catatan
 				if err := tx.Save(&absensi).Error; err != nil {
 					tx.Rollback()

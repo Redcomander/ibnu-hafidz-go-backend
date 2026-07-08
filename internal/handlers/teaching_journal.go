@@ -20,6 +20,7 @@ type teachingJournalRecord struct {
 	KelasName    string `json:"kelas_name"`
 	TeacherName  string `json:"teacher_name"`
 	Materi       string `json:"materi"`
+	Rangkuman    string `json:"rangkuman"`
 	PresentCount int64  `json:"present_count"`
 	StudentCount int64  `json:"student_count"`
 	JournalKey   string `json:"journal_key"`
@@ -57,7 +58,7 @@ func (h *AbsensiHandler) teachingJournalBaseQuery(typeStr, startDate, endExclusi
 	}
 	if search != "" {
 		term := "%" + strings.ToLower(strings.TrimSpace(search)) + "%"
-		q = q.Where("LOWER(COALESCE(ls.nama, '')) LIKE ? OR LOWER(COALESCE(k.nama, '')) LIKE ? OR LOWER(COALESCE(k.tingkat, '')) LIKE ? OR LOWER(COALESCE(u.name, '')) LIKE ? OR LOWER(COALESCE(a.materi, '')) LIKE ?", term, term, term, term, term)
+		q = q.Where("LOWER(COALESCE(ls.nama, '')) LIKE ? OR LOWER(COALESCE(k.nama, '')) LIKE ? OR LOWER(COALESCE(k.tingkat, '')) LIKE ? OR LOWER(COALESCE(u.name, '')) LIKE ? OR LOWER(COALESCE(a.materi, '')) LIKE ? OR LOWER(COALESCE(a.rangkuman, '')) LIKE ?", term, term, term, term, term, term)
 	}
 
 	return q
@@ -101,7 +102,7 @@ func (h *AbsensiHandler) GetTeachingJournals(c *fiber.Ctx) error {
 	var rows []teachingJournalRecord
 	offset := (page - 1) * perPage
 	if err := baseQ.
-		Select("a.jadwal_formal_id as jadwal_id, DATE_FORMAT(MIN(a.tanggal), '%Y-%m-%d') as tanggal, COALESCE(ls.nama, '-') as lesson_name, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas_name, COALESCE(u.name, '-') as teacher_name, MAX(COALESCE(a.materi, '')) as materi, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as present_count, COUNT(*) as student_count").
+		Select("a.jadwal_formal_id as jadwal_id, DATE_FORMAT(MIN(a.tanggal), '%Y-%m-%d') as tanggal, COALESCE(ls.nama, '-') as lesson_name, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas_name, COALESCE(u.name, '-') as teacher_name, MAX(COALESCE(a.materi, '')) as materi, MAX(COALESCE(a.rangkuman, '')) as rangkuman, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as present_count, COUNT(*) as student_count").
 		Group("a.jadwal_formal_id, DATE(a.tanggal), ls.nama, k.nama, k.tingkat, u.name").
 		Order("DATE(a.tanggal) DESC, ls.nama ASC, k.nama ASC").
 		Offset(offset).Limit(perPage).
@@ -111,6 +112,7 @@ func (h *AbsensiHandler) GetTeachingJournals(c *fiber.Ctx) error {
 
 	for i := range rows {
 		rows[i].Materi = strings.TrimSpace(rows[i].Materi)
+		rows[i].Rangkuman = strings.TrimSpace(rows[i].Rangkuman)
 		rows[i].KelasName = strings.TrimSpace(rows[i].KelasName)
 		rows[i].JournalKey = fmt.Sprintf("%d__%s", rows[i].JadwalID, rows[i].Tanggal)
 	}
@@ -146,17 +148,28 @@ func (h *AbsensiHandler) UpdateTeachingJournal(c *fiber.Ctx) error {
 	}
 
 	var req struct {
-		Materi string `json:"materi"`
+		Materi    *string `json:"materi"`
+		Rangkuman *string `json:"rangkuman"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Body request tidak valid"})
 	}
-	req.Materi = strings.TrimSpace(req.Materi)
+
+	updates := map[string]interface{}{}
+	if req.Materi != nil {
+		updates["materi"] = strings.TrimSpace(*req.Materi)
+	}
+	if req.Rangkuman != nil {
+		updates["rangkuman"] = strings.TrimSpace(*req.Rangkuman)
+	}
+	if len(updates) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Tidak ada data yang diperbarui"})
+	}
 	start, end := dateRange(tanggal)
 
 	result := h.db.Model(&models.Absensi{}).
 		Where("jadwal_formal_id = ? AND tanggal >= ? AND tanggal < ?", uint(jadwalID), start, end).
-		Update("materi", req.Materi)
+		Updates(updates)
 	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memperbarui jurnal mengajar"})
 	}
@@ -220,7 +233,7 @@ func (h *AbsensiHandler) ExportTeachingJournalsPDF(c *fiber.Ctx) error {
 
 		var row teachingJournalRecord
 		err := h.db.Table("absensis a").
-			Select("a.jadwal_formal_id as jadwal_id, DATE_FORMAT(MIN(a.tanggal), '%Y-%m-%d') as tanggal, COALESCE(ls.nama, '-') as lesson_name, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas_name, COALESCE(u.name, '-') as teacher_name, MAX(COALESCE(a.materi, '')) as materi, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as present_count, COUNT(*) as student_count").
+			Select("a.jadwal_formal_id as jadwal_id, DATE_FORMAT(MIN(a.tanggal), '%Y-%m-%d') as tanggal, COALESCE(ls.nama, '-') as lesson_name, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas_name, COALESCE(u.name, '-') as teacher_name, MAX(COALESCE(a.materi, '')) as materi, MAX(COALESCE(a.rangkuman, '')) as rangkuman, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as present_count, COUNT(*) as student_count").
 			Joins("JOIN jadwal_formal jf ON jf.id = a.jadwal_formal_id").
 			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
 			Joins("LEFT JOIN lessons ls ON ls.id = lkt.lesson_id").
@@ -232,6 +245,7 @@ func (h *AbsensiHandler) ExportTeachingJournalsPDF(c *fiber.Ctx) error {
 			Take(&row).Error
 		if err == nil {
 			row.Materi = strings.TrimSpace(row.Materi)
+			row.Rangkuman = strings.TrimSpace(row.Rangkuman)
 			row.KelasName = strings.TrimSpace(row.KelasName)
 			row.JournalKey = fmt.Sprintf("%d__%s", row.JadwalID, row.Tanggal)
 			rows = append(rows, row)
@@ -284,6 +298,13 @@ func (h *AbsensiHandler) ExportTeachingJournalsPDF(c *fiber.Ctx) error {
 		pdf.MultiCell(0, 7, defaultString(row.Materi, "-"), "1", "L", false)
 		if pdf.GetY() == y {
 			pdf.SetXY(x, y)
+		}
+
+		pdf.CellFormat(40, 7, "Rangkuman", "1", 0, "L", false, 0, "")
+		xSummary, ySummary := pdf.GetXY()
+		pdf.MultiCell(0, 7, defaultString(row.Rangkuman, "-"), "1", "L", false)
+		if pdf.GetY() == ySummary {
+			pdf.SetXY(xSummary, ySummary)
 		}
 
 		pdf.SetFont("Arial", "B", 10)
