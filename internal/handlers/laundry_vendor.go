@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -168,6 +169,297 @@ func (h *LaundryVendorHandler) Delete(c *fiber.Ctx) error {
 	logUserAction(h.db, c, "Hapus Vendor Laundry", "Menghapus vendor "+name)
 
 	return c.JSON(fiber.Map{"message": "Vendor deleted successfully"})
+}
+
+// TransferAccountsRandom moves a random number of active accounts from source vendors to a target vendor.
+// The target vendor is provided via path param :id.
+func (h *LaundryVendorHandler) TransferAccountsRandom(c *fiber.Ctx) error {
+	targetID, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil || targetID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Target vendor tidak valid"})
+	}
+
+	var req struct {
+		AmountPerVendor int    `json:"amount_per_vendor"`
+		SourceVendorIDs []uint `json:"source_vendor_ids"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Body request tidak valid"})
+	}
+	if req.AmountPerVendor <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Jumlah akun per vendor harus lebih dari 0"})
+	}
+
+	var target models.LaundryVendor
+	if err := h.db.First(&target, uint(targetID)).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Vendor tujuan tidak ditemukan"})
+	}
+
+	var sources []models.LaundryVendor
+	if len(req.SourceVendorIDs) > 0 {
+		if err := h.db.
+			Where("id IN ? AND id <> ? AND gender_type = ?", req.SourceVendorIDs, uint(targetID), target.GenderType).
+			Find(&sources).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal memuat vendor sumber"})
+		}
+	} else {
+		if err := h.db.
+			Where("id <> ? AND gender_type = ?", uint(targetID), target.GenderType).
+			Find(&sources).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal memuat vendor sumber"})
+		}
+	}
+
+	if len(sources) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Tidak ada vendor sumber yang cocok untuk transfer"})
+	}
+
+	type transferDetail struct {
+		SourceVendorID uint   `json:"source_vendor_id"`
+		SourceName     string `json:"source_name"`
+		Requested      int    `json:"requested"`
+		Moved          int    `json:"moved"`
+	}
+
+	details := make([]transferDetail, 0, len(sources))
+	totalMoved := 0
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		for _, source := range sources {
+			var accountIDs []uint
+			if err := tx.Model(&models.LaundryAccount{}).
+				Where("vendor_id = ? AND active = ?", source.ID, true).
+				Where("deleted_at IS NULL").
+				Order("RAND()").
+				Limit(req.AmountPerVendor).
+				Pluck("id", &accountIDs).Error; err != nil {
+				return err
+			}
+
+			moved := 0
+			if len(accountIDs) > 0 {
+				result := tx.Model(&models.LaundryAccount{}).
+					Where("id IN ?", accountIDs).
+					Update("vendor_id", target.ID)
+				if result.Error != nil {
+					return result.Error
+				}
+				moved = int(result.RowsAffected)
+				totalMoved += moved
+			}
+
+			details = append(details, transferDetail{
+				SourceVendorID: source.ID,
+				SourceName:     source.Name,
+				Requested:      req.AmountPerVendor,
+				Moved:          moved,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal melakukan transfer akun"})
+	}
+
+	logUserAction(h.db, c, "Transfer Akun Laundry Acak", fmt.Sprintf("Memindahkan %d akun ke vendor %s dari %d vendor sumber", totalMoved, target.Name, len(sources)))
+
+	return c.JSON(fiber.Map{
+		"message":            "Transfer akun selesai",
+		"target_vendor_id":   target.ID,
+		"target_vendor_name": target.Name,
+		"amount_per_vendor":  req.AmountPerVendor,
+		"total_moved":        totalMoved,
+		"details":            details,
+	})
+}
+
+// EqualizeAccounts redistributes active accounts across selected vendors so counts are as even as possible.
+func (h *LaundryVendorHandler) EqualizeAccounts(c *fiber.Ctx) error {
+	var req struct {
+		VendorIDs []uint `json:"vendor_ids"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Body request tidak valid"})
+	}
+	if len(req.VendorIDs) < 2 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Pilih minimal 2 vendor untuk pemerataan"})
+	}
+
+	var vendors []models.LaundryVendor
+	if err := h.db.Where("id IN ?", req.VendorIDs).Find(&vendors).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal memuat vendor"})
+	}
+	if len(vendors) < 2 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Vendor yang dipilih tidak valid"})
+	}
+
+	gender := vendors[0].GenderType
+	for _, v := range vendors {
+		if v.GenderType != gender {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Pemerataan hanya dapat dilakukan pada vendor dengan kategori gender yang sama"})
+		}
+	}
+
+	type countRow struct {
+		VendorID uint
+		Count    int64
+	}
+
+	countMap := make(map[uint]int)
+	for _, v := range vendors {
+		countMap[v.ID] = 0
+	}
+
+	var countRows []countRow
+	if err := h.db.Model(&models.LaundryAccount{}).
+		Select("vendor_id, COUNT(*) as count").
+		Where("vendor_id IN ? AND active = ?", req.VendorIDs, true).
+		Where("deleted_at IS NULL").
+		Group("vendor_id").
+		Scan(&countRows).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal menghitung akun vendor"})
+	}
+
+	totalAccounts := 0
+	for _, row := range countRows {
+		countMap[row.VendorID] = int(row.Count)
+		totalAccounts += int(row.Count)
+	}
+
+	targetBase := 0
+	remainder := 0
+	if len(vendors) > 0 {
+		targetBase = totalAccounts / len(vendors)
+		remainder = totalAccounts % len(vendors)
+	}
+
+	targetMap := make(map[uint]int)
+	for _, v := range vendors {
+		targetMap[v.ID] = targetBase
+	}
+	for i := 0; i < remainder; i++ {
+		targetMap[vendors[i].ID]++
+	}
+
+	type vendorState struct {
+		VendorID uint
+		Name     string
+		Current  int
+		Target   int
+		Diff     int
+	}
+
+	states := make(map[uint]*vendorState)
+	for _, v := range vendors {
+		states[v.ID] = &vendorState{
+			VendorID: v.ID,
+			Name:     v.Name,
+			Current:  countMap[v.ID],
+			Target:   targetMap[v.ID],
+			Diff:     countMap[v.ID] - targetMap[v.ID],
+		}
+	}
+
+	type movement struct {
+		FromVendorID uint   `json:"from_vendor_id"`
+		FromName     string `json:"from_name"`
+		ToVendorID   uint   `json:"to_vendor_id"`
+		ToName       string `json:"to_name"`
+		Moved        int    `json:"moved"`
+	}
+	movements := make([]movement, 0)
+	totalMoved := 0
+
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		for {
+			var donor *vendorState
+			var receiver *vendorState
+
+			for _, st := range states {
+				if st.Diff > 0 {
+					if donor == nil || st.Diff > donor.Diff {
+						donor = st
+					}
+				}
+				if st.Diff < 0 {
+					if receiver == nil || st.Diff < receiver.Diff {
+						receiver = st
+					}
+				}
+			}
+
+			if donor == nil || receiver == nil {
+				break
+			}
+
+			moveCount := donor.Diff
+			if -receiver.Diff < moveCount {
+				moveCount = -receiver.Diff
+			}
+			if moveCount <= 0 {
+				break
+			}
+
+			var accountIDs []uint
+			if err := tx.Model(&models.LaundryAccount{}).
+				Where("vendor_id = ? AND active = ?", donor.VendorID, true).
+				Where("deleted_at IS NULL").
+				Order("RAND()").
+				Limit(moveCount).
+				Pluck("id", &accountIDs).Error; err != nil {
+				return err
+			}
+			if len(accountIDs) == 0 {
+				donor.Diff = 0
+				continue
+			}
+
+			result := tx.Model(&models.LaundryAccount{}).
+				Where("id IN ?", accountIDs).
+				Update("vendor_id", receiver.VendorID)
+			if result.Error != nil {
+				return result.Error
+			}
+
+			moved := int(result.RowsAffected)
+			if moved == 0 {
+				break
+			}
+
+			donor.Diff -= moved
+			receiver.Diff += moved
+			totalMoved += moved
+
+			movements = append(movements, movement{
+				FromVendorID: donor.VendorID,
+				FromName:     donor.Name,
+				ToVendorID:   receiver.VendorID,
+				ToName:       receiver.Name,
+				Moved:        moved,
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Gagal melakukan pemerataan akun"})
+	}
+
+	finalCounts := make(map[uint]int)
+	for _, st := range states {
+		finalCounts[st.VendorID] = st.Target + st.Diff
+	}
+
+	logUserAction(h.db, c, "Pemerataan Akun Laundry", fmt.Sprintf("Pemerataan %d akun antar %d vendor", totalMoved, len(vendors)))
+
+	return c.JSON(fiber.Map{
+		"message":        "Pemerataan akun selesai",
+		"total_moved":    totalMoved,
+		"target_base":    targetBase,
+		"total_accounts": totalAccounts,
+		"movements":      movements,
+		"final_counts":   finalCounts,
+	})
 }
 
 // Statistics returns vendor statistics for a given period

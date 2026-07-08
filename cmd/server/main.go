@@ -515,6 +515,8 @@ func main() {
 	laundry.Get("/vendors", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.List)
 	laundry.Post("/vendors", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryVendorHandler.Create)
 	laundry.Put("/vendors/:id", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryVendorHandler.Update)
+	laundry.Post("/vendors/:id/transfer-random", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryVendorHandler.TransferAccountsRandom)
+	laundry.Post("/vendors/equalize", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryVendorHandler.EqualizeAccounts)
 	laundry.Delete("/vendors/:id", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryVendorHandler.Delete)
 	laundry.Get("/vendors/statistics", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.Statistics)
 	laundry.Get("/vendors/statistics/:id", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryVendorHandler.Statistics)
