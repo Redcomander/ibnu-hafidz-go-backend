@@ -3,12 +3,12 @@ package handlers
 import (
 	"encoding/csv"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -184,33 +184,166 @@ func (h *StudentHandler) MassDelete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Students deleted successfully", "deleted": res.RowsAffected})
 }
 
-// ExportCSV exports students as CSV (excel-friendly).
+// ExportCSV exports students as XLSX with complete student components.
 func (h *StudentHandler) ExportCSV(c *fiber.Ctx) error {
 	var students []models.Student
-	h.db.Order("nama_lengkap asc").Find(&students)
+	h.db.Preload("Kelas").Order("nama_lengkap asc").Find(&students)
 
-	c.Set("Content-Type", "text/csv; charset=utf-8")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=students-%s.csv", time.Now().Format("20060102-150405")))
+	f := excelize.NewFile()
+	sheet := "Data Santri"
+	f.SetSheetName("Sheet1", sheet)
 
-	rows := [][]string{{"id", "nama_lengkap", "nisn", "jenis_kelamin", "status_periode", "nama_ayah", "no_hp"}}
-	for _, s := range students {
-		rows = append(rows, []string{
-			strconv.FormatUint(uint64(s.ID), 10),
+	headers := []string{
+		"ID",
+		"Nama Lengkap",
+		"Jenis Kelamin",
+		"Status Periode",
+		"Jenjang Pendidikan Periode",
+		"Tempat Lahir",
+		"Tanggal Lahir",
+		"NISN",
+		"NIK",
+		"No KK",
+		"No Akte",
+		"Alamat",
+		"RT",
+		"RW",
+		"Desa/Kelurahan",
+		"Kecamatan",
+		"Kabupaten/Kota",
+		"Provinsi",
+		"Kode Pos",
+		"No HP",
+		"Anak Ke",
+		"Dari Saudara",
+		"Sekolah Asal",
+		"Nama Ayah",
+		"NIK Ayah",
+		"Tahun Lahir Ayah",
+		"Pekerjaan Ayah",
+		"Pendidikan Ayah",
+		"Nama Ibu",
+		"NIK Ibu",
+		"Tahun Lahir Ibu",
+		"Pekerjaan Ibu",
+		"Pendidikan Ibu",
+		"File KTP Ortu",
+		"File Kartu Keluarga",
+		"File Ijazah",
+		"File Surat Keterangan Lulus",
+		"File Akta Kelahiran",
+		"File Surat Pindah",
+		"Foto Santri",
+		"Kelas ID",
+		"Kelas Nama",
+		"Dibuat Pada",
+		"Diubah Pada",
+	}
+
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheet, cell, header)
+	}
+
+	headerStyle, _ := f.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"1F4E78"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	endHeaderCell, _ := excelize.CoordinatesToCellName(len(headers), 1)
+	f.SetCellStyle(sheet, "A1", endHeaderCell, headerStyle)
+
+	for i, s := range students {
+		row := i + 2
+		kelasID := ""
+		if s.KelasID != nil {
+			kelasID = fmt.Sprintf("%d", *s.KelasID)
+		}
+		kelasNama := ""
+		if s.Kelas != nil {
+			kelasNama = s.Kelas.Nama
+		}
+
+		values := []string{
+			fmt.Sprintf("%d", s.ID),
 			s.NamaLengkap,
-			stringOrEmpty(s.NISN),
 			stringOrEmpty(s.JenisKelamin),
 			stringOrEmpty(s.StatusPeriode),
-			stringOrEmpty(s.NamaAyah),
+			stringOrEmpty(s.JenjangPendidikanPeriode),
+			stringOrEmpty(s.TempatLahir),
+			stringOrEmpty(s.TanggalLahir),
+			stringOrEmpty(s.NISN),
+			stringOrEmpty(s.NIK),
+			stringOrEmpty(s.NoKK),
+			stringOrEmpty(s.NoAkte),
+			stringOrEmpty(s.Alamat),
+			stringOrEmpty(s.RT),
+			stringOrEmpty(s.RW),
+			stringOrEmpty(s.DesaKelurahan),
+			stringOrEmpty(s.Kecamatan),
+			stringOrEmpty(s.KabupatenKota),
+			stringOrEmpty(s.Provinsi),
+			stringOrEmpty(s.KodePos),
 			stringOrEmpty(s.NoHP),
+			intOrEmpty(s.AnakKe),
+			intOrEmpty(s.DariSaudara),
+			stringOrEmpty(s.SekolahAsal),
+			stringOrEmpty(s.NamaAyah),
+			stringOrEmpty(s.NIKAyah),
+			stringOrEmpty(s.TahunLahirAyah),
+			stringOrEmpty(s.PekerjaanAyah),
+			stringOrEmpty(s.PendidikanAyah),
+			stringOrEmpty(s.NamaIbu),
+			stringOrEmpty(s.NIKIbu),
+			stringOrEmpty(s.TahunLahirIbu),
+			stringOrEmpty(s.PekerjaanIbu),
+			stringOrEmpty(s.PendidikanIbu),
+			stringOrEmpty(s.FileKTPOrtu),
+			stringOrEmpty(s.FileKartuKeluarga),
+			stringOrEmpty(s.FileIjazah),
+			stringOrEmpty(s.FileSuratKeteranganLulus),
+			stringOrEmpty(s.FileAktaKelahiran),
+			stringOrEmpty(s.FileSuratPindah),
+			stringOrEmpty(s.FotoSantri),
+			kelasID,
+			kelasNama,
+			s.CreatedAt.Format("2006-01-02 15:04:05"),
+			s.UpdatedAt.Format("2006-01-02 15:04:05"),
+		}
+
+		for col, value := range values {
+			cell, _ := excelize.CoordinatesToCellName(col+1, row)
+			f.SetCellValue(sheet, cell, value)
+		}
+	}
+
+	textStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 49})
+	textCols := []int{8, 9, 10, 11, 13, 14, 19, 20, 25, 26, 30, 31, 41}
+	if len(students) > 0 {
+		for _, col := range textCols {
+			colName, _ := excelize.ColumnNumberToName(col)
+			startCell := fmt.Sprintf("%s2", colName)
+			endCell := fmt.Sprintf("%s%d", colName, len(students)+1)
+			f.SetCellStyle(sheet, startCell, endCell, textStyle)
+		}
+	}
+
+	for i := 1; i <= len(headers); i++ {
+		colName, _ := excelize.ColumnNumberToName(i)
+		f.SetColWidth(sheet, colName, colName, 18)
+	}
+
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=students-%s.xlsx", time.Now().Format("20060102-150405")))
+
+	if err := f.Write(c.Response().BodyWriter()); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to export students",
 		})
 	}
 
-	var b strings.Builder
-	w := csv.NewWriter(&b)
-	_ = w.WriteAll(rows)
-	w.Flush()
-
-	return c.SendString(b.String())
+	return nil
 }
 
 // ExportTemplate downloads a CSV import template.
@@ -303,4 +436,11 @@ func stringOrEmpty(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func intOrEmpty(v *int) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *v)
 }
