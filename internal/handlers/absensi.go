@@ -423,6 +423,9 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 
 	req.Materi = strings.TrimSpace(req.Materi)
 	req.Rangkuman = strings.TrimSpace(req.Rangkuman)
+	if req.Type != "diniyyah" && req.Materi == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Materi jurnal mengajar wajib diisi sebelum absensi formal disimpan"})
+	}
 
 	start, end := dateRange(req.Date)
 

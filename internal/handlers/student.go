@@ -246,8 +246,8 @@ func (h *StudentHandler) ExportCSV(c *fiber.Ctx) error {
 	}
 
 	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Color: "FFFFFF"},
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"1F4E78"}},
+		Font:      &excelize.Font{Bold: true, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"1F4E78"}},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
 	endHeaderCell, _ := excelize.CoordinatesToCellName(len(headers), 1)
