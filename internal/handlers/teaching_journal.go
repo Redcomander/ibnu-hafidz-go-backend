@@ -37,6 +37,14 @@ type absentStudentRow struct {
 	Reason      string
 }
 
+type teachingJournalReportGroup struct {
+	KelasName    string
+	Rows         []teachingJournalRecord
+	JournalCount int
+	PresentCount int64
+	StudentCount int64
+}
+
 func canManageTeachingJournal(user *models.User) bool {
 	return canManageTeacherAttendance(user)
 }
@@ -256,79 +264,85 @@ func (h *AbsensiHandler) ExportTeachingJournalsPDF(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Tidak ada jurnal mengajar yang dapat diunduh"})
 	}
 
+	groups := make([]teachingJournalReportGroup, 0)
+	groupIndex := map[string]int{}
+	var totalPresent int64
+	var totalStudents int64
+	for _, row := range rows {
+		key := strings.TrimSpace(row.KelasName)
+		idx, ok := groupIndex[key]
+		if !ok {
+			groups = append(groups, teachingJournalReportGroup{KelasName: key})
+			idx = len(groups) - 1
+			groupIndex[key] = idx
+		}
+		groups[idx].Rows = append(groups[idx].Rows, row)
+		groups[idx].JournalCount++
+		groups[idx].PresentCount += row.PresentCount
+		groups[idx].StudentCount += row.StudentCount
+		totalPresent += row.PresentCount
+		totalStudents += row.StudentCount
+	}
+
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
 	pdf.AddPage()
 	pdf.SetFont("Arial", "B", 15)
-	pdf.CellFormat(0, 8, "Jurnal Mengajar", "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 8, "Rekap Jurnal Mengajar", "", 1, "C", false, 0, "")
 	pdf.SetFont("Arial", "", 10)
 	pdf.CellFormat(0, 6, fmt.Sprintf("Dicetak pada %s", time.Now().Format("02 Jan 2006 15:04")), "", 1, "C", false, 0, "")
 	pdf.Ln(4)
 
-	for idx, row := range rows {
-		if idx > 0 {
-			pdf.Ln(3)
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.CellFormat(38, 8, "Total Jurnal", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(40, 8, "Total Hadir", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(40, 8, "Total Santri", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(0, 8, "Rata-rata Kehadiran", "1", 1, "L", true, 0, "")
+	pdf.SetFont("Arial", "", 10)
+	pdf.CellFormat(38, 8, fmt.Sprintf("%d", len(rows)), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(40, 8, fmt.Sprintf("%d", totalPresent), "1", 0, "C", false, 0, "")
+	pdf.CellFormat(40, 8, fmt.Sprintf("%d", totalStudents), "1", 0, "C", false, 0, "")
+	avgAttendance := "0%"
+	if totalStudents > 0 {
+		avgAttendance = fmt.Sprintf("%.1f%%", (float64(totalPresent)/float64(totalStudents))*100)
+	}
+	pdf.CellFormat(0, 8, avgAttendance, "1", 1, "C", false, 0, "")
+	pdf.Ln(2)
+
+	for i, group := range groups {
+		if i > 0 {
+			pdf.AddPage()
 		}
 
-		start, end := dateRange(row.Tanggal)
-		var absentRows []absentStudentRow
-		h.db.Table("absensis a").
-			Select("COALESCE(s.nama_lengkap, '-') as student_name, a.status, COALESCE(a.catatan, '') as reason").
-			Joins("LEFT JOIN students s ON s.id = a.student_id").
-			Where("a.jadwal_formal_id = ? AND a.tanggal >= ? AND a.tanggal < ?", row.JadwalID, start, end).
-			Where("a.deleted_at IS NULL").
-			Where("a.status IN ?", []string{"izin", "sakit", "alpa"}).
-			Order("FIELD(a.status, 'izin', 'sakit', 'alpa'), s.nama_lengkap ASC").
-			Scan(&absentRows)
+		groupTitle := group.KelasName
+		if groupTitle == "" {
+			groupTitle = "Lainnya"
+		}
 
-		pdf.SetFillColor(234, 247, 236)
-		pdf.SetDrawColor(183, 225, 188)
-		pdf.SetFont("Arial", "B", 11)
-		pdf.CellFormat(0, 8, fmt.Sprintf("%s - %s", row.LessonName, row.Tanggal), "1", 1, "L", true, 0, "")
+		pdf.SetFont("Arial", "B", 12)
+		pdf.CellFormat(0, 7, fmt.Sprintf("Kelas: %s", groupTitle), "0", 1, "L", false, 0, "")
 		pdf.SetFont("Arial", "", 10)
-		pdf.CellFormat(40, 7, "Kelas", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 7, row.KelasName, "1", 1, "L", false, 0, "")
-		pdf.CellFormat(40, 7, "Pengajar", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 7, row.TeacherName, "1", 1, "L", false, 0, "")
-		pdf.CellFormat(40, 7, "Jumlah Hadir", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 7, fmt.Sprintf("%d dari %d santri", row.PresentCount, row.StudentCount), "1", 1, "L", false, 0, "")
-		pdf.CellFormat(40, 7, "Materi", "1", 0, "L", false, 0, "")
-		x, y := pdf.GetXY()
-		pdf.MultiCell(0, 7, defaultString(row.Materi, "-"), "1", "L", false)
-		if pdf.GetY() == y {
-			pdf.SetXY(x, y)
-		}
+		pdf.CellFormat(0, 6, fmt.Sprintf("Jurnal: %d | Hadir: %d | Santri: %d", group.JournalCount, group.PresentCount, group.StudentCount), "0", 1, "L", false, 0, "")
+		pdf.Ln(1)
 
-		pdf.CellFormat(40, 7, "Rangkuman", "1", 0, "L", false, 0, "")
-		xSummary, ySummary := pdf.GetXY()
-		pdf.MultiCell(0, 7, defaultString(row.Rangkuman, "-"), "1", "L", false)
-		if pdf.GetY() == ySummary {
-			pdf.SetXY(xSummary, ySummary)
-		}
+		pdf.SetFont("Arial", "B", 8)
+		pdf.CellFormat(18, 7, "Tanggal", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(28, 7, "Pelajaran", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(32, 7, "Pengajar", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(28, 7, "Hadir", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(32, 7, "Materi", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(0, 7, "Rangkuman", "1", 1, "C", true, 0, "")
 
-		pdf.SetFont("Arial", "B", 10)
-		pdf.CellFormat(0, 7, "Siswa Tidak Masuk", "1", 1, "L", false, 0, "")
-		if len(absentRows) == 0 {
-			pdf.SetFont("Arial", "", 10)
-			pdf.CellFormat(0, 7, "-", "1", 1, "L", false, 0, "")
-			continue
-		}
-
-		pdf.SetFont("Arial", "B", 9)
-		pdf.CellFormat(70, 7, "Nama", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(28, 7, "Status", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 7, "Alasan", "1", 1, "L", false, 0, "")
-
-		pdf.SetFont("Arial", "", 9)
-		for _, absent := range absentRows {
-			pdf.CellFormat(70, 7, defaultString(strings.TrimSpace(absent.StudentName), "-"), "1", 0, "L", false, 0, "")
-			pdf.CellFormat(28, 7, absenceStatusLabel(absent.Status), "1", 0, "L", false, 0, "")
-			xReason, yReason := pdf.GetXY()
-			pdf.MultiCell(0, 7, defaultString(strings.TrimSpace(absent.Reason), "-"), "1", "L", false)
-			if pdf.GetY() == yReason {
-				pdf.SetXY(xReason, yReason)
-			}
+		pdf.SetFont("Arial", "", 8)
+		for _, row := range group.Rows {
+			pdf.CellFormat(18, 7, row.Tanggal, "1", 0, "L", false, 0, "")
+			pdf.CellFormat(28, 7, defaultString(row.LessonName, "-"), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(32, 7, defaultString(row.TeacherName, "-"), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(28, 7, fmt.Sprintf("%d / %d", row.PresentCount, row.StudentCount), "1", 0, "C", false, 0, "")
+			pdf.CellFormat(32, 7, previewString(row.Materi, 35), "1", 0, "L", false, 0, "")
+			pdf.MultiCell(0, 7, previewString(row.Rangkuman, 90), "1", "L", false)
 		}
 	}
 
@@ -348,6 +362,18 @@ func defaultString(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func previewString(v string, limit int) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "-"
+	}
+	runes := []rune(v)
+	if len(runes) <= limit {
+		return v
+	}
+	return strings.TrimSpace(string(runes[:limit])) + "..."
 }
 
 func absenceStatusLabel(status string) string {
