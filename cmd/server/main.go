@@ -448,6 +448,7 @@ func main() {
 	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                       // Export PDF
 	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)                   // Export Excel
 	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF)        // Export Teacher PDF
+	attendance.Get("/export/teacher/missing/pdf", absensiHandler.ExportTeacherMissingAttendancePDF) // Export Teacher Missing Student Attendance PDF
 	attendance.Post("/journals/export/pdf", absensiHandler.ExportTeachingJournalsPDF)       // Export selected teaching journals
 	attendance.Get("/assignable-teachers", absensiHandler.ListAssignableTeachers)           // Substitute teacher picker
 	attendance.Get("/", absensiHandler.GetAttendance)                                       // Get form/data

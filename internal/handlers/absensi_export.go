@@ -477,6 +477,75 @@ func truncStr(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+type missingTeacherAttendanceRow struct {
+	Date       time.Time
+	Teacher    string
+	Lesson     string
+	Kelas      string
+	Status     string
+	Attendance string
+}
+
+func (h *AbsensiHandler) getMissingTeacherAttendanceRows(typeStr, startDate, endExclusive, teacherID, gender, kelasID string) ([]missingTeacherAttendanceRow, error) {
+	rows := make([]missingTeacherAttendanceRow, 0)
+
+	if isDiniyyahAttendanceType(typeStr) {
+		q := h.db.Table("teacher_attendances ta").
+			Select("ta.date, u.name as teacher, COALESCE(dl.nama, '-') as lesson, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas, ta.status, 'Belum isi absensi santri' as attendance").
+			Joins("JOIN users u ON u.id = ta.user_id").
+			Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
+			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("LEFT JOIN diniyyah_lessons dl ON dl.id = dkt.diniyyah_lesson_id").
+			Joins("LEFT JOIN kelas k ON k.id = dkt.kelas_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_diniyyah_id IS NOT NULL").
+			Where("LOWER(COALESCE(ta.status, '')) = ?", "hadir").
+			Where("NOT EXISTS (SELECT 1 FROM absensi_diniyyahs ad WHERE ad.deleted_at IS NULL AND ad.jadwal_diniyyah_id = ta.jadwal_diniyyah_id AND DATE(ad.tanggal) = DATE(ta.date))")
+
+		if teacherID != "" {
+			q = q.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			q = q.Where("u.gender = ?", gender)
+		}
+		if kelasID != "" {
+			q = q.Where("dkt.kelas_id = ?", kelasID)
+		}
+
+		err := q.Order("ta.date DESC, u.name ASC").Scan(&rows).Error
+		return rows, err
+	}
+
+	q := h.db.Table("teacher_attendances ta").
+		Select("ta.date, u.name as teacher, COALESCE(ls.nama, '-') as lesson, TRIM(CONCAT(COALESCE(k.nama, ''), ' ', COALESCE(k.tingkat, ''))) as kelas, ta.status, 'Belum isi absensi santri' as attendance").
+		Joins("JOIN users u ON u.id = ta.user_id").
+		Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
+		Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").
+		Joins("LEFT JOIN lessons ls ON ls.id = lkt.lesson_id").
+		Joins("LEFT JOIN kelas k ON k.id = lkt.kelas_id").
+		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+		Where("ta.deleted_at IS NULL").
+		Where("ta.jadwal_formal_id IS NOT NULL").
+		Where("LOWER(COALESCE(ta.status, '')) = ?", "hadir").
+		Where("NOT EXISTS (SELECT 1 FROM absensis a WHERE a.deleted_at IS NULL AND a.jadwal_formal_id = ta.jadwal_formal_id AND DATE(a.tanggal) = DATE(ta.date))")
+
+	q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
+
+	if teacherID != "" {
+		q = q.Where("ta.user_id = ?", teacherID)
+	}
+	if gender != "" {
+		q = q.Where("u.gender = ?", gender)
+	}
+	if kelasID != "" {
+		q = q.Where("lkt.kelas_id = ?", kelasID)
+	}
+
+	err := q.Order("ta.date DESC, u.name ASC").Scan(&rows).Error
+	return rows, err
+}
+
 // ── ExportTeacherStatisticsPDF exports teacher statistics to a PDF file ──
 func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	typeStr := c.Query("type", "formal")
@@ -750,6 +819,76 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", "application/pdf")
 	filename := fmt.Sprintf("Rekapan_Absensi_Guru_%s_%s_%s.pdf", typeStr, startDate, endDate)
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+
+	return pdf.Output(c.Response().BodyWriter())
+}
+
+func (h *AbsensiHandler) ExportTeacherMissingAttendancePDF(c *fiber.Ctx) error {
+	typeStr := c.Query("type", "formal")
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+	teacherID := c.Query("teacher_id")
+	gender := c.Query("gender")
+	kelasID := c.Query("kelas_id")
+
+	if startDate == "" {
+		now := time.Now()
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = time.Now().Format("2006-01-02")
+	}
+
+	endT, _ := time.Parse("2006-01-02", endDate)
+	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
+
+	missingTeacherRows, err := h.getMissingTeacherAttendanceRows(typeStr, startDate, endExclusive, teacherID, gender, kelasID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal memuat guru yang belum mengisi absensi santri"})
+	}
+
+	pdf := fpdf.New("L", "mm", "A4", "")
+	pdf.SetAutoPageBreak(true, 15)
+	pdf.AddPage()
+
+	pdf.SetFont("Arial", "B", 16)
+	pdf.CellFormat(0, 10, "Laporan Guru Belum Isi Absensi Santri", "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 11)
+	pdf.CellFormat(0, 7, fmt.Sprintf("Tipe: %s | Periode: %s s/d %s", strings.ToUpper(typeStr), startDate, endDate), "", 1, "C", false, 0, "")
+	pdf.Ln(3)
+
+	pdf.SetFont("Arial", "", 10)
+	pdf.CellFormat(0, 6, fmt.Sprintf("Total data: %d", len(missingTeacherRows)), "", 1, "L", false, 0, "")
+	pdf.Ln(2)
+
+	pdf.SetFont("Arial", "B", 10)
+	pdf.SetFillColor(239, 68, 68)
+	pdf.SetTextColor(255, 255, 255)
+	pdf.CellFormat(25, 8, "Tanggal", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(45, 8, "Guru", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(50, 8, "Pelajaran", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(40, 8, "Kelas", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(25, 8, "Status", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(0, 8, "Keterangan", "1", 1, "L", true, 0, "")
+
+	pdf.SetFont("Arial", "", 10)
+	pdf.SetTextColor(0, 0, 0)
+	if len(missingTeacherRows) == 0 {
+		pdf.CellFormat(0, 8, "Tidak ada guru yang memenuhi kriteria pada periode ini.", "1", 1, "L", false, 0, "")
+	} else {
+		for _, row := range missingTeacherRows {
+			pdf.CellFormat(25, 8, row.Date.Format("02/01/2006"), "1", 0, "C", false, 0, "")
+			pdf.CellFormat(45, 8, truncStr(row.Teacher, 24), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(50, 8, truncStr(row.Lesson, 28), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(40, 8, truncStr(row.Kelas, 22), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(25, 8, truncStr(row.Status, 12), "1", 0, "C", false, 0, "")
+			pdf.CellFormat(0, 8, row.Attendance, "1", 1, "L", false, 0, "")
+		}
+	}
+
+	c.Set("Content-Type", "application/pdf")
+	filename := fmt.Sprintf("Laporan_Guru_Belum_Isi_Absensi_%s_%s_%s.pdf", typeStr, startDate, endDate)
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
