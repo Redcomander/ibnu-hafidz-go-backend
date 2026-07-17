@@ -441,26 +441,26 @@ func main() {
 	// Attendance (Absensi)
 	absensiHandler := handlers.NewAbsensiHandler(db)
 	attendance := protected.Group("/attendance")
-	attendance.Get("/statistics", absensiHandler.GetStatistics)                             // Statistics
-	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)              // Teacher Statistics
-	attendance.Get("/history", absensiHandler.GetHistory)                                   // Paginated history
-	attendance.Get("/journals", absensiHandler.GetTeachingJournals)                         // Teaching journals list
-	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                       // Export PDF
-	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)                   // Export Excel
-	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF)        // Export Teacher PDF
+	attendance.Get("/statistics", absensiHandler.GetStatistics)                                     // Statistics
+	attendance.Get("/teacher-statistics", absensiHandler.GetTeacherStatistics)                      // Teacher Statistics
+	attendance.Get("/history", absensiHandler.GetHistory)                                           // Paginated history
+	attendance.Get("/journals", absensiHandler.GetTeachingJournals)                                 // Teaching journals list
+	attendance.Get("/export/pdf", absensiHandler.ExportStatisticsPDF)                               // Export PDF
+	attendance.Get("/export/excel", absensiHandler.ExportStatisticsExcel)                           // Export Excel
+	attendance.Get("/export/teacher/pdf", absensiHandler.ExportTeacherStatisticsPDF)                // Export Teacher PDF
 	attendance.Get("/export/teacher/missing/pdf", absensiHandler.ExportTeacherMissingAttendancePDF) // Export Teacher Missing Student Attendance PDF
-	attendance.Post("/journals/export/pdf", absensiHandler.ExportTeachingJournalsPDF)       // Export selected teaching journals
-	attendance.Get("/assignable-teachers", absensiHandler.ListAssignableTeachers)           // Substitute teacher picker
-	attendance.Get("/", absensiHandler.GetAttendance)                                       // Get form/data
-	attendance.Post("/", absensiHandler.SubmitAttendance)                                   // Submit/Update
-	attendance.Put("/journals/:jadwalID/:tanggal", absensiHandler.UpdateTeachingJournal)    // Edit teaching journal materi
-	attendance.Delete("/journals/:jadwalID/:tanggal", absensiHandler.DeleteTeachingJournal) // Delete teaching journal
-	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                     // Teacher Attendance
-	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                         // Assign Substitute
-	attendance.Put("/substitute/:id", absensiHandler.UpdateSubstituteHistory)               // Update Substitute History
-	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)            // Delete Substitute History
-	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord)  // Delete teacher absence record
-	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)     // Update teacher absence record
+	attendance.Post("/journals/export/pdf", absensiHandler.ExportTeachingJournalsPDF)               // Export selected teaching journals
+	attendance.Get("/assignable-teachers", absensiHandler.ListAssignableTeachers)                   // Substitute teacher picker
+	attendance.Get("/", absensiHandler.GetAttendance)                                               // Get form/data
+	attendance.Post("/", absensiHandler.SubmitAttendance)                                           // Submit/Update
+	attendance.Put("/journals/:jadwalID/:tanggal", absensiHandler.UpdateTeachingJournal)            // Edit teaching journal materi
+	attendance.Delete("/journals/:jadwalID/:tanggal", absensiHandler.DeleteTeachingJournal)         // Delete teaching journal
+	attendance.Post("/teacher", absensiHandler.SubmitTeacherAttendance)                             // Teacher Attendance
+	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                                 // Assign Substitute
+	attendance.Put("/substitute/:id", absensiHandler.UpdateSubstituteHistory)                       // Update Substitute History
+	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)                    // Delete Substitute History
+	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord)          // Delete teacher absence record
+	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)             // Update teacher absence record
 
 	// Create a test route to trigger notification (temporary, non-production only)
 	if cfg.Environment != "production" {
