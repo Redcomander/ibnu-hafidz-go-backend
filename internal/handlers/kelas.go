@@ -318,7 +318,7 @@ func (h *KelasHandler) ExportExcel(c *fiber.Ctx) error {
 	cellStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Size: 10, Color: "111827"},
 		Alignment: &excelize.Alignment{Vertical: "center"},
-		Border: []excelize.Border{{Type: "left", Color: "E5E7EB", Style: 1}, {Type: "right", Color: "E5E7EB", Style: 1}, {Type: "top", Color: "E5E7EB", Style: 1}, {Type: "bottom", Color: "E5E7EB", Style: 1}},
+		Border:    []excelize.Border{{Type: "left", Color: "E5E7EB", Style: 1}, {Type: "right", Color: "E5E7EB", Style: 1}, {Type: "top", Color: "E5E7EB", Style: 1}, {Type: "bottom", Color: "E5E7EB", Style: 1}},
 	})
 
 	f.SetCellValue(sheet, "A1", "DAFTAR SANTRI")
