@@ -126,15 +126,41 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
 	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
 
-	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.AddPage()
-	pdf.SetFont("Arial", "B", 16)
-	pdf.CellFormat(0, 10, "Rekapan Laundry/Vendor", "", 1, "C", false, 0, "")
+	periodStr := fmt.Sprintf("%s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006"))
 
-	dateStr := fmt.Sprintf("Periode: %s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006"))
-	pdf.SetFont("Arial", "", 12)
-	pdf.CellFormat(0, 10, dateStr, "", 1, "C", false, 0, "")
-	pdf.Ln(5)
+	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf.SetAutoPageBreak(true, 18)
+	pdf.SetMargins(15, 15, 15)
+	pdf.SetHeaderFunc(func() {
+		pdf.SetFont("Arial", "B", 9)
+		pdf.SetTextColor(80, 80, 80)
+		pdf.CellFormat(130, 7, "Rekapan Laundry Vendor", "", 0, "L", false, 0, "")
+		pdf.SetFont("Arial", "", 8)
+		pdf.CellFormat(0, 7, "Periode: "+periodStr, "", 1, "R", false, 0, "")
+		pdf.SetDrawColor(200, 200, 200)
+		pdf.Line(15, pdf.GetY(), 195, pdf.GetY())
+		pdf.Ln(2)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetDrawColor(0, 0, 0)
+	})
+	pdf.SetFooterFunc(func() {
+		pdf.SetY(-12)
+		pdf.SetFont("Arial", "", 8)
+		pdf.SetTextColor(150, 150, 150)
+		pdf.CellFormat(130, 8, fmt.Sprintf("Dicetak: %s", time.Now().Format("02/01/2006 15:04")), "", 0, "L", false, 0, "")
+		pdf.CellFormat(0, 8, fmt.Sprintf("Halaman %d", pdf.PageNo()), "", 0, "R", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+	})
+	pdf.AddPage()
+
+	pdf.SetFont("Arial", "B", 18)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.CellFormat(0, 10, "Rekapan Laundry Vendor", "", 1, "L", false, 0, "")
+	pdf.SetFont("Arial", "", 11)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.CellFormat(0, 7, "Periode: "+periodStr, "", 1, "L", false, 0, "")
+	pdf.Ln(4)
+	pdf.SetTextColor(0, 0, 0)
 
 	query := h.db.Model(&models.LaundryVendor{})
 	if vendorID != "" && vendorID != "all" {
@@ -219,51 +245,75 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 		}
 	}
 
-	// Now draw table
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(10, 8, "No", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(100, 8, "Nama Vendor", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(40, 8, "Berat (Kg)", "1", 0, "R", false, 0, "")
-	pdf.CellFormat(40, 8, "Total Rupiah", "1", 1, "R", false, 0, "")
+	// Summary strip: Total Vendor | Total Berat | Total Pendapatan
+	pdf.SetDrawColor(220, 220, 220)
+	pdf.SetFillColor(245, 247, 251)
+	pdf.SetFont("Arial", "B", 7)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.CellFormat(56, 6, "TOTAL VENDOR", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(62, 6, "TOTAL BERAT", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(62, 6, "TOTAL PENDAPATAN", "1", 1, "C", true, 0, "")
+	pdf.SetFont("Arial", "B", 14)
+	pdf.SetTextColor(14, 165, 233)
+	pdf.CellFormat(56, 12, fmt.Sprintf("%d", len(allVendors)), "1", 0, "C", true, 0, "")
+	pdf.SetTextColor(30, 30, 30)
+	pdf.CellFormat(62, 12, fmt.Sprintf("%.2f Kg", grandTotalKg), "1", 0, "C", true, 0, "")
+	pdf.SetTextColor(22, 163, 74)
+	pdf.CellFormat(62, 12, "Rp "+rupiahPDF(grandTotalRupiah), "1", 1, "C", true, 0, "")
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.Ln(6)
 
-	pdf.SetFont("Arial", "", 10)
+	// Table header — No, Nama Tukang, Jumlah Kg, Harga/Kg, Jumlah Gajih (matching Laravel)
+	pdf.SetFillColor(240, 240, 240)
+	pdf.SetFont("Arial", "B", 9)
+	pdf.CellFormat(8, 8, "No", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(78, 8, "Nama Tukang", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(28, 8, "Jumlah Kg", "1", 0, "R", true, 0, "")
+	pdf.CellFormat(30, 8, "Harga/Kg", "1", 0, "R", true, 0, "")
+	pdf.CellFormat(36, 8, "Jumlah Gajih", "1", 1, "R", true, 0, "")
+
 	rowIndex := 1
 
-	// Draw merged groups first
 	for _, mg := range mergedGroups {
-		pdf.CellFormat(10, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", false, 0, "")
-
-		// Handle long merged names
 		nameToPrint := mg.Names
-		if len(nameToPrint) > 48 {
-			nameToPrint = nameToPrint[:45] + "..."
+		if len(nameToPrint) > 44 {
+			nameToPrint = nameToPrint[:41] + "..."
 		}
-		pdf.CellFormat(100, 8, nameToPrint, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(40, 8, fmt.Sprintf("%.2f", mg.TotalKg), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(40, 8, fmt.Sprintf("Rp %.0f", mg.TotalRupiah), "1", 1, "R", false, 0, "")
+		pdf.SetFillColor(254, 243, 199)
+		pdf.SetFont("Arial", "B", 9)
+		pdf.CellFormat(8, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", true, 0, "")
+		pdf.CellFormat(78, 8, nameToPrint, "1", 0, "L", true, 0, "")
+		pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", mg.TotalKg), "1", 0, "R", true, 0, "")
+		pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", true, 0, "")
+		pdf.CellFormat(36, 8, "Rp "+rupiahPDF(mg.TotalRupiah), "1", 1, "R", true, 0, "")
 		rowIndex++
 	}
 
-	// Draw individual vendors not in merged groups
 	for _, v := range allVendors {
 		if usedVendorIDs[int64(v.ID)] {
-			continue // skip because already merged
+			continue
 		}
-		pdf.CellFormat(10, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(100, 8, v.Name, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(40, 8, fmt.Sprintf("%.2f", vendorTotals[int64(v.ID)].Kg), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(40, 8, fmt.Sprintf("Rp %.0f", vendorTotals[int64(v.ID)].Rp), "1", 1, "R", false, 0, "")
+		pdf.SetFillColor(255, 255, 255)
+		pdf.SetFont("Arial", "", 9)
+		pdf.CellFormat(8, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(78, 8, v.Name, "1", 0, "L", false, 0, "")
+		pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", vendorTotals[int64(v.ID)].Kg), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(36, 8, "Rp "+rupiahPDF(vendorTotals[int64(v.ID)].Rp), "1", 1, "R", false, 0, "")
 		rowIndex++
 	}
 
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(110, 8, "TOTAL KESELURUHAN", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(40, 8, fmt.Sprintf("%.2f", grandTotalKg), "1", 0, "R", false, 0, "")
-	pdf.CellFormat(40, 8, fmt.Sprintf("Rp %.0f", grandTotalRupiah), "1", 1, "R", false, 0, "")
+	pdf.SetFillColor(240, 240, 240)
+	pdf.SetFont("Arial", "B", 9)
+	pdf.CellFormat(86, 8, "TOTAL KESELURUHAN", "1", 0, "C", true, 0, "")
+	pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", grandTotalKg), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", true, 0, "")
+	pdf.CellFormat(36, 8, "Rp "+rupiahPDF(grandTotalRupiah), "1", 1, "R", true, 0, "")
 
 	c.Set("Content-Type", "application/pdf")
 	filename := fmt.Sprintf("Rekapan_Laundry_%s.pdf", time.Now().Format("20060102"))
-	c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
 }
@@ -399,22 +449,27 @@ func (h *LaundryExportHandler) ExportWeeklyVendorStatisticsPDF(c *fiber.Ctx) err
 	dayNames := []string{"Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Ahad"}
 
 	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf.SetAutoPageBreak(true, 15)
+	pdf.SetMargins(15, 15, 15)
 	pdf.AddPage()
-	pdf.SetFont("Arial", "B", 14)
-	pdf.CellFormat(0, 10, fmt.Sprintf("Rekap Mingguan Laundry - %s", vendor.Name), "", 1, "C", false, 0, "")
 
-	dateStr := fmt.Sprintf("Periode: %s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006"))
-	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(0, 8, dateStr, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "B", 16)
+	pdf.CellFormat(0, 9, "Rekap Laundry Mingguan", "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "B", 13)
+	pdf.CellFormat(0, 8, vendor.Name, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 9)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.CellFormat(0, 7, fmt.Sprintf("Periode: %s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006")), "", 1, "C", false, 0, "")
+	pdf.SetTextColor(0, 0, 0)
 	pdf.Ln(5)
 
-	// Table Header
+	pdf.SetFillColor(240, 240, 240)
 	pdf.SetFont("Arial", "B", 8)
-	pdf.CellFormat(40, 8, "Nama Akun", "1", 0, "L", false, 0, "")
+	pdf.CellFormat(40, 8, "Nama Akun", "1", 0, "L", true, 0, "")
 	for _, dName := range dayNames {
-		pdf.CellFormat(18, 8, dName, "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, dName, "1", 0, "C", true, 0, "")
 	}
-	pdf.CellFormat(20, 8, "Total", "1", 1, "C", false, 0, "")
+	pdf.CellFormat(20, 8, "Total", "1", 1, "C", true, 0, "")
 
 	pdf.SetFont("Arial", "", 8)
 
@@ -464,20 +519,28 @@ func (h *LaundryExportHandler) ExportWeeklyVendorStatisticsPDF(c *fiber.Ctx) err
 		}
 	}
 
+	pdf.SetFillColor(255, 232, 60)
 	pdf.SetFont("Arial", "B", 8)
-	pdf.CellFormat(40, 8, "GRAND TOTAL", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(40, 8, "GRAND TOTAL", "1", 0, "C", true, 0, "")
 	for _, gt := range grandTotals {
 		valStr := "-"
 		if gt > 0 {
 			valStr = fmt.Sprintf("%.2f", gt)
 		}
-		pdf.CellFormat(18, 8, valStr, "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, valStr, "1", 0, "C", true, 0, "")
 	}
-	pdf.CellFormat(20, 8, fmt.Sprintf("%.2f", grandTotalAll), "1", 1, "C", false, 0, "")
+	pdf.CellFormat(20, 8, fmt.Sprintf("%.2f", grandTotalAll), "1", 1, "C", true, 0, "")
+
+	pdf.SetFillColor(255, 255, 255)
+	pdf.SetFont("Arial", "", 8)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.Ln(4)
+	pdf.CellFormat(0, 6, fmt.Sprintf("Dicetak pada: %s", time.Now().Format("02/01/2006 15:04")), "", 1, "R", false, 0, "")
+	pdf.SetTextColor(0, 0, 0)
 
 	c.Set("Content-Type", "application/pdf")
 	filename := fmt.Sprintf("Rekap_Mingguan_%s_%s.pdf", vendor.Name, time.Now().Format("20060102"))
-	c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
 }
@@ -520,20 +583,23 @@ func (h *LaundryExportHandler) ExportAllWeeklyVendorStatisticsPDF(c *fiber.Ctx) 
 
 	for _, vendor := range vendors {
 		pdf.AddPage()
-		pdf.SetFont("Arial", "B", 14)
-		pdf.CellFormat(0, 10, fmt.Sprintf("Rekap Mingguan Semua Vendor: %s", vendor.Name), "", 1, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 16)
+		pdf.CellFormat(0, 9, "Rekap Laundry Mingguan", "", 1, "C", false, 0, "")
+		pdf.SetFont("Arial", "B", 13)
+		pdf.CellFormat(0, 8, vendor.Name, "", 1, "C", false, 0, "")
+		pdf.SetFont("Arial", "", 9)
+		pdf.SetTextColor(100, 100, 100)
+		pdf.CellFormat(0, 7, fmt.Sprintf("Periode: %s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006")), "", 1, "C", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.Ln(4)
 
-		dateStr := fmt.Sprintf("Periode: %s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006"))
-		pdf.SetFont("Arial", "", 10)
-		pdf.CellFormat(0, 8, dateStr, "", 1, "C", false, 0, "")
-		pdf.Ln(5)
-
+		pdf.SetFillColor(240, 240, 240)
 		pdf.SetFont("Arial", "B", 8)
-		pdf.CellFormat(60, 8, "Nama Akun", "1", 0, "L", false, 0, "")
+		pdf.CellFormat(60, 8, "Nama Akun", "1", 0, "L", true, 0, "")
 		for _, dName := range dayNames {
-			pdf.CellFormat(25, 8, dName, "1", 0, "C", false, 0, "")
+			pdf.CellFormat(25, 8, dName, "1", 0, "C", true, 0, "")
 		}
-		pdf.CellFormat(25, 8, "Total", "1", 1, "C", false, 0, "")
+		pdf.CellFormat(25, 8, "Total", "1", 1, "C", true, 0, "")
 
 		pdf.SetFont("Arial", "", 8)
 
@@ -581,16 +647,18 @@ func (h *LaundryExportHandler) ExportAllWeeklyVendorStatisticsPDF(c *fiber.Ctx) 
 			grandTotalAll += totalWeek
 		}
 
+		pdf.SetFillColor(255, 232, 60)
 		pdf.SetFont("Arial", "B", 8)
-		pdf.CellFormat(60, 8, "GRAND TOTAL", "1", 0, "C", false, 0, "")
+		pdf.CellFormat(60, 8, "GRAND TOTAL", "1", 0, "C", true, 0, "")
 		for _, gt := range grandTotals {
 			valStr := "-"
 			if gt > 0 {
 				valStr = fmt.Sprintf("%.2f", gt)
 			}
-			pdf.CellFormat(25, 8, valStr, "1", 0, "C", false, 0, "")
+			pdf.CellFormat(25, 8, valStr, "1", 0, "C", true, 0, "")
 		}
-		pdf.CellFormat(25, 8, fmt.Sprintf("%.2f", grandTotalAll), "1", 1, "C", false, 0, "")
+		pdf.CellFormat(25, 8, fmt.Sprintf("%.2f", grandTotalAll), "1", 1, "C", true, 0, "")
+		pdf.SetFillColor(255, 255, 255)
 	}
 
 	c.Set("Content-Type", "application/pdf")
@@ -622,9 +690,7 @@ func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 15)
-
-	pdf.AddPage()
-	pdf.SetFont("Arial", "B", 16)
+	pdf.SetMargins(15, 15, 15)
 
 	titleSuffix := ""
 	if vendorID != "" && vendorID != "all" {
@@ -636,63 +702,66 @@ func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 		titleSuffix = " - Banat"
 	}
 
+	pdf.AddPage()
+	pdf.SetFont("Arial", "B", 16)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Daftar Akun Laundry Semua Vendor%s", titleSuffix), "", 1, "C", false, 0, "")
-
-	dateStr := fmt.Sprintf("Dicetak pada: %s", time.Now().Format("02 Jan 2006 15:04"))
-	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(0, 8, dateStr, "", 1, "C", false, 0, "")
+	pdf.SetFont("Arial", "", 9)
+	pdf.SetTextColor(100, 100, 100)
+	pdf.CellFormat(0, 7, fmt.Sprintf("Dicetak pada: %s", time.Now().Format("02 Jan 2006 15:04")), "", 1, "C", false, 0, "")
+	pdf.SetTextColor(0, 0, 0)
 	pdf.Ln(5)
 
 	grandTotalAccounts := 0
 
 	for _, vendor := range vendors {
-		// Skip vendors with no active accounts
 		if len(vendor.Accounts) == 0 {
 			continue
 		}
 
-		pdf.SetFont("Arial", "B", 12)
-		pdf.CellFormat(0, 10, fmt.Sprintf("Vendor: %s", vendor.Name), "", 1, "L", false, 0, "")
+		// Black header bar for vendor name — matching Laravel all_accounts_pdf design
+		pdf.SetFillColor(0, 0, 0)
+		pdf.SetTextColor(255, 255, 255)
+		pdf.SetFont("Arial", "B", 11)
+		pdf.CellFormat(0, 9, "  "+vendor.Name, "", 1, "L", true, 0, "")
+		pdf.SetTextColor(0, 0, 0)
 
-		pdf.SetFont("Arial", "B", 10)
-		pdf.CellFormat(10, 8, "No", "1", 0, "C", false, 0, "")
-		pdf.CellFormat(30, 8, "No. Laundry", "1", 0, "C", false, 0, "")
-		pdf.CellFormat(110, 8, "Nama Lengkap", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(40, 8, "Kategori", "1", 1, "C", false, 0, "")
+		pdf.SetFillColor(240, 240, 240)
+		pdf.SetFont("Arial", "B", 9)
+		pdf.CellFormat(10, 8, "No", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(30, 8, "No. Laundry", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(110, 8, "Nama Lengkap", "1", 0, "L", true, 0, "")
+		pdf.CellFormat(30, 8, "Tipe", "1", 1, "C", true, 0, "")
 
-		pdf.SetFont("Arial", "", 10)
+		pdf.SetFont("Arial", "", 9)
 		for i, acc := range vendor.Accounts {
 			ownerName := "Unknown"
 			kategori := "Unknown"
 			if acc.Student != nil {
 				ownerName = acc.Student.NamaLengkap
-				kategori = "Siswa"
+				kategori = "Santri"
 			} else if acc.User != nil {
 				ownerName = acc.User.Name
-				kategori = "User"
-			}
-
-			// Handle long names
-			if len(ownerName) > 55 {
-				ownerName = ownerName[:52] + "..."
+				kategori = "Guru/Staf"
 			}
 
 			pdf.CellFormat(10, 8, fmt.Sprintf("%d", i+1), "1", 0, "C", false, 0, "")
 			pdf.CellFormat(30, 8, acc.NomorLaundry, "1", 0, "C", false, 0, "")
 			pdf.CellFormat(110, 8, ownerName, "1", 0, "L", false, 0, "")
-			pdf.CellFormat(40, 8, kategori, "1", 1, "C", false, 0, "")
+			pdf.CellFormat(30, 8, kategori, "1", 1, "C", false, 0, "")
 
 			grandTotalAccounts++
 		}
 
-		pdf.SetFont("Arial", "I", 10)
-		pdf.CellFormat(0, 8, fmt.Sprintf("Total sub-akun: %d", len(vendor.Accounts)), "", 1, "R", false, 0, "")
-		pdf.Ln(3)
+		pdf.SetFont("Arial", "I", 8)
+		pdf.SetTextColor(100, 100, 100)
+		pdf.CellFormat(0, 7, fmt.Sprintf("Total akun: %d", len(vendor.Accounts)), "", 1, "R", false, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.Ln(4)
 	}
 
-	pdf.Ln(5)
-	pdf.SetFont("Arial", "B", 12)
-	pdf.CellFormat(0, 10, fmt.Sprintf("Grand Total Akun: %d", grandTotalAccounts), "", 1, "R", false, 0, "")
+	pdf.Ln(3)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.CellFormat(0, 9, fmt.Sprintf("Grand Total Akun: %d", grandTotalAccounts), "", 1, "R", false, 0, "")
 
 	c.Set("Content-Type", "application/pdf")
 	filename := fmt.Sprintf("Daftar_Akun_Laundry_%s.pdf", time.Now().Format("20060102"))
@@ -711,4 +780,18 @@ func (h *LaundryExportHandler) ExportVendorAccountsPDF(c *fiber.Ctx) error {
 	// Reuse the all-accounts exporter with vendor filter to keep format consistent.
 	c.Request().URI().QueryArgs().Set("vendor_id", vendorID)
 	return h.ExportAllAccountsPDF(c)
+}
+
+// rupiahPDF formats a float as Indonesian rupiah without the "Rp" prefix, e.g. 1.234.567
+func rupiahPDF(amount float64) string {
+	s := fmt.Sprintf("%.0f", amount)
+	n := len(s)
+	result := ""
+	for i, c := range s {
+		if i > 0 && (n-i)%3 == 0 {
+			result += "."
+		}
+		result += string(c)
+	}
+	return result
 }
