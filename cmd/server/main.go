@@ -574,6 +574,7 @@ func main() {
 
 	kontak := protected.Group("/kontak")
 	kontak.Get("/", middleware.Permission("kontak.view"), kontakHandler.List)
+	kontak.Get("/sumber/options", middleware.Permission("kontak.view"), kontakHandler.SumberOptions)
 	kontak.Get("/export/excel", middleware.Permission("kontak.view"), kontakHandler.ExportExcel)
 	kontak.Get("/:id", middleware.Permission("kontak.view"), kontakHandler.Get)
 	kontak.Put("/:id", middleware.Permission("kontak.edit"), kontakHandler.Update)

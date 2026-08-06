@@ -121,6 +121,31 @@ func (h *KontakHandler) List(c *fiber.Ctx) error {
 	return c.JSON(BuildPaginatedResponse(items, total, page, perPage))
 }
 
+func (h *KontakHandler) SumberOptions(c *fiber.Ctx) error {
+	search := strings.TrimSpace(c.Query("search"))
+
+	query := h.db.Model(&models.Kontak{}).
+		Where("sumber_data IS NOT NULL").
+		Where("TRIM(sumber_data) <> ''")
+
+	if search != "" {
+		query = query.Where("LOWER(sumber_data) LIKE ?", "%"+strings.ToLower(search)+"%")
+	}
+
+	var values []string
+	if err := query.
+		Distinct("sumber_data").
+		Order("sumber_data ASC").
+		Pluck("sumber_data", &values).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to fetch sumber data options",
+		})
+	}
+
+	return c.JSON(fiber.Map{"data": values})
+}
+
 func (h *KontakHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	result := h.db.Delete(&models.Kontak{}, id)
