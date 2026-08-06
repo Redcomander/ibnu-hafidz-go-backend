@@ -540,6 +540,7 @@ func main() {
 	laundry.Get("/transactions", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryTransactionHandler.List)
 	laundry.Get("/transactions/stats", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryTransactionHandler.GetAccountStats)
 	laundry.Post("/transactions", middleware.PermissionAny("laundry.create", "laundry_accounts.create"), laundryTransactionHandler.Create)
+	laundry.Put("/transactions/:id", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryTransactionHandler.Update)
 	laundry.Put("/transactions/:id/pickup", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryTransactionHandler.MarkAsPickedUp)
 	laundry.Post("/transactions/bulk-pickup", middleware.PermissionAny("laundry.edit", "laundry_accounts.edit"), laundryTransactionHandler.BulkMarkAsPickedUp)
 	laundry.Delete("/transactions/:id", middleware.PermissionAny("laundry.delete", "laundry_accounts.delete"), laundryTransactionHandler.Delete)

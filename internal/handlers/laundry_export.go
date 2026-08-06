@@ -28,11 +28,11 @@ func (h *LaundryExportHandler) ExportVendorStatisticsExcel(c *fiber.Ctx) error {
 	genderType := c.Query("gender_type", "all")
 
 	var start, end time.Time
-	now := time.Now()
+	now := time.Now().In(jakartaLocation())
 
 	if startDateStr != "" && endDateStr != "" {
-		start, _ = time.Parse("2006-01-02", startDateStr)
-		end, _ = time.Parse("2006-01-02", endDateStr)
+		start, _ = time.ParseInLocation("2006-01-02", startDateStr, jakartaLocation())
+		end, _ = time.ParseInLocation("2006-01-02", endDateStr, jakartaLocation())
 	} else if period == "last_week" {
 		start = getStartOfWeek(now.AddDate(0, 0, -7))
 		end = getEndOfWeek(now.AddDate(0, 0, -7))
@@ -42,7 +42,8 @@ func (h *LaundryExportHandler) ExportVendorStatisticsExcel(c *fiber.Ctx) error {
 	}
 
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
-	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
+	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, end.Location())
+	endExclusive := end.AddDate(0, 0, 1)
 
 	query := h.db.Model(&models.LaundryVendor{})
 	if genderType != "all" {
@@ -68,7 +69,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsExcel(c *fiber.Ctx) error {
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
 			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
-			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
+			Where("laundry_transactions.tanggal >= ? AND laundry_transactions.tanggal < ?", start, endExclusive).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
 
@@ -110,11 +111,11 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 	vendorID := c.Query("vendor_id")
 
 	var start, end time.Time
-	now := time.Now()
+	now := time.Now().In(jakartaLocation())
 
 	if startDateStr != "" && endDateStr != "" {
-		start, _ = time.Parse("2006-01-02", startDateStr)
-		end, _ = time.Parse("2006-01-02", endDateStr)
+		start, _ = time.ParseInLocation("2006-01-02", startDateStr, jakartaLocation())
+		end, _ = time.ParseInLocation("2006-01-02", endDateStr, jakartaLocation())
 	} else if period == "last_week" {
 		start = getStartOfWeek(now.AddDate(0, 0, -7))
 		end = getEndOfWeek(now.AddDate(0, 0, -7))
@@ -124,7 +125,8 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 	}
 
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
-	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
+	end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, end.Location())
+	endExclusive := end.AddDate(0, 0, 1)
 
 	periodStr := fmt.Sprintf("%s - %s", dateIDLong(start), dateIDLong(end))
 
@@ -186,7 +188,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
 			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
-			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
+			Where("laundry_transactions.tanggal >= ? AND laundry_transactions.tanggal < ?", start, endExclusive).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
 

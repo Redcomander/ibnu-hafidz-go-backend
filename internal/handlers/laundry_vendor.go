@@ -50,11 +50,11 @@ func (h *LaundryVendorHandler) List(c *fiber.Ctx) error {
 	// Calculate custom stats as in old app
 	type VendorWithStats struct {
 		models.LaundryVendor
-		AccountsCount int `json:"accounts_count"`
-		TodayKg      float64 `json:"today_kg"`
+		AccountsCount int     `json:"accounts_count"`
+		TodayKg       float64 `json:"today_kg"`
 	}
 
-	todayStart := time.Now()
+	todayStart := time.Now().In(jakartaLocation())
 	todayStart = time.Date(todayStart.Year(), todayStart.Month(), todayStart.Day(), 0, 0, 0, 0, todayStart.Location())
 	todayEnd := todayStart.AddDate(0, 0, 1)
 
@@ -89,7 +89,7 @@ func (h *LaundryVendorHandler) List(c *fiber.Ctx) error {
 		results = append(results, VendorWithStats{
 			LaundryVendor: v,
 			AccountsCount: len(v.Accounts),
-			TodayKg:      todayKgMap[v.ID],
+			TodayKg:       todayKgMap[v.ID],
 		})
 	}
 
@@ -515,11 +515,11 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 
 	// Calculate date range based on period exactly like Laravel
 	var start, end time.Time
-	now := time.Now()
+	now := time.Now().In(jakartaLocation())
 
 	if startDateStr != "" && endDateStr != "" {
-		start, _ = time.Parse("2006-01-02", startDateStr)
-		end, _ = time.Parse("2006-01-02", endDateStr)
+		start, _ = time.ParseInLocation("2006-01-02", startDateStr, jakartaLocation())
+		end, _ = time.ParseInLocation("2006-01-02", endDateStr, jakartaLocation())
 	} else if period == "last_week" {
 		start = getStartOfWeek(now.AddDate(0, 0, -7))
 		end = getEndOfWeek(now.AddDate(0, 0, -7))
@@ -531,6 +531,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
 	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
+	endExclusive := end.Add(time.Second)
 
 	// If a specific vendor ID is requested
 	vendorID := c.Params("id")
@@ -547,7 +548,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 		err := h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
 			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", vendor.ID).
-			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
+			Where("laundry_transactions.tanggal >= ? AND laundry_transactions.tanggal < ?", start, endExclusive).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
 
@@ -588,7 +589,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 		h.db.Model(&models.LaundryTransaction{}).
 			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
 			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) = ?", v.ID).
-			Where("laundry_transactions.tanggal BETWEEN ? AND ?", start, end).
+			Where("laundry_transactions.tanggal >= ? AND laundry_transactions.tanggal < ?", start, endExclusive).
 			Select("COALESCE(SUM(berat_kg), 0) as total_kg, COALESCE(SUM(total_harga), 0) as total_rupiah").
 			Row().Scan(&totalKg, &totalRupiah)
 

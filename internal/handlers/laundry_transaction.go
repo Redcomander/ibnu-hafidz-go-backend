@@ -134,7 +134,8 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{Message: "Akun ini diblokir. Tidak dapat melakukan transaksi."})
 	}
 
-	tanggal, err := time.Parse("2006-01-02", req.Tanggal)
+	loc := jakartaLocation()
+	tanggal, err := time.ParseInLocation("2006-01-02", req.Tanggal, loc)
 	if err != nil {
 		// Try parsing ISO format if simple date fails
 		tanggal, err = time.Parse(time.RFC3339, req.Tanggal)
@@ -142,6 +143,7 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Invalid date format, use YYYY-MM-DD or ISO8601"})
 		}
 	}
+	tanggal = time.Date(tanggal.Year(), tanggal.Month(), tanggal.Day(), 0, 0, 0, 0, loc)
 
 	tx := h.db.Begin()
 
@@ -182,6 +184,64 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 	tx.Commit()
 
 	return c.Status(fiber.StatusCreated).JSON(trans)
+}
+
+// Update transaction
+func (h *LaundryTransactionHandler) Update(c *fiber.Ctx) error {
+	id := c.Params("id")
+
+	type UpdateRequest struct {
+		LaundryAccountID uint    `json:"laundry_account_id"`
+		Tanggal          string  `json:"tanggal"`
+		BeratKg          float64 `json:"berat_kg"`
+		HargaPerKg       float64 `json:"harga_per_kg"`
+		Catatan          *string `json:"catatan"`
+	}
+
+	var req UpdateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Invalid input"})
+	}
+
+	var trans models.LaundryTransaction
+	if err := h.db.First(&trans, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Transaction not found"})
+	}
+
+	var account models.LaundryAccount
+	if err := h.db.Preload("Student").Preload("User").First(&account, req.LaundryAccountID).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Akun laundry tidak ditemukan."})
+	}
+
+	if account.Blocked {
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{Message: "Akun ini diblokir. Tidak dapat melakukan transaksi."})
+	}
+
+	loc := jakartaLocation()
+	tanggal, err := time.ParseInLocation("2006-01-02", req.Tanggal, loc)
+	if err != nil {
+		tanggal, err = time.Parse(time.RFC3339, req.Tanggal)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Message: "Invalid date format, use YYYY-MM-DD or ISO8601"})
+		}
+	}
+	tanggal = time.Date(tanggal.Year(), tanggal.Month(), tanggal.Day(), 0, 0, 0, 0, loc)
+
+	trans.LaundryAccountID = req.LaundryAccountID
+	trans.VendorID = &account.VendorID
+	trans.Tanggal = tanggal
+	trans.BeratKg = req.BeratKg
+	trans.HargaPerKg = req.HargaPerKg
+	trans.TotalHarga = req.BeratKg * req.HargaPerKg
+	trans.Catatan = req.Catatan
+
+	if err := h.db.Save(&trans).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Failed to update transaction"})
+	}
+
+	logUserAction(h.db, c, "Ubah Transaksi", "Memperbarui transaksi ID: "+id)
+
+	return c.JSON(trans)
 }
 
 // MarkAsPickedUp
