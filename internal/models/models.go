@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -30,6 +31,24 @@ type User struct {
 
 func (User) TableName() string { return "users" }
 
+func isKontakPermission(permissionName string) bool {
+	perms := map[string]struct{}{
+		"kontak.view":           {},
+		"kontak.create":         {},
+		"kontak.edit":           {},
+		"kontak.delete":         {},
+		"kontak.import":         {},
+		"template_pesan.view":   {},
+		"template_pesan.create": {},
+		"template_pesan.edit":   {},
+		"template_pesan.delete": {},
+		"kontak_riwayat.view":   {},
+		"kontak_dashboard.view": {},
+	}
+	_, ok := perms[strings.TrimSpace(permissionName)]
+	return ok
+}
+
 // HasPermission checks if user has a specific permission through any of their roles
 func (u *User) HasPermission(permissionName string) bool {
 	for _, role := range u.Roles {
@@ -39,6 +58,14 @@ func (u *User) HasPermission(permissionName string) bool {
 			}
 		}
 	}
+
+	// Fallback: kontak module can be accessed by these operational roles.
+	if isKontakPermission(permissionName) {
+		if u.HasRole("super_admin") || u.HasRole("admin") || u.HasRole("panitia_ppdb") {
+			return true
+		}
+	}
+
 	return false
 }
 

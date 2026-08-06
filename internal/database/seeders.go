@@ -47,6 +47,10 @@ func SeedPermissions(db *gorm.DB) error {
 		"absensi_ekstra.view_all", "absensi_ekstra.create", "absensi_ekstra.edit", "absensi_ekstra.delete",
 		// Settings
 		"settings.edit",
+		// Kontak calon santri
+		"kontak.view", "kontak.create", "kontak.edit", "kontak.delete", "kontak.import",
+		"template_pesan.view", "template_pesan.create", "template_pesan.edit", "template_pesan.delete",
+		"kontak_riwayat.view", "kontak_dashboard.view",
 	}
 
 	// Ensure all permissions exist (idempotent via FirstOrCreate)
@@ -97,6 +101,47 @@ func SeedPermissions(db *gorm.DB) error {
 			log.Printf("✅ Assigned %d new permissions to role '%s'", len(toAdd), roleName)
 		} else {
 			log.Printf("✅ Role '%s' already has all permissions, nothing to add", roleName)
+		}
+	}
+
+	// Assign kontak module permissions to panitia_ppdb role
+	kontakPermNames := []string{
+		"kontak.view", "kontak.create", "kontak.edit", "kontak.delete", "kontak.import",
+		"template_pesan.view", "template_pesan.create", "template_pesan.edit", "template_pesan.delete",
+		"kontak_riwayat.view", "kontak_dashboard.view",
+	}
+
+	var panitiaRole models.Role
+	if err := db.Where("name = ?", "panitia_ppdb").First(&panitiaRole).Error; err != nil {
+		log.Printf("Role 'panitia_ppdb' not found, skipping: %v", err)
+	} else {
+		var kontakPerms []models.Permission
+		if err := db.Where("name IN ?", kontakPermNames).Find(&kontakPerms).Error; err != nil {
+			return err
+		}
+
+		var existing []models.Permission
+		db.Model(&panitiaRole).Association("Permissions").Find(&existing)
+		existingSet := make(map[uint]bool, len(existing))
+		for _, p := range existing {
+			existingSet[p.ID] = true
+		}
+
+		var toAdd []models.Permission
+		for _, p := range kontakPerms {
+			if !existingSet[p.ID] {
+				toAdd = append(toAdd, p)
+			}
+		}
+
+		if len(toAdd) > 0 {
+			if err := db.Model(&panitiaRole).Association("Permissions").Append(toAdd); err != nil {
+				log.Printf("Failed to assign kontak permissions to role 'panitia_ppdb': %v", err)
+				return err
+			}
+			log.Printf("✅ Assigned %d kontak permissions to role 'panitia_ppdb'", len(toAdd))
+		} else {
+			log.Printf("✅ Role 'panitia_ppdb' already has kontak permissions, nothing to add")
 		}
 	}
 

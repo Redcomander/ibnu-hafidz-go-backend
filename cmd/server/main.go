@@ -105,6 +105,16 @@ func main() {
 		log.Fatalf("Failed to migrate laundry: %v", err)
 	}
 
+	// Migrate Kontak Calon Santri
+	if err := db.AutoMigrate(
+		&models.ImportBatch{},
+		&models.Kontak{},
+		&models.TemplatePesan{},
+		&models.RiwayatKontak{},
+	); err != nil {
+		log.Fatalf("Failed to migrate kontak module: %v", err)
+	}
+
 	// Migrate Absensi Ekstra
 	if err := db.AutoMigrate(
 		&models.AbsensiEkstraGroup{},
@@ -479,6 +489,10 @@ func main() {
 	laundryAccountHandler := handlers.NewLaundryAccountHandler(db)
 	laundryTransactionHandler := handlers.NewLaundryTransactionHandler(db)
 	laundryExportHandler := handlers.NewLaundryExportHandler(db)
+	kontakHandler := handlers.NewKontakHandler(db)
+	templatePesanHandler := handlers.NewTemplatePesanHandler(db)
+	importExcelHandler := handlers.NewImportExcelHandler(db)
+	kontakDashboardHandler := handlers.NewKontakDashboardHandler(db)
 
 	halaqoh := protected.Group("/halaqoh")
 	// Assignments
@@ -553,6 +567,29 @@ func main() {
 	laundry.Get("/export/vendors/:id/accounts/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportVendorAccountsPDF)
 	laundry.Get("/export/accounts/all/pdf", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportAllAccountsPDF)
 	laundry.Get("/export/accounts/exceeded/excel", middleware.PermissionAny("laundry.view", "laundry_accounts.view"), laundryExportHandler.ExportExceededAccountsExcel)
+
+	// Kontak Calon Santri
+	protected.Post("/import/excel", middleware.Permission("kontak.import"), importExcelHandler.ImportKontak)
+	protected.Get("/import/excel/template", middleware.Permission("kontak.import"), importExcelHandler.DownloadTemplate)
+
+	kontak := protected.Group("/kontak")
+	kontak.Get("/", middleware.Permission("kontak.view"), kontakHandler.List)
+	kontak.Get("/export/excel", middleware.Permission("kontak.view"), kontakHandler.ExportExcel)
+	kontak.Get("/:id", middleware.Permission("kontak.view"), kontakHandler.Get)
+	kontak.Put("/:id", middleware.Permission("kontak.edit"), kontakHandler.Update)
+	kontak.Delete("/:id", middleware.Permission("kontak.delete"), kontakHandler.Delete)
+	kontak.Post("/bulk-delete", middleware.Permission("kontak.delete"), kontakHandler.BulkDelete)
+	kontak.Patch("/:id/status", middleware.Permission("kontak.edit"), kontakHandler.UpdateStatus)
+	kontak.Get("/:id/wa-link", middleware.Permission("kontak.view"), kontakHandler.WhatsAppLink)
+
+	template := protected.Group("/template")
+	template.Get("/", middleware.Permission("template_pesan.view"), templatePesanHandler.List)
+	template.Post("/", middleware.Permission("template_pesan.create"), templatePesanHandler.Create)
+	template.Put("/:id", middleware.Permission("template_pesan.edit"), templatePesanHandler.Update)
+	template.Delete("/:id", middleware.Permission("template_pesan.delete"), templatePesanHandler.Delete)
+
+	protected.Get("/riwayat/:kontak_id", middleware.Permission("kontak_riwayat.view"), kontakHandler.Riwayat)
+	protected.Get("/dashboard/summary", middleware.Permission("kontak_dashboard.view"), kontakDashboardHandler.Summary)
 
 	// Absensi Ekstra
 	ekstraGroupHandler := handlers.NewAbsensiEkstraGroupHandler(db)
