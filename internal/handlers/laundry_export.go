@@ -126,7 +126,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
 	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
 
-	periodStr := fmt.Sprintf("%s s/d %s", start.Format("02 Jan 2006"), end.Format("02 Jan 2006"))
+	periodStr := fmt.Sprintf("%s - %s", dateIDLong(start), dateIDLong(end))
 
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 18)
@@ -257,7 +257,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 	pdf.SetTextColor(14, 165, 233)
 	pdf.CellFormat(56, 12, fmt.Sprintf("%d", len(allVendors)), "1", 0, "C", true, 0, "")
 	pdf.SetTextColor(30, 30, 30)
-	pdf.CellFormat(62, 12, fmt.Sprintf("%.2f Kg", grandTotalKg), "1", 0, "C", true, 0, "")
+	pdf.CellFormat(62, 12, fmt.Sprintf("%s Kg", numberID(grandTotalKg, 2)), "1", 0, "C", true, 0, "")
 	pdf.SetTextColor(22, 163, 74)
 	pdf.CellFormat(62, 12, "Rp "+rupiahPDF(grandTotalRupiah), "1", 1, "C", true, 0, "")
 	pdf.SetTextColor(0, 0, 0)
@@ -284,9 +284,9 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 		pdf.SetFont("Arial", "B", 9)
 		pdf.CellFormat(8, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", true, 0, "")
 		pdf.CellFormat(78, 8, nameToPrint, "1", 0, "L", true, 0, "")
-		pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", mg.TotalKg), "1", 0, "R", true, 0, "")
-		pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", true, 0, "")
-		pdf.CellFormat(36, 8, "Rp "+rupiahPDF(mg.TotalRupiah), "1", 1, "R", true, 0, "")
+		pdf.CellFormat(28, 8, numberID(mg.TotalKg, 1), "1", 0, "R", true, 0, "")
+		pdf.CellFormat(30, 8, "Rp5.000", "1", 0, "R", true, 0, "")
+		pdf.CellFormat(36, 8, "Rp"+rupiahPDF(mg.TotalRupiah), "1", 1, "R", true, 0, "")
 		rowIndex++
 	}
 
@@ -298,18 +298,18 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 		pdf.SetFont("Arial", "", 9)
 		pdf.CellFormat(8, 8, fmt.Sprintf("%d", rowIndex), "1", 0, "C", false, 0, "")
 		pdf.CellFormat(78, 8, v.Name, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", vendorTotals[int64(v.ID)].Kg), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", false, 0, "")
-		pdf.CellFormat(36, 8, "Rp "+rupiahPDF(vendorTotals[int64(v.ID)].Rp), "1", 1, "R", false, 0, "")
+		pdf.CellFormat(28, 8, numberID(vendorTotals[int64(v.ID)].Kg, 1), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(30, 8, "Rp5.000", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(36, 8, "Rp"+rupiahPDF(vendorTotals[int64(v.ID)].Rp), "1", 1, "R", false, 0, "")
 		rowIndex++
 	}
 
 	pdf.SetFillColor(240, 240, 240)
 	pdf.SetFont("Arial", "B", 9)
 	pdf.CellFormat(86, 8, "TOTAL KESELURUHAN", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(28, 8, fmt.Sprintf("%.1f", grandTotalKg), "1", 0, "R", true, 0, "")
-	pdf.CellFormat(30, 8, "Rp 5.000", "1", 0, "R", true, 0, "")
-	pdf.CellFormat(36, 8, "Rp "+rupiahPDF(grandTotalRupiah), "1", 1, "R", true, 0, "")
+	pdf.CellFormat(28, 8, numberID(grandTotalKg, 1), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(30, 8, "Rp5.000", "1", 0, "R", true, 0, "")
+	pdf.CellFormat(36, 8, "Rp"+rupiahPDF(grandTotalRupiah), "1", 1, "R", true, 0, "")
 
 	c.Set("Content-Type", "application/pdf")
 	filename := fmt.Sprintf("Rekapan_Laundry_%s.pdf", time.Now().Format("20060102"))
@@ -794,4 +794,35 @@ func rupiahPDF(amount float64) string {
 		result += string(c)
 	}
 	return result
+}
+
+func numberID(value float64, decimals int) string {
+	raw := fmt.Sprintf("%.*f", decimals, value)
+	parts := strings.SplitN(raw, ".", 2)
+	intPart := parts[0]
+	fracPart := ""
+	if len(parts) > 1 {
+		fracPart = parts[1]
+	}
+
+	n := len(intPart)
+	formattedInt := ""
+	for i, c := range intPart {
+		if i > 0 && (n-i)%3 == 0 {
+			formattedInt += "."
+		}
+		formattedInt += string(c)
+	}
+
+	if decimals <= 0 {
+		return formattedInt
+	}
+
+	return formattedInt + "," + fracPart
+}
+
+func dateIDLong(t time.Time) string {
+	months := []string{"Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
+	monthName := months[int(t.Month())-1]
+	return fmt.Sprintf("%d %s %d", t.Day(), monthName, t.Year())
 }

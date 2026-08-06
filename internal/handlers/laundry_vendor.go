@@ -51,6 +51,37 @@ func (h *LaundryVendorHandler) List(c *fiber.Ctx) error {
 	type VendorWithStats struct {
 		models.LaundryVendor
 		AccountsCount int `json:"accounts_count"`
+		TodayKg      float64 `json:"today_kg"`
+	}
+
+	todayStart := time.Now()
+	todayStart = time.Date(todayStart.Year(), todayStart.Month(), todayStart.Day(), 0, 0, 0, 0, todayStart.Location())
+	todayEnd := todayStart.AddDate(0, 0, 1)
+
+	vendorIDs := make([]uint, 0, len(vendors))
+	for _, v := range vendors {
+		vendorIDs = append(vendorIDs, v.ID)
+	}
+
+	todayKgMap := make(map[uint]float64)
+	if len(vendorIDs) > 0 {
+		type todayKgRow struct {
+			VendorID uint    `gorm:"column:vendor_id"`
+			TotalKg  float64 `gorm:"column:total_kg"`
+		}
+		var rows []todayKgRow
+
+		h.db.Table("laundry_transactions").
+			Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
+			Select("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) as vendor_id, COALESCE(SUM(laundry_transactions.berat_kg), 0) as total_kg").
+			Where("laundry_transactions.tanggal >= ? AND laundry_transactions.tanggal < ?", todayStart, todayEnd).
+			Where("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id) IN ?", vendorIDs).
+			Group("COALESCE(laundry_transactions.vendor_id, laundry_accounts.vendor_id)").
+			Scan(&rows)
+
+		for _, row := range rows {
+			todayKgMap[row.VendorID] = row.TotalKg
+		}
 	}
 
 	var results []VendorWithStats
@@ -58,6 +89,7 @@ func (h *LaundryVendorHandler) List(c *fiber.Ctx) error {
 		results = append(results, VendorWithStats{
 			LaundryVendor: v,
 			AccountsCount: len(v.Accounts),
+			TodayKg:      todayKgMap[v.ID],
 		})
 	}
 
