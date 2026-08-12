@@ -496,6 +496,7 @@ func main() {
 	importExcelHandler := handlers.NewImportExcelHandler(db)
 	kontakDashboardHandler := handlers.NewKontakDashboardHandler(db)
 	tagihanDashboardHandler := handlers.NewTagihanDashboardHandler(db)
+	waServiceHandler := handlers.NewWAServiceHandler(cfg, db)
 
 	halaqoh := protected.Group("/halaqoh")
 	// Assignments
@@ -606,6 +607,11 @@ func main() {
 	template.Post("/", middleware.Permission("template_pesan.create"), templatePesanHandler.Create)
 	template.Put("/:id", middleware.Permission("template_pesan.edit"), templatePesanHandler.Update)
 	template.Delete("/:id", middleware.Permission("template_pesan.delete"), templatePesanHandler.Delete)
+
+	wa := protected.Group("/wa")
+	wa.Get("/status", middleware.Permission("kontak.view"), waServiceHandler.Status)
+	wa.Get("/qr", middleware.Permission("kontak.view"), waServiceHandler.QR)
+	wa.Post("/send", middleware.Permission("kontak.edit"), waServiceHandler.Send)
 
 	protected.Get("/riwayat/:kontak_id", middleware.Permission("kontak_riwayat.view"), kontakHandler.Riwayat)
 	protected.Get("/dashboard/summary", middleware.Permission("kontak_dashboard.view"), kontakDashboardHandler.Summary)

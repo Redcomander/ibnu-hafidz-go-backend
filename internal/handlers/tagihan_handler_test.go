@@ -41,13 +41,14 @@ func TestRenderTagihanTemplateMessageSupportsStatusAndAmount(t *testing.T) {
 		NoWhatsapp:    "081234567890",
 		TotalTagihan:  1250000,
 		StatusTagihan: "tertunggak",
+		Tunggakan:     strPtr("Rp 1.250.000"),
 	}
 
-	msg := renderTagihanTemplateMessage("Halo {nama}, tagihan {total_tagihan}, status {status_tagihan}, NIS {nis}", item)
-	if msg == "" || msg == "Halo {nama}, tagihan {total_tagihan}, status {status_tagihan}, NIS {nis}" {
+	msg := renderTagihanTemplateMessage("Halo {nama}, tagihan {total_tagihan}, tunggakan {tunggakan}, status {status_tagihan}, NIS {nis}", item)
+	if msg == "" || msg == "Halo {nama}, tagihan {total_tagihan}, tunggakan {tunggakan}, status {status_tagihan}, NIS {nis}" {
 		t.Fatal("template placeholders were not replaced")
 	}
-	if got := msg; got != "Halo Ahmad, tagihan Rp 1250000, status tertunggak, NIS 24001" {
+	if got := msg; got != "Halo Ahmad, tagihan Rp 1.250.000, tunggakan Rp 1.250.000, status tertunggak, NIS 24001" {
 		t.Fatalf("unexpected rendered message: %q", got)
 	}
 }

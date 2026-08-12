@@ -778,9 +778,38 @@ func (h *KontakDashboardHandler) Summary(c *fiber.Ctx) error {
 }
 
 func renderTemplateMessage(template string, kontak models.Kontak) string {
+	statusKontakText := "-"
+	if strings.TrimSpace(kontak.StatusKontak) != "" {
+		statusKontakText = kontak.StatusKontak
+	}
+
+	sumberText := "-"
+	if kontak.SumberData != nil && strings.TrimSpace(*kontak.SumberData) != "" {
+		sumberText = strings.TrimSpace(*kontak.SumberData)
+	}
+
+	tunggakanText := "-"
+	if kontak.Tunggakan != nil && strings.TrimSpace(*kontak.Tunggakan) != "" {
+		tunggakanText = strings.TrimSpace(*kontak.Tunggakan)
+	}
+
 	replacer := strings.NewReplacer(
 		"{nama}", kontak.Nama,
 		"{no_whatsapp}", kontak.NoWhatsapp,
+		"{status_kontak}", statusKontakText,
+		"{sumber_data}", sumberText,
+		"{tunggakan}", tunggakanText,
+		"{total_tagihan}", tunggakanText,
+		"{total_tunggakan}", tunggakanText,
+		"{status_tagihan}", statusKontakText,
+		"{ttl}", valueOrDash(kontak.TTL),
+		"{alamat}", valueOrDash(kontak.Alamat),
+		"{alamat_lengkap}", valueOrDash(kontak.AlamatLengkap),
+		"{nama_ayah}", valueOrDash(kontak.NamaAyah),
+		"{nama_ibu}", valueOrDash(kontak.NamaIbu),
+		"{asal_sekolah}", valueOrDash(kontak.AsalSekolah),
+		"{jenis_kelamin}", valueOrDash(kontak.JenisKelamin),
+		"{jenjang_pendidikan}", valueOrDash(kontak.JenjangPendidikan),
 	)
 	msg := replacer.Replace(template)
 	if kontak.NIS != nil {
@@ -789,6 +818,13 @@ func renderTemplateMessage(template string, kontak models.Kontak) string {
 		msg = strings.ReplaceAll(msg, "{nis}", "-")
 	}
 	return msg
+}
+
+func valueOrDash(v *string) string {
+	if v == nil || strings.TrimSpace(*v) == "" {
+		return "-"
+	}
+	return strings.TrimSpace(*v)
 }
 
 func strPtr(v string) *string {

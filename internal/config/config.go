@@ -33,6 +33,10 @@ type Config struct {
 	OCRBaseURL      string
 	OCRAPIKey       string
 	OCRServiceToken string
+
+	// WhatsApp service (wwebjs bridge)
+	WAServiceURL   string
+	WAServiceToken string
 }
 
 // Load reads configuration from environment variables
@@ -61,6 +65,9 @@ func Load() *Config {
 		OCRBaseURL:      getEnv("OCR_BASE_URL", "http://localhost:3099/api"),
 		OCRAPIKey:       getEnv("OCR_API_KEY", ""),
 		OCRServiceToken: getEnv("OCR_SERVICE_TOKEN", ""),
+
+		WAServiceURL:   getEnv("WA_SERVICE_URL", "http://localhost:3001"),
+		WAServiceToken: getEnv("WA_SERVICE_TOKEN", "change-me"),
 	}
 }
 

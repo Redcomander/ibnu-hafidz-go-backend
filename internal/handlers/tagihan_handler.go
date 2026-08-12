@@ -390,11 +390,39 @@ func (h *TagihanDashboardHandler) Summary(c *fiber.Ctx) error {
 }
 
 func renderTagihanTemplateMessage(template string, item models.Tagihan) string {
+	tunggakanText := "-"
+	if item.Tunggakan != nil && strings.TrimSpace(*item.Tunggakan) != "" {
+		tunggakanText = strings.TrimSpace(*item.Tunggakan)
+	}
+
+	totalTagihanText := fmt.Sprintf("Rp %d", item.TotalTagihan)
+	if item.TotalTagihan == 0 && tunggakanText != "-" {
+		totalTagihanText = tunggakanText
+	} else if item.Tunggakan != nil && strings.TrimSpace(*item.Tunggakan) != "" {
+		totalTagihanText = tunggakanText
+	}
+
+	sumberText := "-"
+	if item.SumberData != nil && strings.TrimSpace(*item.SumberData) != "" {
+		sumberText = strings.TrimSpace(*item.SumberData)
+	}
+
 	replacer := strings.NewReplacer(
 		"{nama}", item.Nama,
 		"{no_whatsapp}", item.NoWhatsapp,
-		"{total_tagihan}", fmt.Sprintf("Rp %d", item.TotalTagihan),
+		"{sumber_data}", sumberText,
+		"{total_tagihan}", totalTagihanText,
+		"{total_tunggakan}", totalTagihanText,
+		"{tunggakan}", tunggakanText,
 		"{status_tagihan}", item.StatusTagihan,
+		"{status_kontak}", item.StatusTagihan,
+		"{ttl}", valueOrDash(item.TTL),
+		"{alamat}", valueOrDash(item.Alamat),
+		"{nama_ayah}", valueOrDash(item.NamaAyah),
+		"{nama_ibu}", valueOrDash(item.NamaIbu),
+		"{asal_sekolah}", valueOrDash(item.AsalSekolah),
+		"{jenis_kelamin}", valueOrDash(item.JenisKelamin),
+		"{jenjang_pendidikan}", valueOrDash(item.JenjangPendidikan),
 	)
 	msg := replacer.Replace(template)
 	if item.NIS != nil {
