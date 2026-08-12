@@ -148,9 +148,16 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 		var kontak models.Kontak
 		if err := h.db.First(&kontak, req.KontakID).Error; err == nil {
 			kontak.LastContactAt = &now
-			_ = h.db.Save(&kontak).Error
 			userID, _ := c.Locals("userID").(uint)
+			if userID != 0 {
+				kontak.HandlerID = &userID
+			}
+			_ = h.db.Save(&kontak).Error
+
 			entry := models.RiwayatKontak{KontakID: kontak.ID, PesanFinal: &req.Message, DikirimVia: strPtr("whatsapp")}
+			if req.TemplateID != nil {
+				entry.TemplatePesanID = req.TemplateID
+			}
 			if userID != 0 {
 				entry.UserID = &userID
 			}

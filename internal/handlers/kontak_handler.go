@@ -428,9 +428,13 @@ func (h *KontakHandler) WhatsAppLink(c *fiber.Ctx) error {
 	if c.Query("log") == "1" {
 		now := time.Now()
 		item.LastContactAt = &now
-		_ = h.db.Save(&item).Error
 
 		userID, _ := c.Locals("userID").(uint)
+		if userID != 0 {
+			item.HandlerID = &userID
+		}
+		_ = h.db.Save(&item).Error
+
 		entry := models.RiwayatKontak{
 			KontakID:        item.ID,
 			TemplatePesanID: templateID,
