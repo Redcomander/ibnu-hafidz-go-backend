@@ -417,12 +417,12 @@ func (h *ImportExcelHandler) DownloadTagihanTemplate(c *fiber.Ctx) error {
 	f := excelize.NewFile()
 	sheet := "Template Import Tagihan"
 	f.SetSheetName("Sheet1", sheet)
-	headers := []string{"nis", "nama", "no_whatsapp", "total_tagihan", "status_tagihan", "sumber_data", "catatan"}
+	headers := []string{"nama", "ttl", "alamat", "nama_ayah", "nama_ibu", "no_whatsapp", "asal_sekolah", "jenis_kelamin", "jenjang_pendidikan", "tunggakan", "nis", "status_tagihan", "catatan", "sumber_data"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, header)
 	}
-	sample := []string{"240001", "Ahmad Fulan", "081234567890", "1250000", "belum_lunas", "excel", "Tagihan umum bulan ini"}
+	sample := []string{"Ahmad Fulan", "Banyumas, 15-06-2010", "Jl. Mawar No. 1", "H. Fulan", "Siti Aminah", "081234567890", "SMPN 1 Banyumas", "Laki-laki", "SMP", "1250000", "240001", "belum_lunas", "Tagihan umum bulan ini", "excel"}
 	for i, value := range sample {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
 		f.SetCellValue(sheet, cell, value)
@@ -497,7 +497,21 @@ func (h *ImportExcelHandler) ImportTagihan(c *fiber.Ctx) error {
 		if nisVal != "" {
 			nis = &nisVal
 		}
+		ttl := nullableString(readExcelCell(vals, headers, "ttl"))
+		alamat := nullableString(readExcelCell(vals, headers, "alamat"))
+		namaAyah := nullableString(readExcelCell(vals, headers, "nama_ayah"))
+		namaIbu := nullableString(readExcelCell(vals, headers, "nama_ibu"))
+		asalSekolah := nullableString(readExcelCell(vals, headers, "asal_sekolah"))
+		jenisKelamin := nullableString(readExcelCell(vals, headers, "jenis_kelamin"))
+		jenjangPendidikan := nullableString(readExcelCell(vals, headers, "jenjang_pendidikan"))
+		tunggakanValue := nullableString(readExcelCell(vals, headers, "tunggakan"))
+		if tunggakanValue == nil {
+			tunggakanValue = nullableString(readExcelCell(vals, headers, "total_tagihan"))
+		}
 		totalTagihan := normalizeCurrencyValue(readExcelCell(vals, headers, "total_tagihan"))
+		if totalTagihan == 0 && tunggakanValue != nil {
+			totalTagihan = normalizeCurrencyValue(*tunggakanValue)
+		}
 		sumberData := nullableString(readExcelCell(vals, headers, "sumber_data"))
 		catatan := nullableString(readExcelCell(vals, headers, "catatan"))
 
@@ -505,7 +519,15 @@ func (h *ImportExcelHandler) ImportTagihan(c *fiber.Ctx) error {
 			var existing models.Tagihan
 			if err := h.db.Where("nis = ?", *nis).First(&existing).Error; err == nil {
 				existing.Nama = nama
+				existing.TTL = ttl
+				existing.Alamat = alamat
+				existing.NamaAyah = namaAyah
+				existing.NamaIbu = namaIbu
 				existing.NoWhatsapp = wa
+				existing.AsalSekolah = asalSekolah
+				existing.JenisKelamin = jenisKelamin
+				existing.JenjangPendidikan = jenjangPendidikan
+				existing.Tunggakan = tunggakanValue
 				existing.TotalTagihan = totalTagihan
 				existing.StatusTagihan = statusTagihan
 				existing.SumberData = sumberData
@@ -521,14 +543,22 @@ func (h *ImportExcelHandler) ImportTagihan(c *fiber.Ctx) error {
 		}
 
 		item := models.Tagihan{
-			NIS:           nis,
-			Nama:          nama,
-			NoWhatsapp:    wa,
-			TotalTagihan:  totalTagihan,
-			StatusTagihan: statusTagihan,
-			SumberData:    sumberData,
-			Catatan:       catatan,
-			ImportBatchID: &batch.ID,
+			NIS:               nis,
+			Nama:              nama,
+			TTL:               ttl,
+			Alamat:            alamat,
+			NamaAyah:          namaAyah,
+			NamaIbu:           namaIbu,
+			NoWhatsapp:        wa,
+			AsalSekolah:       asalSekolah,
+			JenisKelamin:      jenisKelamin,
+			JenjangPendidikan: jenjangPendidikan,
+			Tunggakan:         tunggakanValue,
+			TotalTagihan:      totalTagihan,
+			StatusTagihan:     statusTagihan,
+			SumberData:        sumberData,
+			Catatan:           catatan,
+			ImportBatchID:     &batch.ID,
 		}
 		if err := h.db.Create(&item).Error; err != nil {
 			skipped++

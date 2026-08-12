@@ -1271,6 +1271,64 @@ func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
 }
 
 // DeleteSubstituteHistory deletes a substitute history record. Only super_admin can do this.
+func (h *AbsensiHandler) DeleteStudentAttendanceStatus(c *fiber.Ctx) error {
+	_, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
+	studentID, err := strconv.ParseUint(c.Params("student_id"), 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Student ID tidak valid"})
+	}
+
+	status := normalizeStudentStatus(c.Query("status"))
+	if !isValidStudentStatus(status) || status == "hadir" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status absensi yang dihapus wajib salah satu: izin, sakit, alpa"})
+	}
+
+	typeStr := c.Query("type", "formal")
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+	if startDate == "" {
+		now := time.Now()
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = time.Now().Format("2006-01-02")
+	}
+	endT, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Format tanggal akhir tidak valid"})
+	}
+	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
+
+	table := "absensis"
+	if isDiniyyahAttendanceType(typeStr) {
+		table = "absensi_diniyyahs"
+	}
+
+	result := h.db.Table(table).
+		Where("student_id = ? AND status = ? AND tanggal >= ? AND tanggal < ?", uint(studentID), status, startDate, endExclusive).
+		Where("deleted_at IS NULL").
+		Delete(&models.Absensi{})
+	if isDiniyyahAttendanceType(typeStr) {
+		result = h.db.Table(table).
+			Where("student_id = ? AND status = ? AND tanggal >= ? AND tanggal < ?", uint(studentID), status, startDate, endExclusive).
+			Where("deleted_at IS NULL").
+			Delete(&models.AbsensiDiniyyah{})
+	}
+	if result.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal menghapus absensi santri"})
+	}
+
+	return c.JSON(fiber.Map{
+		"message":       "Absensi santri berhasil dihapus",
+		"deleted_count": result.RowsAffected,
+		"status":        status,
+	})
+}
+
 func (h *AbsensiHandler) DeleteSubstituteHistory(c *fiber.Ctx) error {
 	user, err := h.getUserFromContext(c)
 	if err != nil {
@@ -1375,10 +1433,12 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	// ── Student Attendance ──
 	type StudentEntry struct {
-		Name    string `json:"name"`
-		Kelas   string `json:"kelas"`
-		Tingkat string `json:"tingkat"`
-		Catatan string `json:"catatan"`
+		ID        uint   `json:"id"`
+		StudentID uint   `json:"student_id"`
+		Name      string `json:"name"`
+		Kelas     string `json:"kelas"`
+		Tingkat   string `json:"tingkat"`
+		Catatan   string `json:"catatan"`
 	}
 
 	var izinStudents, sakitStudents, alpaStudents []StudentEntry
@@ -1390,11 +1450,13 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	//   3. Count statuses and extract detail lists from that single result
 
 	type AbsensiRow struct {
-		Status  string `json:"status"`
-		Name    string `json:"name"`
-		Kelas   string `json:"kelas"`
-		Tingkat string `json:"tingkat"`
-		Catatan string `json:"catatan"`
+		ID        uint   `json:"id"`
+		StudentID uint   `json:"student_id"`
+		Status    string `json:"status"`
+		Name      string `json:"name"`
+		Kelas     string `json:"kelas"`
+		Tingkat   string `json:"tingkat"`
+		Catatan   string `json:"catatan"`
 	}
 
 	table := "absensis"
@@ -1403,7 +1465,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	q := h.db.Table(table).
-		Select("students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat").
+		Select(table+".id, students.id as student_id, students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat").
 		Joins("JOIN students ON students.id = "+table+".student_id").
 		Joins("LEFT JOIN kelas AS siswa_kelas ON siswa_kelas.id = students.kelas_id").
 		Where(table+".tanggal >= ? AND "+table+".tanggal < ?", startDate, endExclusive).
@@ -1448,11 +1510,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		countsMap[r.Status]++
 		switch r.Status {
 		case "izin":
-			izinStudents = append(izinStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			izinStudents = append(izinStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		case "sakit":
-			sakitStudents = append(sakitStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			sakitStudents = append(sakitStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		case "alpa":
-			alpaStudents = append(alpaStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			alpaStudents = append(alpaStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		}
 	}
 

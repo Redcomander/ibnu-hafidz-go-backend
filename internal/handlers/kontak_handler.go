@@ -559,13 +559,13 @@ func (h *ImportExcelHandler) DownloadTemplate(c *fiber.Ctx) error {
 	sheet := "Template Import Kontak"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"nis", "nama", "no_whatsapp", "status_kontak", "sumber_data", "alamat", "alamat_lengkap", "catatan"}
+	headers := []string{"nama", "ttl", "alamat", "nama_ayah", "nama_ibu", "no_whatsapp", "asal_sekolah", "jenis_kelamin", "jenjang_pendidikan", "tunggakan", "nis", "catatan", "sumber_data", "status_kontak"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, header)
 	}
 
-	sample := []string{"240001", "Ahmad Fulan", "081234567890", "baru", "excel", "Jl. Mawar No. 1", "Jl. Mawar No. 1, RT 01 RW 02, Kota", "Calon santri gelombang 1"}
+	sample := []string{"Ahmad Fulan", "Banyumas, 15-06-2010", "Jl. Mawar No. 1", "H. Fulan", "Siti Aminah", "081234567890", "SMPN 1 Banyumas", "Laki-laki", "SMP", "1500000", "240001", "Calon santri gelombang 1", "excel", "baru"}
 	for i, value := range sample {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
 		f.SetCellValue(sheet, cell, value)
@@ -649,6 +649,16 @@ func (h *ImportExcelHandler) ImportKontak(c *fiber.Ctx) error {
 		}
 		alamat := nullableString(readExcelCell(vals, headers, "alamat"))
 		alamatLengkap := nullableString(readExcelCell(vals, headers, "alamat_lengkap"))
+		ttl := nullableString(readExcelCell(vals, headers, "ttl"))
+		namaAyah := nullableString(readExcelCell(vals, headers, "nama_ayah"))
+		namaIbu := nullableString(readExcelCell(vals, headers, "nama_ibu"))
+		asalSekolah := nullableString(readExcelCell(vals, headers, "asal_sekolah"))
+		jenisKelamin := nullableString(readExcelCell(vals, headers, "jenis_kelamin"))
+		jenjangPendidikan := nullableString(readExcelCell(vals, headers, "jenjang_pendidikan"))
+		tunggakan := nullableString(readExcelCell(vals, headers, "total_tagihan"))
+		if tunggakan == nil {
+			tunggakan = nullableString(readExcelCell(vals, headers, "tunggakan"))
+		}
 		statusKontak := strings.TrimSpace(readExcelCell(vals, headers, "status_kontak"))
 		if statusKontak == "" {
 			statusKontak = "baru"
@@ -661,9 +671,16 @@ func (h *ImportExcelHandler) ImportKontak(c *fiber.Ctx) error {
 			err := h.db.Where("nis = ?", *nis).First(&existing).Error
 			if err == nil {
 				existing.Nama = nama
+				existing.TTL = ttl
 				existing.NoWhatsapp = wa
 				existing.Alamat = alamat
 				existing.AlamatLengkap = alamatLengkap
+				existing.NamaAyah = namaAyah
+				existing.NamaIbu = namaIbu
+				existing.AsalSekolah = asalSekolah
+				existing.JenisKelamin = jenisKelamin
+				existing.JenjangPendidikan = jenjangPendidikan
+				existing.Tunggakan = tunggakan
 				existing.StatusKontak = statusKontak
 				existing.SumberData = sumberData
 				existing.Catatan = catatan
@@ -678,15 +695,22 @@ func (h *ImportExcelHandler) ImportKontak(c *fiber.Ctx) error {
 		}
 
 		item := models.Kontak{
-			NIS:           nis,
-			Nama:          nama,
-			NoWhatsapp:    wa,
-			Alamat:        alamat,
-			AlamatLengkap: alamatLengkap,
-			StatusKontak:  statusKontak,
-			SumberData:    sumberData,
-			Catatan:       catatan,
-			ImportBatchID: &batch.ID,
+			NIS:               nis,
+			Nama:              nama,
+			TTL:               ttl,
+			NoWhatsapp:        wa,
+			Alamat:            alamat,
+			AlamatLengkap:     alamatLengkap,
+			NamaAyah:          namaAyah,
+			NamaIbu:           namaIbu,
+			AsalSekolah:       asalSekolah,
+			JenisKelamin:      jenisKelamin,
+			JenjangPendidikan: jenjangPendidikan,
+			Tunggakan:         tunggakan,
+			StatusKontak:      statusKontak,
+			SumberData:        sumberData,
+			Catatan:           catatan,
+			ImportBatchID:     &batch.ID,
 		}
 		if err := h.db.Create(&item).Error; err != nil {
 			skipped++
@@ -793,24 +817,42 @@ func mapExcelHeaders(headerRow []string) map[string]int {
 	for i, h := range headerRow {
 		n := normalizeHeader(h)
 		switch n {
-		case "nis":
+		case "nis", "nisn":
 			result["nis"] = i
 		case "nama", "nama_santri", "nama_lengkap":
 			result["nama"] = i
-		case "whatsapp", "no_whatsapp", "no_wa", "nomor_whatsapp", "nomor_wa", "telepon", "phone":
-			result["no_whatsapp"] = i
-		case "alamat":
+		case "ttl", "tempat_lahir", "tempat_tanggal_lahir", "ttl_santri":
+			result["ttl"] = i
+		case "alamat", "alamat_rumah":
 			result["alamat"] = i
 		case "alamat_lengkap", "alamatlengkap":
 			result["alamat_lengkap"] = i
+		case "nama_ayah", "ayah", "nama_orang_tua_ayah":
+			result["nama_ayah"] = i
+		case "nama_ibu", "ibu", "nama_orang_tua_ibu":
+			result["nama_ibu"] = i
+		case "asal_sekolah", "sekolah_asal", "asal_smp_sma":
+			result["asal_sekolah"] = i
+		case "jenis_kelamin", "jk", "kelamin", "gender":
+			result["jenis_kelamin"] = i
+		case "jenjang_pendidikan", "jenjang", "pendidikan", "tingkat_pendidikan":
+			result["jenjang_pendidikan"] = i
+		case "tunggakan", "total_tunggakan", "utang":
+			result["tunggakan"] = i
+			result["total_tagihan"] = i
+		case "total_tagihan", "total_tagihan_santri", "tagihan_total":
+			result["total_tagihan"] = i
+			result["tunggakan"] = i
+		case "whatsapp", "no_whatsapp", "no_wa", "nomor_whatsapp", "nomor_wa", "telepon", "phone", "no_hp":
+			result["no_whatsapp"] = i
 		case "status", "status_kontak":
 			result["status_kontak"] = i
 		case "sumber", "sumber_data":
 			result["sumber_data"] = i
-		case "catatan", "keterangan", "notes":
+		case "catatan", "keterangan", "notes", "catatan_lain":
 			result["catatan"] = i
-		case "total_tagihan", "total_tagihan_santri", "tagihan_total":
-			result["total_tagihan"] = i
+		case "status_tagihan", "status_pembayaran":
+			result["status_tagihan"] = i
 		}
 	}
 	return result

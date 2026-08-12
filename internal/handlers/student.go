@@ -25,24 +25,100 @@ func (h *StudentHandler) List(c *fiber.Ctx) error {
 	var students []models.Student
 	var total int64
 
-	// Count total (before pagination)
 	query := h.db.Model(&models.Student{})
 
-	// Apply filters — using Laravel column names
 	if gender := c.Query("jenis_kelamin"); gender != "" {
 		query = query.Where("jenis_kelamin = ?", gender)
 	}
 	if status := c.Query("status_periode"); status != "" {
 		query = query.Where("status_periode = ?", status)
 	}
+	if relationStatus := c.Query("kelas_status"); relationStatus != "" {
+		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
+			query = query.Where("kelas_id IS NOT NULL")
+		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
+			query = query.Where("kelas_id IS NULL")
+		}
+	}
+	if relationStatus := c.Query("laundry_status"); relationStatus != "" {
+		sub := h.db.Model(&models.LaundryAccount{}).
+			Select("1").
+			Where("laundry_accounts.student_id = students.id").
+			Where("laundry_accounts.deleted_at IS NULL")
+		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
+			query = query.Where("EXISTS (?)", sub)
+		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
+			query = query.Where("NOT EXISTS (?)", sub)
+		}
+	}
+	if relationStatus := c.Query("halaqoh_status"); relationStatus != "" {
+		sub := h.db.Model(&models.HalaqohAssignment{}).
+			Select("1").
+			Where("halaqoh_assignments.student_id = students.id").
+			Where("halaqoh_assignments.active = ?", true)
+		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
+			query = query.Where("EXISTS (?)", sub)
+		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
+			query = query.Where("NOT EXISTS (?)", sub)
+		}
+	}
 
 	query.Count(&total)
 
-	// Apply search, sort, pagination — using Laravel column names
 	paginatedQuery, page, perPage := PaginateQuery(c, query, []string{"nama_lengkap", "nisn", "nama_ayah", "alamat"})
-	paginatedQuery.Find(&students)
+	paginatedQuery.Preload("Kelas").Find(&students)
 
-	return c.JSON(BuildPaginatedResponse(students, total, page, perPage))
+	type studentListResponse struct {
+		models.Student
+		KelasStatus    string `json:"kelas_status"`
+		KelasLabel     string `json:"kelas_label"`
+		LaundryStatus  string `json:"laundry_status"`
+		LaundryVendor  string `json:"laundry_vendor"`
+		HalaqohStatus  string `json:"halaqoh_status"`
+		HalaqohTeacher string `json:"halaqoh_teacher"`
+	}
+
+	responses := make([]studentListResponse, 0, len(students))
+	for _, student := range students {
+		item := studentListResponse{Student: student}
+		if student.Kelas != nil {
+			item.KelasStatus = "Ada"
+			item.KelasLabel = strings.TrimSpace(student.Kelas.Nama + " " + student.Kelas.Tingkat)
+		} else {
+			item.KelasStatus = "Kosong"
+			item.KelasLabel = "Belum ada"
+		}
+		if student.ID > 0 {
+			var laundry models.LaundryAccount
+			if err := h.db.Preload("Vendor").Where("student_id = ? AND deleted_at IS NULL", student.ID).Order("id DESC").First(&laundry).Error; err == nil {
+				item.LaundryStatus = "Ada"
+				if laundry.Vendor != nil && strings.TrimSpace(laundry.Vendor.Name) != "" {
+					item.LaundryVendor = laundry.Vendor.Name
+				} else {
+					item.LaundryVendor = "Vendor belum dipilih"
+				}
+			} else {
+				item.LaundryStatus = "Kosong"
+				item.LaundryVendor = "Belum ada"
+			}
+
+			var halaqoh models.HalaqohAssignment
+			if err := h.db.Preload("Teacher").Where("student_id = ? AND active = ?", student.ID, true).Order("id DESC").First(&halaqoh).Error; err == nil {
+				item.HalaqohStatus = "Ada"
+				if strings.TrimSpace(halaqoh.Teacher.Name) != "" {
+					item.HalaqohTeacher = halaqoh.Teacher.Name
+				} else {
+					item.HalaqohTeacher = "Ada"
+				}
+			} else {
+				item.HalaqohStatus = "Kosong"
+				item.HalaqohTeacher = "Belum ada"
+			}
+		}
+		responses = append(responses, item)
+	}
+
+	return c.JSON(BuildPaginatedResponse(responses, total, page, perPage))
 }
 
 // Get returns a single student by ID

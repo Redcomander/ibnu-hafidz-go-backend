@@ -469,6 +469,7 @@ func main() {
 	attendance.Post("/substitute", absensiHandler.AssignSubstitute)                                 // Assign Substitute
 	attendance.Put("/substitute/:id", absensiHandler.UpdateSubstituteHistory)                       // Update Substitute History
 	attendance.Delete("/substitute/:id", absensiHandler.DeleteSubstituteHistory)                    // Delete Substitute History
+	attendance.Delete("/student/:student_id", absensiHandler.DeleteStudentAttendanceStatus)         // Delete one student's selected status for the current date range
 	attendance.Delete("/teacher-record/:id", absensiHandler.DeleteTeacherAttendanceRecord)          // Delete teacher absence record
 	attendance.Put("/teacher-record/:id", absensiHandler.UpdateTeacherAttendanceRecord)             // Update teacher absence record
 

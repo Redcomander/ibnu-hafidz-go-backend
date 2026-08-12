@@ -16,6 +16,15 @@ func TestMapTagihanExcelHeaders(t *testing.T) {
 	}
 }
 
+func TestMapFlexibleImportHeaders(t *testing.T) {
+	headers := mapExcelHeaders([]string{"nama", "ttl", "alamat", "nama_ayah", "nama_ibu", "no_whatsapp", "asal_sekolah", "jenis_kelamin", "jenjang_pendidikan", "tunggakan", "nis", "catatan"})
+	for _, key := range []string{"nama", "ttl", "alamat", "nama_ayah", "nama_ibu", "no_whatsapp", "asal_sekolah", "jenis_kelamin", "jenjang_pendidikan", "tunggakan", "nis", "catatan"} {
+		if _, ok := headers[key]; !ok {
+			t.Fatalf("header %q should be mapped", key)
+		}
+	}
+}
+
 func TestNormalizeTagihanTotal(t *testing.T) {
 	if got := normalizeCurrencyValue("Rp. 1.250.000"); got != 1250000 {
 		t.Fatalf("expected 1250000, got %v", got)

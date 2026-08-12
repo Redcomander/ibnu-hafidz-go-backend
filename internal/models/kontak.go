@@ -26,23 +26,30 @@ func (ImportBatch) TableName() string { return "import_batches" }
 
 // Kontak stores calon santri contact data and follow-up status.
 type Kontak struct {
-	ID            uint           `gorm:"primarykey" json:"id"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
-	NIS           *string        `gorm:"column:nis;size:64;index" json:"nis,omitempty"`
-	Nama          string         `gorm:"column:nama;size:255;not null" json:"nama"`
-	NoWhatsapp    string         `gorm:"column:no_whatsapp;size:32;not null;index" json:"no_whatsapp"`
-	Alamat        *string        `gorm:"column:alamat;type:text" json:"alamat,omitempty"`
-	AlamatLengkap *string        `gorm:"column:alamat_lengkap;type:text" json:"alamat_lengkap,omitempty"`
-	StatusKontak  string         `gorm:"column:status_kontak;size:50;not null;default:'baru';index" json:"status_kontak"`
-	HandlerID     *uint          `gorm:"column:handler_id;index" json:"handler_id,omitempty"`
-	Handler       *User          `gorm:"foreignKey:HandlerID" json:"handler,omitempty"`
-	SumberData    *string        `gorm:"column:sumber_data;size:100" json:"sumber_data,omitempty"`
-	Catatan       *string        `gorm:"column:catatan;type:text" json:"catatan,omitempty"`
-	LastContactAt *time.Time     `gorm:"column:last_contact_at" json:"last_contact_at,omitempty"`
-	ImportBatchID *uint          `gorm:"column:import_batch_id;index" json:"import_batch_id,omitempty"`
-	ImportBatch   *ImportBatch   `gorm:"foreignKey:ImportBatchID" json:"import_batch,omitempty"`
+	ID                uint           `gorm:"primarykey" json:"id"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	NIS               *string        `gorm:"column:nis;size:64;index" json:"nis,omitempty"`
+	Nama              string         `gorm:"column:nama;size:255;not null" json:"nama"`
+	TTL               *string        `gorm:"column:ttl;size:255" json:"ttl,omitempty"`
+	Alamat            *string        `gorm:"column:alamat;type:text" json:"alamat,omitempty"`
+	AlamatLengkap     *string        `gorm:"column:alamat_lengkap;type:text" json:"alamat_lengkap,omitempty"`
+	NamaAyah          *string        `gorm:"column:nama_ayah;size:255" json:"nama_ayah,omitempty"`
+	NamaIbu           *string        `gorm:"column:nama_ibu;size:255" json:"nama_ibu,omitempty"`
+	NoWhatsapp        string         `gorm:"column:no_whatsapp;size:32;not null;index" json:"no_whatsapp"`
+	AsalSekolah       *string        `gorm:"column:asal_sekolah;size:255" json:"asal_sekolah,omitempty"`
+	JenisKelamin      *string        `gorm:"column:jenis_kelamin;size:50" json:"jenis_kelamin,omitempty"`
+	JenjangPendidikan *string        `gorm:"column:jenjang_pendidikan;size:100" json:"jenjang_pendidikan,omitempty"`
+	Tunggakan         *string        `gorm:"column:tunggakan;size:100" json:"tunggakan,omitempty"`
+	StatusKontak      string         `gorm:"column:status_kontak;size:50;not null;default:'baru';index" json:"status_kontak"`
+	HandlerID         *uint          `gorm:"column:handler_id;index" json:"handler_id,omitempty"`
+	Handler           *User          `gorm:"foreignKey:HandlerID" json:"handler,omitempty"`
+	SumberData        *string        `gorm:"column:sumber_data;size:100" json:"sumber_data,omitempty"`
+	Catatan           *string        `gorm:"column:catatan;type:text" json:"catatan,omitempty"`
+	LastContactAt     *time.Time     `gorm:"column:last_contact_at" json:"last_contact_at,omitempty"`
+	ImportBatchID     *uint          `gorm:"column:import_batch_id;index" json:"import_batch_id,omitempty"`
+	ImportBatch       *ImportBatch   `gorm:"foreignKey:ImportBatchID" json:"import_batch,omitempty"`
 }
 
 func (Kontak) TableName() string { return "kontak" }
