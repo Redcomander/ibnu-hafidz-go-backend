@@ -33,17 +33,23 @@ func (User) TableName() string { return "users" }
 
 func isKontakPermission(permissionName string) bool {
 	perms := map[string]struct{}{
-		"kontak.view":           {},
-		"kontak.create":         {},
-		"kontak.edit":           {},
-		"kontak.delete":         {},
-		"kontak.import":         {},
-		"template_pesan.view":   {},
-		"template_pesan.create": {},
-		"template_pesan.edit":   {},
-		"template_pesan.delete": {},
-		"kontak_riwayat.view":   {},
-		"kontak_dashboard.view": {},
+		"kontak.view":            {},
+		"kontak.create":          {},
+		"kontak.edit":            {},
+		"kontak.delete":          {},
+		"kontak.import":          {},
+		"template_pesan.view":    {},
+		"template_pesan.create":  {},
+		"template_pesan.edit":    {},
+		"template_pesan.delete":  {},
+		"kontak_riwayat.view":    {},
+		"kontak_dashboard.view":  {},
+		"tagihan.view":           {},
+		"tagihan.create":         {},
+		"tagihan.edit":           {},
+		"tagihan.delete":         {},
+		"tagihan.import":         {},
+		"tagihan_dashboard.view": {},
 	}
 	_, ok := perms[strings.TrimSpace(permissionName)]
 	return ok

@@ -51,6 +51,9 @@ func SeedPermissions(db *gorm.DB) error {
 		"kontak.view", "kontak.create", "kontak.edit", "kontak.delete", "kontak.import",
 		"template_pesan.view", "template_pesan.create", "template_pesan.edit", "template_pesan.delete",
 		"kontak_riwayat.view", "kontak_dashboard.view",
+		// Database tagihan
+		"tagihan.view", "tagihan.create", "tagihan.edit", "tagihan.delete", "tagihan.import",
+		"tagihan_dashboard.view",
 	}
 
 	// Ensure all permissions exist (idempotent via FirstOrCreate)
@@ -109,6 +112,8 @@ func SeedPermissions(db *gorm.DB) error {
 		"kontak.view", "kontak.create", "kontak.edit", "kontak.delete", "kontak.import",
 		"template_pesan.view", "template_pesan.create", "template_pesan.edit", "template_pesan.delete",
 		"kontak_riwayat.view", "kontak_dashboard.view",
+		"tagihan.view", "tagihan.create", "tagihan.edit", "tagihan.delete", "tagihan.import",
+		"tagihan_dashboard.view",
 	}
 
 	var panitiaRole models.Role

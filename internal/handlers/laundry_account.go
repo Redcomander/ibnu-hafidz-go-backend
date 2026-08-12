@@ -22,7 +22,7 @@ func NewLaundryAccountHandler(db *gorm.DB) *LaundryAccountHandler {
 const (
 	WEEKLY_LIMIT_KG   = 7.5
 	MONTHLY_LIMIT_KG  = 30.0
-	PRICE_PER_KG      = 4500.0
+	PRICE_PER_KG      = 5000.0
 	DEBT_PRICE_PER_KG = 6000.0
 )
 
@@ -35,6 +35,7 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 	perPage := c.QueryInt("per_page", 20)
 	search := c.Query("search")
 	genderType := c.Query("gender_type")
+	ownerStatus := c.Query("owner_status")
 	dateFromStr := c.Query("date_from")
 	dateToStr := c.Query("date_to")
 
@@ -61,6 +62,14 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 
 	if genderType != "" && genderType != "all" {
 		query = query.Where("vendor_id IN (SELECT id FROM laundry_vendors WHERE gender_type = ?)", genderType)
+	}
+
+	if ownerStatus == "orphan" {
+		query = query.Where("(student_id IS NULL AND user_id IS NULL) OR (student_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM students WHERE id = laundry_accounts.student_id)) OR (user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE id = laundry_accounts.user_id))")
+	} else if ownerStatus == "has_owner" {
+		query = query.Where("(student_id IS NOT NULL AND EXISTS (SELECT 1 FROM students WHERE id = laundry_accounts.student_id)) OR (user_id IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = laundry_accounts.user_id))")
+	} else if ownerStatus == "unknown" {
+		query = query.Where("(student_id IS NULL AND user_id IS NULL) OR (student_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM students WHERE id = laundry_accounts.student_id)) OR (user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE id = laundry_accounts.user_id))")
 	}
 
 	query.Count(&total)
@@ -157,6 +166,24 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 			OwnerName:       ownerName,
 			OwnerType:       ownerType,
 		})
+	}
+
+	if ownerStatus == "unknown" {
+		filtered := results[:0]
+		for _, result := range results {
+			if result.OwnerName == "Unknown" || result.OwnerType == "Unknown" {
+				filtered = append(filtered, result)
+			}
+		}
+		results = filtered
+	} else if ownerStatus == "has_owner" {
+		filtered := results[:0]
+		for _, result := range results {
+			if result.OwnerName != "Unknown" && result.OwnerType != "Unknown" {
+				filtered = append(filtered, result)
+			}
+		}
+		results = filtered
 	}
 
 	sortField := c.Query("sort", "monthly_weight")

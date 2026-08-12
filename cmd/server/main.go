@@ -18,6 +18,13 @@ import (
 	"github.com/ibnu-hafidz/web-v2/internal/models"
 )
 
+func safeClientIP(c *fiber.Ctx) string {
+	if c == nil {
+		return ""
+	}
+	return c.IP()
+}
+
 func main() {
 	// Load .env
 	if err := godotenv.Load(); err != nil {
@@ -115,6 +122,13 @@ func main() {
 		log.Fatalf("Failed to migrate kontak module: %v", err)
 	}
 
+	// Migrate Database Tagihan
+	if err := db.AutoMigrate(
+		&models.Tagihan{},
+	); err != nil {
+		log.Fatalf("Failed to migrate tagihan module: %v", err)
+	}
+
 	// Migrate Absensi Ekstra
 	if err := db.AutoMigrate(
 		&models.AbsensiEkstraGroup{},
@@ -206,26 +220,12 @@ func main() {
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
-		BodyLimit:    50 * 1024 * 1024, // 50MB for file uploads
-		ErrorHandler: handlers.ErrorHandler,
-		ProxyHeader:  fiber.HeaderXForwardedFor,
+		BodyLimit:               50 * 1024 * 1024, // 50MB for file uploads
+		ErrorHandler:            handlers.ErrorHandler,
+		ProxyHeader:             fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
 	})
-
-	clientIP := func(c *fiber.Ctx) string {
-		if forwarded := c.Get("CF-Connecting-IP"); forwarded != "" {
-			return forwarded
-		}
-		if forwarded := c.Get("X-Forwarded-For"); forwarded != "" {
-			parts := strings.Split(forwarded, ",")
-			if len(parts) > 0 {
-				return strings.TrimSpace(parts[0])
-			}
-		}
-		if realIP := c.Get("X-Real-IP"); realIP != "" {
-			return realIP
-		}
-		return c.IP()
-	}
 
 	// Global middleware
 	app.Use(logger.New())
@@ -279,7 +279,7 @@ func main() {
 	}))
 	app.Use(limiter.New(limiter.Config{
 		Max:          100, // 100 requests per minute per client IP
-		KeyGenerator: clientIP,
+		KeyGenerator: safeClientIP,
 	}))
 
 	// Setup routes
@@ -490,9 +490,11 @@ func main() {
 	laundryTransactionHandler := handlers.NewLaundryTransactionHandler(db)
 	laundryExportHandler := handlers.NewLaundryExportHandler(db)
 	kontakHandler := handlers.NewKontakHandler(db)
+	tagihanHandler := handlers.NewTagihanHandler(db)
 	templatePesanHandler := handlers.NewTemplatePesanHandler(db)
 	importExcelHandler := handlers.NewImportExcelHandler(db)
 	kontakDashboardHandler := handlers.NewKontakDashboardHandler(db)
+	tagihanDashboardHandler := handlers.NewTagihanDashboardHandler(db)
 
 	halaqoh := protected.Group("/halaqoh")
 	// Assignments
@@ -571,6 +573,8 @@ func main() {
 	// Kontak Calon Santri
 	protected.Post("/import/excel", middleware.Permission("kontak.import"), importExcelHandler.ImportKontak)
 	protected.Get("/import/excel/template", middleware.Permission("kontak.import"), importExcelHandler.DownloadTemplate)
+	protected.Post("/tagihan/import/excel", middleware.Permission("tagihan.import"), importExcelHandler.ImportTagihan)
+	protected.Get("/tagihan/import/excel/template", middleware.Permission("tagihan.import"), importExcelHandler.DownloadTagihanTemplate)
 
 	kontak := protected.Group("/kontak")
 	kontak.Get("/", middleware.Permission("kontak.view"), kontakHandler.List)
@@ -579,9 +583,22 @@ func main() {
 	kontak.Get("/:id", middleware.Permission("kontak.view"), kontakHandler.Get)
 	kontak.Put("/:id", middleware.Permission("kontak.edit"), kontakHandler.Update)
 	kontak.Delete("/:id", middleware.Permission("kontak.delete"), kontakHandler.Delete)
+	kontak.Delete("/sumber/:sumber", middleware.Permission("kontak.delete"), kontakHandler.DeleteSource)
 	kontak.Post("/bulk-delete", middleware.Permission("kontak.delete"), kontakHandler.BulkDelete)
 	kontak.Patch("/:id/status", middleware.Permission("kontak.edit"), kontakHandler.UpdateStatus)
 	kontak.Get("/:id/wa-link", middleware.Permission("kontak.view"), kontakHandler.WhatsAppLink)
+
+	tagihan := protected.Group("/tagihan")
+	tagihan.Get("/", middleware.Permission("tagihan.view"), tagihanHandler.List)
+	tagihan.Get("/sumber/options", middleware.Permission("tagihan.view"), tagihanHandler.SumberOptions)
+	tagihan.Get("/export/excel", middleware.Permission("tagihan.view"), tagihanHandler.ExportExcel)
+	tagihan.Get("/:id", middleware.Permission("tagihan.view"), tagihanHandler.Get)
+	tagihan.Put("/:id", middleware.Permission("tagihan.edit"), tagihanHandler.Update)
+	tagihan.Delete("/:id", middleware.Permission("tagihan.delete"), tagihanHandler.Delete)
+	tagihan.Delete("/sumber/:sumber", middleware.Permission("tagihan.delete"), tagihanHandler.DeleteSource)
+	tagihan.Post("/bulk-delete", middleware.Permission("tagihan.delete"), tagihanHandler.BulkDelete)
+	tagihan.Patch("/:id/status", middleware.Permission("tagihan.edit"), tagihanHandler.UpdateStatus)
+	tagihan.Get("/:id/wa-link", middleware.Permission("tagihan.view"), tagihanHandler.WhatsAppLink)
 
 	template := protected.Group("/template")
 	template.Get("/", middleware.Permission("template_pesan.view"), templatePesanHandler.List)
@@ -591,6 +608,7 @@ func main() {
 
 	protected.Get("/riwayat/:kontak_id", middleware.Permission("kontak_riwayat.view"), kontakHandler.Riwayat)
 	protected.Get("/dashboard/summary", middleware.Permission("kontak_dashboard.view"), kontakDashboardHandler.Summary)
+	protected.Get("/tagihan/dashboard/summary", middleware.Permission("tagihan_dashboard.view"), tagihanDashboardHandler.Summary)
 
 	// Absensi Ekstra
 	ekstraGroupHandler := handlers.NewAbsensiEkstraGroupHandler(db)

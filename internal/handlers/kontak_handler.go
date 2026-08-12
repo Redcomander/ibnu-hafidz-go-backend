@@ -146,6 +146,25 @@ func (h *KontakHandler) SumberOptions(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": values})
 }
 
+func (h *KontakHandler) DeleteSource(c *fiber.Ctx) error {
+	source := strings.TrimSpace(c.Params("sumber"))
+	if source == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Sumber wajib diisi"})
+	}
+
+	source, err := url.QueryUnescape(source)
+	if err != nil {
+		source = strings.TrimSpace(c.Params("sumber"))
+	}
+
+	result := h.db.Where("sumber_data = ?", source).Delete(&models.Kontak{})
+	if result.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: "Failed to delete sumber kontak"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Sumber kontak berhasil dihapus", "deleted_count": result.RowsAffected})
+}
+
 func (h *KontakHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	result := h.db.Delete(&models.Kontak{}, id)
@@ -790,9 +809,37 @@ func mapExcelHeaders(headerRow []string) map[string]int {
 			result["sumber_data"] = i
 		case "catatan", "keterangan", "notes":
 			result["catatan"] = i
+		case "total_tagihan", "total_tagihan_santri", "tagihan_total":
+			result["total_tagihan"] = i
 		}
 	}
 	return result
+}
+
+func normalizeCurrencyValue(value string) int64 {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0
+	}
+
+	trimmed = strings.ReplaceAll(trimmed, "Rp", "")
+	trimmed = strings.ReplaceAll(trimmed, ".", "")
+	trimmed = strings.ReplaceAll(trimmed, ",", "")
+	trimmed = strings.ReplaceAll(trimmed, " ", "")
+	trimmed = strings.ReplaceAll(trimmed, "(", "")
+	trimmed = strings.ReplaceAll(trimmed, ")", "")
+	trimmed = strings.ReplaceAll(trimmed, "-", "")
+	trimmed = strings.Trim(trimmed, ". ")
+
+	if trimmed == "" {
+		return 0
+	}
+
+	parsed, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func normalizeHeader(v string) string {

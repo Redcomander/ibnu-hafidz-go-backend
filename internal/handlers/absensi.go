@@ -1376,6 +1376,8 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	// ── Student Attendance ──
 	type StudentEntry struct {
 		Name    string `json:"name"`
+		Kelas   string `json:"kelas"`
+		Tingkat string `json:"tingkat"`
 		Catatan string `json:"catatan"`
 	}
 
@@ -1390,6 +1392,8 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	type AbsensiRow struct {
 		Status  string `json:"status"`
 		Name    string `json:"name"`
+		Kelas   string `json:"kelas"`
+		Tingkat string `json:"tingkat"`
 		Catatan string `json:"catatan"`
 	}
 
@@ -1399,8 +1403,9 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	q := h.db.Table(table).
-		Select("students.nama_lengkap as name, "+table+".status, "+table+".catatan").
+		Select("students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat").
 		Joins("JOIN students ON students.id = "+table+".student_id").
+		Joins("LEFT JOIN kelas AS siswa_kelas ON siswa_kelas.id = students.kelas_id").
 		Where(table+".tanggal >= ? AND "+table+".tanggal < ?", startDate, endExclusive).
 		Where(table + ".deleted_at IS NULL")
 	if !isDiniyyahAttendanceType(typeStr) {
@@ -1443,11 +1448,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		countsMap[r.Status]++
 		switch r.Status {
 		case "izin":
-			izinStudents = append(izinStudents, StudentEntry{Name: r.Name, Catatan: r.Catatan})
+			izinStudents = append(izinStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		case "sakit":
-			sakitStudents = append(sakitStudents, StudentEntry{Name: r.Name, Catatan: r.Catatan})
+			sakitStudents = append(sakitStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		case "alpa":
-			alpaStudents = append(alpaStudents, StudentEntry{Name: r.Name, Catatan: r.Catatan})
+			alpaStudents = append(alpaStudents, StudentEntry{Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
 		}
 	}
 
