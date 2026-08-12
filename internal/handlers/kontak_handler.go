@@ -790,7 +790,7 @@ func renderTemplateMessage(template string, kontak models.Kontak) string {
 
 	tunggakanText := "-"
 	if kontak.Tunggakan != nil && strings.TrimSpace(*kontak.Tunggakan) != "" {
-		tunggakanText = strings.TrimSpace(*kontak.Tunggakan)
+		tunggakanText = formatRupiahValueOrDash(*kontak.Tunggakan)
 	}
 
 	replacer := strings.NewReplacer(
@@ -918,6 +918,37 @@ func normalizeCurrencyValue(value string) int64 {
 		return 0
 	}
 	return parsed
+}
+
+func formatRupiahValueOrDash(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "-"
+	}
+
+	amount := normalizeCurrencyValue(trimmed)
+	if amount == 0 && trimmed != "0" {
+		return trimmed
+	}
+	return formatRupiahAmount(amount)
+}
+
+func formatRupiahAmount(amount int64) string {
+	if amount == 0 {
+		return "Rp 0"
+	}
+	formatted := strconv.FormatInt(amount, 10)
+	if len(formatted) <= 3 {
+		return "Rp " + formatted
+	}
+	result := make([]byte, 0, len(formatted)+len(formatted)/3)
+	for i, r := range formatted {
+		if i > 0 && (len(formatted)-i)%3 == 0 {
+			result = append(result, '.')
+		}
+		result = append(result, byte(r))
+	}
+	return "Rp " + string(result)
 }
 
 func normalizeHeader(v string) string {

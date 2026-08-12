@@ -392,10 +392,10 @@ func (h *TagihanDashboardHandler) Summary(c *fiber.Ctx) error {
 func renderTagihanTemplateMessage(template string, item models.Tagihan) string {
 	tunggakanText := "-"
 	if item.Tunggakan != nil && strings.TrimSpace(*item.Tunggakan) != "" {
-		tunggakanText = strings.TrimSpace(*item.Tunggakan)
+		tunggakanText = formatRupiahValueOrDash(*item.Tunggakan)
 	}
 
-	totalTagihanText := fmt.Sprintf("Rp %d", item.TotalTagihan)
+	totalTagihanText := formatRupiahAmount(item.TotalTagihan)
 	if item.TotalTagihan == 0 && tunggakanText != "-" {
 		totalTagihanText = tunggakanText
 	} else if item.Tunggakan != nil && strings.TrimSpace(*item.Tunggakan) != "" {
