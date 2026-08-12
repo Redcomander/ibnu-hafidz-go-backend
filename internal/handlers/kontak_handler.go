@@ -69,10 +69,10 @@ func (h *KontakHandler) buildKontakListQuery(c *fiber.Ctx) *gorm.DB {
 		)
 	}
 
-	sortBy := sanitizeKontakSortField(c.Query("sort", "updated_at"))
-	order := strings.ToLower(strings.TrimSpace(c.Query("order", "desc")))
+	sortBy := sanitizeKontakSortField(c.Query("sort", "last_contact_at"))
+	order := strings.ToLower(strings.TrimSpace(c.Query("order", "asc")))
 	if order != "asc" && order != "desc" {
-		order = "desc"
+		order = "asc"
 	}
 
 	return query.Order(sortBy + " " + order)
@@ -83,7 +83,7 @@ func sanitizeKontakSortField(field string) string {
 	case "id", "nama", "nis", "no_whatsapp", "status_kontak", "sumber_data", "last_contact_at", "created_at", "updated_at":
 		return strings.TrimSpace(field)
 	default:
-		return "updated_at"
+		return "last_contact_at"
 	}
 }
 

@@ -53,10 +53,10 @@ func (h *TagihanHandler) buildTagihanListQuery(c *fiber.Ctx) *gorm.DB {
 		)
 	}
 
-	sortBy := sanitizeTagihanSortField(c.Query("sort", "updated_at"))
-	order := strings.ToLower(strings.TrimSpace(c.Query("order", "desc")))
+	sortBy := sanitizeTagihanSortField(c.Query("sort", "last_contact_at"))
+	order := strings.ToLower(strings.TrimSpace(c.Query("order", "asc")))
 	if order != "asc" && order != "desc" {
-		order = "desc"
+		order = "asc"
 	}
 
 	return query.Order(sortBy + " " + order)
@@ -67,7 +67,7 @@ func sanitizeTagihanSortField(field string) string {
 	case "id", "nama", "nis", "no_whatsapp", "total_tagihan", "status_tagihan", "sumber_data", "last_contact_at", "created_at", "updated_at":
 		return strings.TrimSpace(field)
 	default:
-		return "updated_at"
+		return "last_contact_at"
 	}
 }
 
