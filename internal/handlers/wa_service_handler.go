@@ -26,7 +26,7 @@ func NewWAServiceHandler(cfg *config.Config, db *gorm.DB) *WAServiceHandler {
 	return &WAServiceHandler{
 		cfg:    cfg,
 		db:     db,
-		client: &http.Client{Timeout: 25 * time.Second},
+		client: &http.Client{Timeout: 90 * time.Second},
 	}
 }
 
