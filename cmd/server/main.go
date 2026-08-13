@@ -611,6 +611,7 @@ func main() {
 	wa := protected.Group("/wa")
 	wa.Get("/status", middleware.Permission("kontak.view"), waServiceHandler.Status)
 	wa.Get("/qr", middleware.Permission("kontak.view"), waServiceHandler.QR)
+	wa.Post("/disconnect", middleware.Permission("kontak.edit"), waServiceHandler.Disconnect)
 	wa.Post("/send", middleware.Permission("kontak.edit"), waServiceHandler.Send)
 
 	protected.Get("/riwayat/:kontak_id", middleware.Permission("kontak_riwayat.view"), kontakHandler.Riwayat)

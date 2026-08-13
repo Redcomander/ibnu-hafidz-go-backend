@@ -31,7 +31,8 @@ func NewWAServiceHandler(cfg *config.Config, db *gorm.DB) *WAServiceHandler {
 }
 
 func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
-	resp, err := h.doRequest("GET", "/api/wa/status", nil)
+	userID, _ := c.Locals("userID").(uint)
+	resp, err := h.doRequest("GET", "/api/wa/status", nil, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -48,7 +49,26 @@ func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
 }
 
 func (h *WAServiceHandler) QR(c *fiber.Ctx) error {
-	resp, err := h.doRequest("GET", "/api/wa/qr", nil)
+	userID, _ := c.Locals("userID").(uint)
+	resp, err := h.doRequest("GET", "/api/wa/qr", nil, userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
+			Error:   "wa_service_unavailable",
+			Message: "WhatsApp service is not reachable",
+		})
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return c.Status(resp.StatusCode).Send(body)
+	}
+	return c.Status(resp.StatusCode).Send(body)
+}
+
+func (h *WAServiceHandler) Disconnect(c *fiber.Ctx) error {
+	userID, _ := c.Locals("userID").(uint)
+	resp, err := h.doRequest("POST", "/api/wa/session/disconnect", nil, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -129,7 +149,8 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 		})
 	}
 
-	resp, err := h.doRequest("POST", "/api/wa/send", bytes.NewReader(body))
+	userID, _ := c.Locals("userID").(uint)
+	resp, err := h.doRequest("POST", "/api/wa/send", bytes.NewReader(body), userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -168,7 +189,7 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 	return c.Status(resp.StatusCode).Send(resultBody)
 }
 
-func (h *WAServiceHandler) doRequest(method, path string, body io.Reader) (*http.Response, error) {
+func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID uint) (*http.Response, error) {
 	url := strings.TrimRight(h.cfg.WAServiceURL, "/") + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -178,6 +199,9 @@ func (h *WAServiceHandler) doRequest(method, path string, body io.Reader) (*http
 	req.Header.Set("Content-Type", "application/json")
 	if h.cfg.WAServiceToken != "" && h.cfg.WAServiceToken != "change-me" {
 		req.Header.Set("X-WA-Service-Token", h.cfg.WAServiceToken)
+	}
+	if userID != 0 {
+		req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
 	}
 
 	return h.client.Do(req)
