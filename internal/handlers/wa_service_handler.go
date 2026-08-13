@@ -30,8 +30,22 @@ func NewWAServiceHandler(cfg *config.Config, db *gorm.DB) *WAServiceHandler {
 	}
 }
 
-func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
+func (h *WAServiceHandler) requireUserID(c *fiber.Ctx) (uint, error) {
 	userID, _ := c.Locals("userID").(uint)
+	if userID == 0 {
+		return 0, fiber.ErrUnauthorized
+	}
+	return userID, nil
+}
+
+func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "missing_user_id",
+			Message: "Authenticated user ID is required for WA session access",
+		})
+	}
 	resp, err := h.doRequest("GET", "/api/wa/status", nil, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
@@ -49,7 +63,13 @@ func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
 }
 
 func (h *WAServiceHandler) QR(c *fiber.Ctx) error {
-	userID, _ := c.Locals("userID").(uint)
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "missing_user_id",
+			Message: "Authenticated user ID is required for WA session access",
+		})
+	}
 	resp, err := h.doRequest("GET", "/api/wa/qr", nil, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
@@ -67,7 +87,13 @@ func (h *WAServiceHandler) QR(c *fiber.Ctx) error {
 }
 
 func (h *WAServiceHandler) Disconnect(c *fiber.Ctx) error {
-	userID, _ := c.Locals("userID").(uint)
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "missing_user_id",
+			Message: "Authenticated user ID is required for WA session access",
+		})
+	}
 	resp, err := h.doRequest("POST", "/api/wa/session/disconnect", nil, userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
@@ -85,6 +111,14 @@ func (h *WAServiceHandler) Disconnect(c *fiber.Ctx) error {
 }
 
 func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
+	userID, err := h.requireUserID(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "missing_user_id",
+			Message: "Authenticated user ID is required for WA session access",
+		})
+	}
+
 	type requestBody struct {
 		KontakID   uint   `json:"kontak_id"`
 		Number     string `json:"number"`
@@ -149,7 +183,6 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 		})
 	}
 
-	userID, _ := c.Locals("userID").(uint)
 	resp, err := h.doRequest("POST", "/api/wa/send", bytes.NewReader(body), userID)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
@@ -190,6 +223,10 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 }
 
 func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID uint) (*http.Response, error) {
+	if userID == 0 {
+		return nil, fmt.Errorf("missing_user_id")
+	}
+
 	url := strings.TrimRight(h.cfg.WAServiceURL, "/") + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -200,9 +237,7 @@ func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID
 	if h.cfg.WAServiceToken != "" && h.cfg.WAServiceToken != "change-me" {
 		req.Header.Set("X-WA-Service-Token", h.cfg.WAServiceToken)
 	}
-	if userID != 0 {
-		req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
-	}
+	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
 
 	return h.client.Do(req)
 }
