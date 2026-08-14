@@ -67,8 +67,11 @@ func (u *User) HasPermission(permissionName string) bool {
 
 	// Fallback: kontak module can be accessed by these operational roles.
 	if isKontakPermission(permissionName) {
-		if u.HasRole("super_admin") || u.HasRole("admin") || u.HasRole("panitia_ppdb") {
-			return true
+		for _, role := range u.Roles {
+			roleName := strings.ToLower(strings.TrimSpace(role.Name))
+			if roleName == "super_admin" || roleName == "admin" || roleName == "panitia_ppdb" || roleName == "panitia" || roleName == "admin_ppdb" {
+				return true
+			}
 		}
 	}
 
