@@ -233,11 +233,16 @@ func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID
 		return nil, err
 	}
 
+	sharedSessionKey := "shared"
 	req.Header.Set("Content-Type", "application/json")
 	if h.cfg.WAServiceToken != "" && h.cfg.WAServiceToken != "change-me" {
 		req.Header.Set("X-WA-Service-Token", h.cfg.WAServiceToken)
 	}
-	req.Header.Set("X-User-ID", strconv.FormatUint(uint64(userID), 10))
+
+	// WA service is intentionally single-shared-account and must not resolve
+	// the current authenticated user as a distinct session identity.
+	req.Header.Set("X-User-ID", sharedSessionKey)
+	req.Header.Set("X-Session-Key", sharedSessionKey)
 
 	return h.client.Do(req)
 }
