@@ -86,7 +86,7 @@ func (h *UserHandler) ExportCredentialsExcel(c *fiber.Ctx) error {
 
 	for i, user := range users {
 		row := i + 2
-		f.SetCellInt(sheet, fmt.Sprintf("A%d", row), i+1)
+		f.SetCellInt(sheet, fmt.Sprintf("A%d", row), int64(i+1))
 		f.SetCellStr(sheet, fmt.Sprintf("B%d", row), strings.TrimSpace(user.Name))
 		f.SetCellStr(sheet, fmt.Sprintf("C%d", row), user.Username)
 		f.SetCellStr(sheet, fmt.Sprintf("D%d", row), user.Email)
