@@ -50,6 +50,23 @@ func (h *UserHandler) buildUserExportQuery(c *fiber.Ctx) *gorm.DB {
 	return query
 }
 
+func userExportText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func userExportTruncate(value string, maxLen int) string {
+	if len(value) <= maxLen {
+		return value
+	}
+	if maxLen <= 3 {
+		return value[:maxLen]
+	}
+	return value[:maxLen-3] + "..."
+}
+
 // ExportCredentialsExcel exports user credential sheet (username + default password).
 func (h *UserHandler) ExportCredentialsExcel(c *fiber.Ctx) error {
 	var users []models.User
@@ -61,19 +78,22 @@ func (h *UserHandler) ExportCredentialsExcel(c *fiber.Ctx) error {
 	sheet := "User Credentials"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"No", "Nama Lengkap", "Username", "Email", "Password Default"}
+	headers := []string{"No", "Nama Lengkap", "Username", "Email", "NIK", "Tempat Lahir", "Tanggal Lahir", "Password Default"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheet, cell, header)
+		f.SetCellStr(sheet, cell, header)
 	}
 
 	for i, user := range users {
 		row := i + 2
-		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), strings.TrimSpace(user.Name))
-		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), user.Username)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), user.Email)
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), "12345678")
+		f.SetCellInt(sheet, fmt.Sprintf("A%d", row), i+1)
+		f.SetCellStr(sheet, fmt.Sprintf("B%d", row), strings.TrimSpace(user.Name))
+		f.SetCellStr(sheet, fmt.Sprintf("C%d", row), user.Username)
+		f.SetCellStr(sheet, fmt.Sprintf("D%d", row), user.Email)
+		f.SetCellStr(sheet, fmt.Sprintf("E%d", row), userExportText(user.NIK))
+		f.SetCellStr(sheet, fmt.Sprintf("F%d", row), userExportText(user.TempatLahir))
+		f.SetCellStr(sheet, fmt.Sprintf("G%d", row), userExportText(user.TanggalLahir))
+		f.SetCellStr(sheet, fmt.Sprintf("H%d", row), "12345678")
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -91,42 +111,69 @@ func (h *UserHandler) ExportCredentialsPDF(c *fiber.Ctx) error {
 	}
 
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(10, 10, 10)
-	pdf.SetAutoPageBreak(true, 12)
+	pdf.SetMargins(8, 8, 8)
+	pdf.SetAutoPageBreak(true, 10)
 	pdf.AddPage()
 
-	pdf.SetFont("Arial", "B", 14)
+	pdf.SetFont("Arial", "B", 12)
 	pdf.CellFormat(0, 8, "Data Login Pengguna", "", 1, "C", false, 0, "")
-	pdf.SetFont("Arial", "", 9)
-	pdf.CellFormat(0, 6, fmt.Sprintf("Dicetak: %s", time.Now().Format("02 Jan 2006 15:04")), "", 1, "C", false, 0, "")
-	pdf.Ln(3)
-
-	pdf.SetFont("Arial", "B", 9)
-	pdf.CellFormat(10, 7, "No", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(58, 7, "Nama Lengkap", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(40, 7, "Username", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(60, 7, "Email", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(22, 7, "Password", "1", 1, "C", false, 0, "")
-
 	pdf.SetFont("Arial", "", 8)
+	pdf.CellFormat(0, 5, fmt.Sprintf("Dicetak: %s", time.Now().Format("02 Jan 2006 15:04")), "", 1, "C", false, 0, "")
+	pdf.Ln(2)
+
+	pdf.SetFont("Arial", "B", 7)
+	colSpecs := []struct {
+		width  float64
+		header string
+	}{
+		{10, "No"},
+		{28, "Nama"},
+		{24, "Username"},
+		{26, "Email"},
+		{24, "NIK"},
+		{22, "Tempat Lahir"},
+		{20, "Tanggal Lahir"},
+		{14, "Password"},
+	}
+
+	currentX := 8.0
+	for _, spec := range colSpecs {
+		pdf.CellFormat(spec.width, 6, spec.header, "1", 0, "C", false, 0, "")
+		currentX += spec.width
+	}
+	pdf.Ln(6)
+
+	pdf.SetFont("Arial", "", 6.5)
 	for i, user := range users {
 		name := strings.TrimSpace(user.Name)
 		if name == "" {
 			name = "-"
 		}
 		email := user.Email
-		if len(name) > 35 {
-			name = name[:32] + "..."
+		if len(email) > 22 {
+			email = email[:19] + "..."
 		}
-		if len(email) > 38 {
-			email = email[:35] + "..."
+		valueNIK := userExportText(user.NIK)
+		if len(valueNIK) > 18 {
+			valueNIK = valueNIK[:15] + "..."
+		}
+		place := userExportText(user.TempatLahir)
+		if len(place) > 16 {
+			place = place[:13] + "..."
+		}
+		birthDate := userExportText(user.TanggalLahir)
+		if len(birthDate) > 14 {
+			birthDate = birthDate[:11] + "..."
 		}
 
 		pdf.CellFormat(10, 6, fmt.Sprintf("%d", i+1), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(58, 6, name, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(40, 6, user.Username, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(60, 6, email, "1", 0, "L", false, 0, "")
-		pdf.CellFormat(22, 6, "12345678", "1", 1, "C", false, 0, "")
+		pdf.CellFormat(28, 6, userExportTruncate(name, 18), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(24, 6, userExportTruncate(user.Username, 15), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(26, 6, userExportTruncate(email, 24), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(24, 6, userExportTruncate(valueNIK, 18), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(22, 6, userExportTruncate(place, 16), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(20, 6, userExportTruncate(birthDate, 14), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(14, 6, "12345678", "1", 1, "C", false, 0, "")
 	}
 
 	c.Set("Content-Type", "application/pdf")
