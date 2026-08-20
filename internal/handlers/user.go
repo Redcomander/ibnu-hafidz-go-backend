@@ -154,11 +154,14 @@ func (h *UserHandler) Get(c *fiber.Ctx) error {
 // Create adds a new user (teacher)
 func (h *UserHandler) Create(c *fiber.Ctx) error {
 	type CreateUserRequest struct {
-		Name     string `json:"name"`
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		RoleIDs  []uint `json:"role_ids"`
+		Name         string `json:"name"`
+		Username     string `json:"username"`
+		Email        string `json:"email"`
+		NIK          string `json:"nik"`
+		TempatLahir  string `json:"tempat_lahir"`
+		TanggalLahir string `json:"tanggal_lahir"`
+		Password     string `json:"password"`
+		RoleIDs      []uint `json:"role_ids"`
 	}
 
 	var req CreateUserRequest
@@ -195,10 +198,13 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	}
 
 	user := models.User{
-		Name:     req.Name,
-		Username: req.Username,
-		Email:    req.Email,
-		Password: hashedPassword,
+		Name:         req.Name,
+		Username:     req.Username,
+		Email:        req.Email,
+		NIK:          normalizeOptionalString(req.NIK),
+		TempatLahir:  normalizeOptionalString(req.TempatLahir),
+		TanggalLahir: normalizeOptionalString(req.TanggalLahir),
+		Password:     hashedPassword,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
@@ -235,6 +241,9 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		Name                 string `json:"name"`
 		Username             string `json:"username"`
 		Email                string `json:"email"`
+		NIK                  string `json:"nik"`
+		TempatLahir          string `json:"tempat_lahir"`
+		TanggalLahir         string `json:"tanggal_lahir"`
 		Password             string `json:"password"`
 		PasswordConfirmation string `json:"password_confirmation"`
 		RoleIDs              []uint `json:"role_ids"`
@@ -256,6 +265,11 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	}
 	if req.Email != "" {
 		user.Email = req.Email
+	}
+	if req.NIK != "" || req.TempatLahir != "" || req.TanggalLahir != "" {
+		user.NIK = normalizeOptionalString(req.NIK)
+		user.TempatLahir = normalizeOptionalString(req.TempatLahir)
+		user.TanggalLahir = normalizeOptionalString(req.TanggalLahir)
 	}
 	if req.Password != "" {
 		if len(req.Password) < 6 {

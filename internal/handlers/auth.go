@@ -193,6 +193,9 @@ func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 		Name            string `json:"name"`
 		Username        string `json:"username"`
 		Email           string `json:"email"`
+		NIK             string `json:"nik"`
+		TempatLahir     string `json:"tempat_lahir"`
+		TanggalLahir    string `json:"tanggal_lahir"`
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
 	}
@@ -224,6 +227,9 @@ func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 	user.Name = req.Name
 	user.Username = req.Username
 	user.Email = req.Email
+	user.NIK = normalizeOptionalString(req.NIK)
+	user.TempatLahir = normalizeOptionalString(req.TempatLahir)
+	user.TanggalLahir = normalizeOptionalString(req.TanggalLahir)
 
 	if strings.TrimSpace(req.NewPassword) != "" {
 		if len(req.NewPassword) < 6 {
@@ -258,6 +264,14 @@ func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 
 	h.db.Preload("Roles.Permissions").First(&user, userID)
 	return c.JSON(user)
+}
+
+func normalizeOptionalString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // UploadProfileAvatar uploads and updates authenticated user's avatar.

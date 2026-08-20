@@ -16,6 +16,9 @@ type User struct {
 	Username        string         `gorm:"column:username;size:255;uniqueIndex" json:"username"`
 	Email           string         `gorm:"column:email;size:255;uniqueIndex;not null" json:"email"`
 	Gender          *string        `gorm:"column:gender;size:10" json:"gender,omitempty"`
+	NIK             *string        `gorm:"column:nik;size:50" json:"nik,omitempty"`
+	TempatLahir     *string        `gorm:"column:tempat_lahir;size:255" json:"tempat_lahir,omitempty"`
+	TanggalLahir    *string        `gorm:"column:tanggal_lahir;size:20" json:"tanggal_lahir,omitempty"`
 	EmailVerifiedAt *time.Time     `gorm:"column:email_verified_at" json:"email_verified_at,omitempty"`
 	Password        string         `gorm:"column:password;size:255;not null" json:"-"`
 	FotoGuru        *string        `gorm:"column:foto_guru;size:255" json:"foto_guru,omitempty"`
