@@ -582,6 +582,7 @@ func main() {
 	kontak.Get("/", middleware.Permission("kontak.view"), kontakHandler.List)
 	kontak.Get("/sumber/options", middleware.Permission("kontak.view"), kontakHandler.SumberOptions)
 	kontak.Get("/export/excel", middleware.Permission("kontak.view"), kontakHandler.ExportExcel)
+	kontak.Post("/", middleware.Permission("kontak.create"), kontakHandler.Create)
 	kontak.Get("/:id", middleware.Permission("kontak.view"), kontakHandler.Get)
 	kontak.Put("/:id", middleware.Permission("kontak.edit"), kontakHandler.Update)
 	kontak.Delete("/:id", middleware.Permission("kontak.delete"), kontakHandler.Delete)

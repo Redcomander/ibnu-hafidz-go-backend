@@ -241,6 +241,93 @@ func (h *KontakHandler) ExportExcel(c *fiber.Ctx) error {
 	return f.Write(c.Response().BodyWriter())
 }
 
+func normalizeOptionalStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func (h *KontakHandler) Create(c *fiber.Ctx) error {
+	type request struct {
+		NIS               *string `json:"nis"`
+		Nama              string  `json:"nama"`
+		TTL               *string `json:"ttl"`
+		Alamat            *string `json:"alamat"`
+		AlamatLengkap     *string `json:"alamat_lengkap"`
+		NamaAyah          *string `json:"nama_ayah"`
+		NamaIbu           *string `json:"nama_ibu"`
+		NoWhatsapp        string  `json:"no_whatsapp"`
+		AsalSekolah       *string `json:"asal_sekolah"`
+		JenisKelamin      *string `json:"jenis_kelamin"`
+		JenjangPendidikan *string `json:"jenjang_pendidikan"`
+		Tunggakan         *string `json:"tunggakan"`
+		StatusKontak      string  `json:"status_kontak"`
+		HandlerID         *uint   `json:"handler_id"`
+		SumberData        *string `json:"sumber_data"`
+		Catatan           *string `json:"catatan"`
+	}
+
+	var req request
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid request body"})
+	}
+
+	if strings.TrimSpace(req.Nama) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Nama wajib diisi"})
+	}
+
+	normalizedWhatsapp := utils.NormalizeWhatsAppNumber(req.NoWhatsapp)
+	if strings.TrimSpace(normalizedWhatsapp) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "No WhatsApp wajib diisi"})
+	}
+
+	if req.HandlerID != nil {
+		var user models.User
+		if err := h.db.Select("id").First(&user, *req.HandlerID).Error; err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Handler user tidak ditemukan"})
+		}
+	}
+
+	statusKontak := strings.TrimSpace(req.StatusKontak)
+	if statusKontak == "" {
+		statusKontak = "baru"
+	}
+
+	item := models.Kontak{
+		NIS:               normalizeOptionalStringPtr(req.NIS),
+		Nama:              strings.TrimSpace(req.Nama),
+		TTL:               normalizeOptionalStringPtr(req.TTL),
+		Alamat:            normalizeOptionalStringPtr(req.Alamat),
+		AlamatLengkap:     normalizeOptionalStringPtr(req.AlamatLengkap),
+		NamaAyah:          normalizeOptionalStringPtr(req.NamaAyah),
+		NamaIbu:           normalizeOptionalStringPtr(req.NamaIbu),
+		NoWhatsapp:        normalizedWhatsapp,
+		AsalSekolah:       normalizeOptionalStringPtr(req.AsalSekolah),
+		JenisKelamin:      normalizeOptionalStringPtr(req.JenisKelamin),
+		JenjangPendidikan: normalizeOptionalStringPtr(req.JenjangPendidikan),
+		Tunggakan:         normalizeOptionalStringPtr(req.Tunggakan),
+		StatusKontak:      statusKontak,
+		HandlerID:         req.HandlerID,
+		SumberData:        normalizeOptionalStringPtr(req.SumberData),
+		Catatan:           normalizeOptionalStringPtr(req.Catatan),
+	}
+
+	if err := h.db.Create(&item).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: "Failed to create kontak"})
+	}
+
+	h.db.Preload("Handler", func(tx *gorm.DB) *gorm.DB {
+		return tx.Select("id", "name", "email")
+	}).First(&item, item.ID)
+
+	return c.Status(fiber.StatusCreated).JSON(item)
+}
+
 func (h *KontakHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Kontak
