@@ -21,6 +21,7 @@ func (h *AbsensiHandler) GetHistory(c *fiber.Ctx) error {
 	gender := c.Query("gender")
 	jenjang := c.Query("jenjang")
 	status := c.Query("status")
+	timeWindow := c.Query("time_window")
 	search := c.Query("search")
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	perPage, _ := strconv.Atoi(c.Query("per_page", "20"))
@@ -92,6 +93,9 @@ func (h *AbsensiHandler) GetHistory(c *fiber.Ctx) error {
 	if status != "" {
 		baseQ = baseQ.Where(fmt.Sprintf("%s.status = ?", table), status)
 	}
+	if timeWindow != "" {
+		baseQ = applyTimeWindowFilter(baseQ, table, timeWindow)
+	}
 	if search != "" {
 		baseQ = baseQ.Where("students.nama_lengkap LIKE ?", "%"+search+"%")
 	}
@@ -126,6 +130,9 @@ func (h *AbsensiHandler) GetHistory(c *fiber.Ctx) error {
 	if status != "" {
 		countQ = countQ.Where(fmt.Sprintf("%s.status = ?", table), status)
 	}
+	if timeWindow != "" {
+		countQ = applyTimeWindowFilter(countQ, table, timeWindow)
+	}
 	if search != "" {
 		countQ = countQ.Where("students.nama_lengkap LIKE ?", "%"+search+"%")
 	}
@@ -157,6 +164,7 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	gender := c.Query("gender")
 	jenjang := c.Query("jenjang")
 	status := c.Query("status")
+	timeWindow := c.Query("time_window")
 
 	if startDate == "" {
 		now := time.Now()
@@ -210,6 +218,9 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	}
 	if status != "" {
 		q = q.Where(fmt.Sprintf("%s.status = ?", table), status)
+	}
+	if timeWindow != "" {
+		q = applyTimeWindowFilter(q, table, timeWindow)
 	}
 
 	var rows []Row

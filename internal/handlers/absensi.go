@@ -256,6 +256,17 @@ func normalizeStudentStatus(raw string) string {
 	return v
 }
 
+func applyTimeWindowFilter(query *gorm.DB, tableName string, timeWindow string) *gorm.DB {
+	switch strings.ToLower(strings.TrimSpace(timeWindow)) {
+	case "before_break":
+		return query.Where("TIME("+tableName+".created_at) < ?", "09:31:00")
+	case "after_break":
+		return query.Where("TIME("+tableName+".created_at) > ?", "09:59:00")
+	default:
+		return query
+	}
+}
+
 func isValidStudentStatus(status string) bool {
 	return status == "hadir" || status == "izin" || status == "sakit" || status == "alpa"
 }
@@ -1417,6 +1428,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	gender := c.Query("gender")
 	jenjang := c.Query("jenjang") // smp or sma
 	status := c.Query("status")   // izin, sakit, alpa
+	timeWindow := c.Query("time_window")
 
 	// Default to current month
 	if startDate == "" {
@@ -1498,6 +1510,9 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	// Filter by status
 	if status != "" {
 		q = q.Where(table+".status = ?", status)
+	}
+	if timeWindow != "" {
+		q = applyTimeWindowFilter(q, table, timeWindow)
 	}
 
 	// Fetch ALL matching rows (same as Laravel's chunk+merge)
