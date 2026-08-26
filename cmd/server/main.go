@@ -98,6 +98,7 @@ func main() {
 		&models.HalaqohAttendanceSnapshot{},
 		&models.HalaqohTeacherAttendance{},
 		&models.HalaqohSubstituteLog{},
+		&models.HalaqohAssignmentChangeRequest{},
 	); err != nil {
 		log.Fatalf("Failed to migrate halaqoh: %v", err)
 	}
@@ -324,7 +325,7 @@ func main() {
 	// Students
 	studentHandler := handlers.NewStudentHandler(db)
 	students := protected.Group("/students")
-	students.Get("/", middleware.Permission("students.view"), studentHandler.List)
+	students.Get("/", middleware.PermissionAny("students.view", "halaqoh-assignments.create", "halaqoh-assignments.edit", "halaqoh.view_all"), studentHandler.List)
 	students.Post("/", middleware.Permission("students.create"), studentHandler.Create)
 	students.Post("/import", middleware.Permission("students.create"), studentHandler.ImportCSV)
 	students.Get("/template", middleware.Permission("students.view"), studentHandler.ExportTemplate)
@@ -501,10 +502,13 @@ func main() {
 	halaqoh := protected.Group("/halaqoh")
 	// Assignments
 	halaqoh.Get("/assignments", halaqohHandler.ListAssignments)
-	halaqoh.Post("/assignments", middleware.Permission("halaqoh-assignments.create"), halaqohHandler.CreateAssignment)
-	halaqoh.Put("/assignments/:teacher_id", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UpdateAssignment)
-	halaqoh.Delete("/assignments/:id", middleware.Permission("halaqoh-assignments.delete"), halaqohHandler.DeleteAssignment)
-	halaqoh.Delete("/assignments/teacher/:teacher_id", middleware.Permission("halaqoh-assignments.delete"), halaqohHandler.DeleteAssignmentsByTeacher)
+	halaqoh.Get("/assignment-change-requests", halaqohHandler.ListAssignmentChangeRequests)
+	halaqoh.Post("/assignment-change-requests/:id/approve", halaqohHandler.ApproveAssignmentChangeRequest)
+	halaqoh.Post("/assignment-change-requests/:id/reject", halaqohHandler.RejectAssignmentChangeRequest)
+	halaqoh.Post("/assignments", halaqohHandler.CreateAssignment)
+	halaqoh.Put("/assignments/:teacher_id", halaqohHandler.UpdateAssignment)
+	halaqoh.Delete("/assignments/:id", halaqohHandler.DeleteAssignment)
+	halaqoh.Delete("/assignments/teacher/:teacher_id", halaqohHandler.DeleteAssignmentsByTeacher)
 	// Substitute
 	halaqoh.Post("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.AssignSubstitute)
 	halaqoh.Delete("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UnassignSubstitute)

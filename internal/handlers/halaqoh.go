@@ -418,7 +418,7 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 		accessInfos = append(accessInfos, AccessInfo{
 			TeacherID:           tid,
 			CanAccessAttendance: isOwn || isSub || canManage || isHelper,
-			CanManage:           canManage,
+			CanManage:           canManage || isOwn,
 			IsSubstitute:        isSub,
 			IsHelper:            isHelper,
 		})
@@ -438,6 +438,11 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 
 // CreateAssignment assigns students to a teacher.
 func (h *HalaqohHandler) CreateAssignment(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	type Req struct {
 		UserID          uint   `json:"user_id"`
 		StudentIDs      []uint `json:"student_ids"`
@@ -451,32 +456,65 @@ func (h *HalaqohHandler) CreateAssignment(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Teacher and at least one student required"})
 	}
 
-	tx := h.db.Begin()
-	for _, sid := range req.StudentIDs {
-		var existing models.HalaqohAssignment
-		err := tx.Unscoped().Where("student_id = ?", sid).First(&existing).Error
-		if err == nil {
-			tx.Model(&existing).Updates(map[string]interface{}{
-				"user_id":           req.UserID,
-				"helper_teacher_id": req.HelperTeacherID,
-				"active":            true,
-			})
-		} else {
-			tx.Create(&models.HalaqohAssignment{
-				UserID:          req.UserID,
-				StudentID:       sid,
-				HelperTeacherID: req.HelperTeacherID,
-				Active:          true,
-			})
+	if user.HasRole("super_admin") || user.HasRole("admin") {
+		tx := h.db.Begin()
+		for _, sid := range req.StudentIDs {
+			var existing models.HalaqohAssignment
+			err := tx.Unscoped().Where("student_id = ?", sid).First(&existing).Error
+			if err == nil {
+				tx.Model(&existing).Updates(map[string]interface{}{
+					"user_id":           req.UserID,
+					"helper_teacher_id": req.HelperTeacherID,
+					"active":            true,
+				})
+			} else {
+				tx.Create(&models.HalaqohAssignment{
+					UserID:          req.UserID,
+					StudentID:       sid,
+					HelperTeacherID: req.HelperTeacherID,
+					Active:          true,
+				})
+			}
+		}
+		tx.Commit()
+		return c.JSON(fiber.Map{"message": "Penugasan Halaqoh berhasil dibuat"})
+	}
+
+	if user.ID != req.UserID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Guru hanya dapat mengajukan perubahan untuk milik sendiri"})
+	}
+
+	previousIDs := []uint{}
+	var currentAssignments []models.HalaqohAssignment
+	if err := h.db.Where("user_id = ? AND active = ?", req.UserID, true).Find(&currentAssignments).Error; err == nil {
+		for _, a := range currentAssignments {
+			previousIDs = append(previousIDs, a.StudentID)
 		}
 	}
-	tx.Commit()
 
-	return c.JSON(fiber.Map{"message": "Penugasan Halaqoh berhasil dibuat"})
+	payload := models.HalaqohAssignmentChangeRequest{
+		TeacherID:          req.UserID,
+		RequestedByUserID:  user.ID,
+		RequestType:        "create",
+		TargetTeacherID:    req.UserID,
+		StudentIDs:         req.StudentIDs,
+		PreviousStudentIDs: previousIDs,
+		HelperTeacherID:    req.HelperTeacherID,
+		Status:             "pending",
+	}
+	if err := h.db.Create(&payload).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengirim permintaan perubahan halaqoh"})
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"message": "Permintaan perubahan halaqoh berhasil dikirim untuk persetujuan admin", "request_id": payload.ID})
 }
 
 // UpdateAssignment updates a teacher's student list and helper.
 func (h *HalaqohHandler) UpdateAssignment(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	teacherID, _ := strconv.ParseUint(c.Params("teacher_id"), 10, 64)
 	if teacherID == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid teacher ID"})
@@ -492,78 +530,292 @@ func (h *HalaqohHandler) UpdateAssignment(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	tx := h.db.Begin()
+	if user.HasRole("super_admin") || user.HasRole("admin") {
+		tx := h.db.Begin()
 
-	tx.Model(&models.HalaqohAssignment{}).
-		Where("user_id = ? AND active = ?", teacherID, true).
-		Update("active", false)
-
-	if req.UserID != uint(teacherID) {
 		tx.Model(&models.HalaqohAssignment{}).
-			Where("user_id = ? AND active = ?", req.UserID, true).
+			Where("user_id = ? AND active = ?", teacherID, true).
 			Update("active", false)
-	}
 
-	for _, sid := range req.StudentIDs {
-		var existing models.HalaqohAssignment
-		err := tx.Where("student_id = ?", sid).First(&existing).Error
-		if err == nil {
-			tx.Model(&existing).Updates(map[string]interface{}{
-				"user_id":           req.UserID,
-				"helper_teacher_id": req.HelperTeacherID,
-				"active":            true,
-			})
-		} else {
-			tx.Create(&models.HalaqohAssignment{
-				UserID:          req.UserID,
-				StudentID:       sid,
-				HelperTeacherID: req.HelperTeacherID,
-				Active:          true,
-			})
+		if req.UserID != uint(teacherID) {
+			tx.Model(&models.HalaqohAssignment{}).
+				Where("user_id = ? AND active = ?", req.UserID, true).
+				Update("active", false)
 		}
+
+		for _, sid := range req.StudentIDs {
+			var existing models.HalaqohAssignment
+			err := tx.Where("student_id = ?", sid).First(&existing).Error
+			if err == nil {
+				tx.Model(&existing).Updates(map[string]interface{}{
+					"user_id":           req.UserID,
+					"helper_teacher_id": req.HelperTeacherID,
+					"active":            true,
+				})
+			} else {
+				tx.Create(&models.HalaqohAssignment{
+					UserID:          req.UserID,
+					StudentID:       sid,
+					HelperTeacherID: req.HelperTeacherID,
+					Active:          true,
+				})
+			}
+		}
+
+		if req.UserID != uint(teacherID) {
+			todayStr := todayString()
+			tx.Model(&models.HalaqohSubstituteLog{}).
+				Where("original_teacher_id = ? AND date >= ? AND is_active = ?", teacherID, todayStr, true).
+				Update("original_teacher_id", req.UserID)
+		}
+
+		tx.Commit()
+		return c.JSON(fiber.Map{"message": "Penugasan Halaqoh berhasil diperbarui"})
 	}
 
-	if req.UserID != uint(teacherID) {
-		todayStr := todayString()
-		tx.Model(&models.HalaqohSubstituteLog{}).
-			Where("original_teacher_id = ? AND date >= ? AND is_active = ?", teacherID, todayStr, true).
-			Update("original_teacher_id", req.UserID)
+	if user.ID != uint(teacherID) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Guru hanya dapat mengajukan perubahan untuk milik sendiri"})
 	}
 
-	tx.Commit()
+	var currentAssignments []models.HalaqohAssignment
+	if err := h.db.Where("user_id = ? AND active = ?", teacherID, true).Find(&currentAssignments).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal memuat penugasan saat ini"})
+	}
+	previousStudentIDs := make([]uint, 0, len(currentAssignments))
+	for _, a := range currentAssignments {
+		previousStudentIDs = append(previousStudentIDs, a.StudentID)
+	}
 
-	return c.JSON(fiber.Map{"message": "Penugasan Halaqoh berhasil diperbarui"})
+	reqPayload := models.HalaqohAssignmentChangeRequest{
+		TeacherID:          uint(teacherID),
+		RequestedByUserID:  user.ID,
+		RequestType:        "update",
+		TargetTeacherID:    uint(teacherID),
+		StudentIDs:         req.StudentIDs,
+		PreviousStudentIDs: previousStudentIDs,
+		HelperTeacherID:    req.HelperTeacherID,
+		Status:             "pending",
+	}
+	if err := h.db.Create(&reqPayload).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengirim permintaan perubahan halaqoh"})
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"message": "Permintaan perubahan halaqoh berhasil dikirim untuk persetujuan admin", "request_id": reqPayload.ID})
 }
 
 // DeleteAssignment soft-deletes (sets active=false).
 func (h *HalaqohHandler) DeleteAssignment(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
 	if id == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid assignment ID"})
 	}
 
-	result := h.db.Model(&models.HalaqohAssignment{}).
-		Where("id = ?", id).
-		Update("active", false)
-	if result.RowsAffected == 0 {
+	var assignment models.HalaqohAssignment
+	if err := h.db.First(&assignment, id).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 
-	return c.JSON(fiber.Map{"message": "Penugasan Halaqoh dinonaktifkan"})
+	if user.HasRole("super_admin") || user.HasRole("admin") {
+		result := h.db.Model(&models.HalaqohAssignment{}).
+			Where("id = ?", id).
+			Update("active", false)
+		if result.RowsAffected == 0 {
+			return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
+		}
+		return c.JSON(fiber.Map{"message": "Penugasan Halaqoh dinonaktifkan"})
+	}
+
+	if user.ID != assignment.UserID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Guru hanya dapat mengajukan perubahan untuk milik sendiri"})
+	}
+
+	payload := models.HalaqohAssignmentChangeRequest{
+		TeacherID:          assignment.UserID,
+		RequestedByUserID:  user.ID,
+		RequestType:        "delete_single",
+		TargetTeacherID:    assignment.UserID,
+		StudentIDs:         []uint{assignment.StudentID},
+		PreviousStudentIDs: []uint{assignment.StudentID},
+		Status:             "pending",
+	}
+	if err := h.db.Create(&payload).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengirim permintaan penghapusan halaqoh"})
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"message": "Permintaan penghapusan santri dari halaqoh berhasil dikirim untuk persetujuan admin", "request_id": payload.ID})
 }
 
 // DeleteAssignmentsByTeacher deactivates all assignments for a teacher.
 func (h *HalaqohHandler) DeleteAssignmentsByTeacher(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
 	teacherID, _ := strconv.ParseUint(c.Params("teacher_id"), 10, 64)
 	if teacherID == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid teacher ID"})
 	}
 
-	h.db.Model(&models.HalaqohAssignment{}).
-		Where("user_id = ? AND active = ?", teacherID, true).
-		Update("active", false)
+	if user.HasRole("super_admin") || user.HasRole("admin") {
+		h.db.Model(&models.HalaqohAssignment{}).
+			Where("user_id = ? AND active = ?", teacherID, true).
+			Update("active", false)
+		return c.JSON(fiber.Map{"message": "Semua penugasan guru dinonaktifkan"})
+	}
 
-	return c.JSON(fiber.Map{"message": "Semua penugasan guru dinonaktifkan"})
+	if user.ID != uint(teacherID) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Guru hanya dapat mengajukan perubahan untuk milik sendiri"})
+	}
+
+	var currentAssignments []models.HalaqohAssignment
+	if err := h.db.Where("user_id = ? AND active = ?", teacherID, true).Find(&currentAssignments).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal memuat penugasan saat ini"})
+	}
+	studentIDs := make([]uint, 0, len(currentAssignments))
+	for _, a := range currentAssignments {
+		studentIDs = append(studentIDs, a.StudentID)
+	}
+
+	payload := models.HalaqohAssignmentChangeRequest{
+		TeacherID:          uint(teacherID),
+		RequestedByUserID:  user.ID,
+		RequestType:        "delete_all",
+		TargetTeacherID:    uint(teacherID),
+		StudentIDs:         studentIDs,
+		PreviousStudentIDs: studentIDs,
+		Status:             "pending",
+	}
+	if err := h.db.Create(&payload).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal mengirim permintaan penghapusan massal halaqoh"})
+	}
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{"message": "Permintaan penghapusan semua penugasan halaqoh berhasil dikirim untuk persetujuan admin", "request_id": payload.ID})
+}
+
+func (h *HalaqohHandler) ListAssignmentChangeRequests(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+
+	query := h.db.Model(&models.HalaqohAssignmentChangeRequest{}).Order("created_at DESC")
+	if !(user.HasRole("super_admin") || user.HasRole("admin")) {
+		query = query.Where("teacher_id = ? OR requested_by_user_id = ?", user.ID, user.ID)
+	}
+
+	var requests []models.HalaqohAssignmentChangeRequest
+	if err := query.Preload("Teacher").Preload("RequestedBy").Preload("Reviewer").Find(&requests).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal memuat permintaan perubahan halaqoh"})
+	}
+	return c.JSON(fiber.Map{"data": requests})
+}
+
+func (h *HalaqohHandler) ApproveAssignmentChangeRequest(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !(user.HasRole("super_admin") || user.HasRole("admin")) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya admin/super_admin yang dapat menyetujui permintaan halaqoh"})
+	}
+
+	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	if id == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "ID permintaan tidak valid"})
+	}
+
+	var req models.HalaqohAssignmentChangeRequest
+	if err := h.db.First(&req, uint(id)).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Permintaan tidak ditemukan"})
+	}
+
+	tx := h.db.Begin()
+	if req.RequestType == "create" || req.RequestType == "update" {
+		tx.Model(&models.HalaqohAssignment{}).
+			Where("user_id = ? AND active = ?", req.TargetTeacherID, true).
+			Update("active", false)
+		for _, sid := range req.StudentIDs {
+			var existing models.HalaqohAssignment
+			err := tx.Unscoped().Where("student_id = ?", sid).First(&existing).Error
+			if err == nil {
+				tx.Model(&existing).Updates(map[string]interface{}{
+					"user_id":           req.TargetTeacherID,
+					"helper_teacher_id": req.HelperTeacherID,
+					"active":            true,
+				})
+			} else {
+				tx.Create(&models.HalaqohAssignment{
+					UserID:          req.TargetTeacherID,
+					StudentID:       sid,
+					HelperTeacherID: req.HelperTeacherID,
+					Active:          true,
+				})
+			}
+		}
+	} else if req.RequestType == "delete_single" || req.RequestType == "delete_all" {
+		if req.RequestType == "delete_single" && len(req.StudentIDs) > 0 {
+			tx.Model(&models.HalaqohAssignment{}).
+				Where("user_id = ? AND student_id = ? AND active = ?", req.TargetTeacherID, req.StudentIDs[0], true).
+				Update("active", false)
+		} else {
+			tx.Model(&models.HalaqohAssignment{}).
+				Where("user_id = ? AND active = ?", req.TargetTeacherID, true).
+				Update("active", false)
+		}
+	}
+
+	now := time.Now()
+	req.Status = "approved"
+	req.ReviewedBy = &user.ID
+	req.ReviewedAt = &now
+	if err := tx.Save(&req).Error; err != nil {
+		tx.Rollback()
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menyetujui permintaan halaqoh"})
+	}
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menyelesaikan persetujuan halaqoh"})
+	}
+	return c.JSON(fiber.Map{"message": "Permintaan perubahan halaqoh berhasil disetujui"})
+}
+
+func (h *HalaqohHandler) RejectAssignmentChangeRequest(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !(user.HasRole("super_admin") || user.HasRole("admin")) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Hanya admin/super_admin yang dapat menolak permintaan halaqoh"})
+	}
+
+	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+	if id == 0 {
+		return c.Status(400).JSON(fiber.Map{"error": "ID permintaan tidak valid"})
+	}
+
+	var req models.HalaqohAssignmentChangeRequest
+	if err := h.db.First(&req, uint(id)).Error; err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Permintaan tidak ditemukan"})
+	}
+
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.BodyParser(&payload); err != nil {
+		payload.Reason = "Permintaan ditolak oleh admin"
+	}
+
+	now := time.Now()
+	req.Status = "rejected"
+	req.Reason = payload.Reason
+	req.ReviewedBy = &user.ID
+	req.ReviewedAt = &now
+	if err := h.db.Save(&req).Error; err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Gagal menolak permintaan halaqoh"})
+	}
+	return c.JSON(fiber.Map{"message": "Permintaan perubahan halaqoh berhasil ditolak"})
 }
 
 // ──────────────────────────────────────────────────────────────
