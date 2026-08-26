@@ -239,23 +239,23 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 			sess = *log.Session
 		}
 
-		// Global counts
-		if teacherID == 0 || log.OriginalTeacherID == teacherID {
-			stats[st]++
-			if _, ok := sessionStats[sess]; ok {
-				sessionStats[sess][st]++
+		// Global counts: only count the original teacher's real absences from a substitute log.
+		if st != "" && st != "Hadir" {
+			if teacherID == 0 || log.OriginalTeacherID == teacherID {
+				stats[st]++
+				if _, ok := sessionStats[sess]; ok {
+					sessionStats[sess][st]++
+				}
 			}
 		}
 		if teacherID == 0 || log.SubstituteTeacherID == teacherID {
 			substitutionCount++
 		}
 
-		// Per teacher (Original Teacher)
+		// Per teacher (Original Teacher): only absence statuses are counted for the original teacher.
 		if log.OriginalTeacher.ID != 0 {
 			ts := getTeacher(log.OriginalTeacher.ID, log.OriginalTeacher.Name)
 			switch st {
-			case "Hadir":
-				ts.Hadir++
 			case "Izin":
 				ts.Izin++
 			case "Sakit":

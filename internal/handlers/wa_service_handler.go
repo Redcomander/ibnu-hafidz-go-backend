@@ -38,6 +38,19 @@ func (h *WAServiceHandler) requireUserID(c *fiber.Ctx) (uint, error) {
 	return userID, nil
 }
 
+func normalizeWAAccountType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "personal":
+		return "personal"
+	case "business", "bussiness":
+		return "business"
+	case "shared", "":
+		return "shared"
+	default:
+		return "shared"
+	}
+}
+
 func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
 	userID, err := h.requireUserID(c)
 	if err != nil {
@@ -46,7 +59,8 @@ func (h *WAServiceHandler) Status(c *fiber.Ctx) error {
 			Message: "Authenticated user ID is required for WA session access",
 		})
 	}
-	resp, err := h.doRequest("GET", "/api/wa/status", nil, userID)
+	accountType := normalizeWAAccountType(c.Query("account_type"))
+	resp, err := h.doRequest("GET", "/api/wa/status", nil, userID, accountType)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -70,7 +84,8 @@ func (h *WAServiceHandler) QR(c *fiber.Ctx) error {
 			Message: "Authenticated user ID is required for WA session access",
 		})
 	}
-	resp, err := h.doRequest("GET", "/api/wa/qr", nil, userID)
+	accountType := normalizeWAAccountType(c.Query("account_type"))
+	resp, err := h.doRequest("GET", "/api/wa/qr", nil, userID, accountType)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -94,7 +109,8 @@ func (h *WAServiceHandler) Disconnect(c *fiber.Ctx) error {
 			Message: "Authenticated user ID is required for WA session access",
 		})
 	}
-	resp, err := h.doRequest("POST", "/api/wa/session/disconnect", nil, userID)
+	accountType := normalizeWAAccountType(c.Query("account_type"))
+	resp, err := h.doRequest("POST", "/api/wa/session/disconnect", nil, userID, accountType)
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -120,10 +136,11 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 	}
 
 	type requestBody struct {
-		KontakID   uint   `json:"kontak_id"`
-		Number     string `json:"number"`
-		Message    string `json:"message"`
-		TemplateID *uint  `json:"template_id,omitempty"`
+		KontakID    uint   `json:"kontak_id"`
+		Number      string `json:"number"`
+		Message     string `json:"message"`
+		TemplateID  *uint  `json:"template_id,omitempty"`
+		AccountType string `json:"account_type,omitempty"`
 	}
 
 	var req requestBody
@@ -183,7 +200,7 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 		})
 	}
 
-	resp, err := h.doRequest("POST", "/api/wa/send", bytes.NewReader(body), userID)
+	resp, err := h.doRequest("POST", "/api/wa/send", bytes.NewReader(body), userID, normalizeWAAccountType(req.AccountType))
 	if err != nil {
 		return c.Status(fiber.StatusBadGateway).JSON(models.ErrorResponse{
 			Error:   "wa_service_unavailable",
@@ -222,7 +239,7 @@ func (h *WAServiceHandler) Send(c *fiber.Ctx) error {
 	return c.Status(resp.StatusCode).Send(resultBody)
 }
 
-func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID uint) (*http.Response, error) {
+func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID uint, accountType string) (*http.Response, error) {
 	if userID == 0 {
 		return nil, fmt.Errorf("missing_user_id")
 	}
@@ -233,16 +250,17 @@ func (h *WAServiceHandler) doRequest(method, path string, body io.Reader, userID
 		return nil, err
 	}
 
-	sharedSessionKey := "shared"
+	selectedSessionKey := normalizeWAAccountType(accountType)
+	if selectedSessionKey == "shared" {
+		selectedSessionKey = "shared"
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if h.cfg.WAServiceToken != "" && h.cfg.WAServiceToken != "change-me" {
 		req.Header.Set("X-WA-Service-Token", h.cfg.WAServiceToken)
 	}
 
-	// WA service is intentionally single-shared-account and must not resolve
-	// the current authenticated user as a distinct session identity.
-	req.Header.Set("X-User-ID", sharedSessionKey)
-	req.Header.Set("X-Session-Key", sharedSessionKey)
+	req.Header.Set("X-User-ID", "shared")
+	req.Header.Set("X-Session-Key", selectedSessionKey)
 
 	return h.client.Do(req)
 }

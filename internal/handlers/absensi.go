@@ -1530,17 +1530,6 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	// ── Teacher Attendance ──
-	type TeacherSummaryEntry struct {
-		ID         uint   `json:"id"`
-		Name       string `json:"name"`
-		Avatar     string `json:"avatar"`
-		Hadir      int    `json:"hadir"`
-		Izin       int    `json:"izin"`
-		Sakit      int    `json:"sakit"`
-		Alpha      int    `json:"alpha"`
-		Substitute int    `json:"substitute"`
-	}
-
 	var teacherSummary []TeacherSummaryEntry
 	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0}
 
@@ -1702,17 +1691,6 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
 	// ── Teacher Attendance ──
-	type TeacherSummaryEntry struct {
-		ID         uint   `json:"id"`
-		Name       string `json:"name"`
-		Avatar     string `json:"avatar"`
-		Hadir      int    `json:"hadir"`
-		Izin       int    `json:"izin"`
-		Sakit      int    `json:"sakit"`
-		Alpha      int    `json:"alpha"`
-		Substitute int    `json:"substitute"`
-	}
-
 	var teacherSummary []TeacherSummaryEntry
 	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Substitute": 0}
 
@@ -1880,23 +1858,13 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	}
 
 	for _, sc := range subCounts {
-		if idx, exists := inSummaryMap[sc.ID]; exists {
-			teacherSummary[idx].Substitute = sc.Count
-			teacherSummary[idx].Hadir += sc.Count // substitute sessions count as hadir
-		} else {
-			// Teacher only has substitute records — substitute sessions count as hadir
-			teacherSummary = append(teacherSummary, TeacherSummaryEntry{
-				ID:         sc.ID,
-				Name:       sc.Name,
-				Avatar:     sc.Avatar,
-				Hadir:      sc.Count,
-				Izin:       0,
-				Sakit:      0,
-				Alpha:      0,
-				Substitute: sc.Count,
-			})
+		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, sc.Count)
+		for i, entry := range teacherSummary {
+			if entry.ID == sc.ID {
+				inSummaryMap[sc.ID] = i
+				break
+			}
 		}
-		teacherCountsMap["Hadir"] += sc.Count
 	}
 
 	// Add original-teacher absence status counts from substitute logs

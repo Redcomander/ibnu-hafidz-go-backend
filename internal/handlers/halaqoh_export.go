@@ -108,8 +108,6 @@ func (h *HalaqohStatsHandler) fetchTeacherData(startDate, endDate, teacherIDStr,
 				st = capitalize(*log.Status)
 			}
 			switch st {
-			case "Hadir":
-				ts.Hadir++
 			case "Izin":
 				ts.Izin++
 			case "Sakit":

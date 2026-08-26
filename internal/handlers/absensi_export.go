@@ -567,16 +567,6 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
 	// 1. Fetch Teacher Summary
-	type TeacherSummaryEntry struct {
-		ID         uint
-		Name       string
-		Avatar     string
-		Hadir      int
-		Izin       int
-		Sakit      int
-		Alpha      int
-		Substitute int
-	}
 	var teacherSummary []TeacherSummaryEntry
 
 	summaryQ := h.db.Table("teacher_attendances ta").
@@ -644,26 +634,50 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 
-	inSummaryMap := make(map[uint]int)
-	for i, t := range teacherSummary {
-		inSummaryMap[t.ID] = i
+	for _, sc := range subCounts {
+		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, sc.Count)
 	}
 
-	for _, sc := range subCounts {
-		if idx, exists := inSummaryMap[sc.ID]; exists {
-			teacherSummary[idx].Substitute = sc.Count
-		} else {
-			teacherSummary = append(teacherSummary, TeacherSummaryEntry{
-				ID:         sc.ID,
-				Name:       sc.Name,
-				Avatar:     sc.Avatar,
-				Hadir:      0,
-				Izin:       0,
-				Sakit:      0,
-				Alpha:      0,
-				Substitute: sc.Count,
-			})
+	// Original teacher absences logged via substitute records should be counted against the original teacher only for absence statuses.
+	type OriginalSubStatusCount struct {
+		ID     uint
+		Name   string
+		Avatar string
+		Status string
+		Count  int
+	}
+	var originalSubStatusCounts []OriginalSubStatusCount
+	origQ := h.db.Table("substitute_logs").
+		Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, count(*) as count").
+		Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
+		Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+		Where("substitute_logs.deleted_at IS NULL")
+
+	if isDiniyyahAttendanceType(typeStr) {
+		origQ = origQ.Where("substitute_logs.jadwal_diniyyah_id IS NOT NULL")
+		if kelasID != "" {
+			origQ = origQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
+				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+				Where("dkt.kelas_id = ?", kelasID)
 		}
+	} else {
+		origQ = origQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
+	}
+	if teacherID != "" {
+		origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
+	}
+	if gender != "" {
+		origQ = origQ.Where("u.gender = ?", gender)
+	}
+	origQ.Group("substitute_logs.original_teacher_id, u.name, u.foto_guru, substitute_logs.status").Scan(&originalSubStatusCounts)
+
+	for _, oc := range originalSubStatusCounts {
+		status := strings.TrimSpace(strings.ToLower(oc.Status))
+		if status != "izin" && status != "sakit" && status != "alpha" {
+			continue
+		}
+		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, oc.Count)
 	}
 
 	// 2. Fetch Substitute History
