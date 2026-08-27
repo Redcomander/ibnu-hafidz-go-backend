@@ -154,7 +154,8 @@ func (h *AbsensiHandler) GetHistory(c *fiber.Ctx) error {
 	})
 }
 
-type groupedClassSummaryRow struct {
+type groupedStudentSummaryRow struct {
+	Nama      string `json:"nama"`
 	KelasNama string `json:"kelas_nama"`
 	Tingkat   string `json:"tingkat"`
 	Hadir     int    `json:"hadir"`
@@ -164,14 +165,14 @@ type groupedClassSummaryRow struct {
 	Total     int    `json:"total"`
 }
 
-func (h *AbsensiHandler) getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow string) ([]groupedClassSummaryRow, error) {
+func (h *AbsensiHandler) getGroupedStudentSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow string) ([]groupedStudentSummaryRow, error) {
 	table := "absensis"
 	if isDiniyyahAttendanceType(typeStr) {
 		table = "absensi_diniyyahs"
 	}
 
 	q := h.db.Table(table+" a").
-		Select("COALESCE(k.nama, '') as kelas_nama, COALESCE(k.tingkat, '') as tingkat, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN a.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) as alpa, COUNT(*) as total").
+		Select("s.nama_lengkap as nama, COALESCE(k.nama, '') as kelas_nama, COALESCE(k.tingkat, '') as tingkat, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN a.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) as alpa, COUNT(*) as total").
 		Joins("JOIN students s ON s.id = a.student_id").
 		Joins("LEFT JOIN kelas k ON k.id = s.kelas_id").
 		Where("a.tanggal >= ? AND a.tanggal < ?", startDate, endExclusive).
@@ -201,8 +202,8 @@ func (h *AbsensiHandler) getGroupedClassSummaryRows(typeStr, startDate, endExclu
 		q = applyTimeWindowFilter(q, "a", timeWindow)
 	}
 
-	var rows []groupedClassSummaryRow
-	if err := q.Group("k.nama, k.tingkat").Order("k.nama ASC, k.tingkat ASC").Scan(&rows).Error; err != nil {
+	var rows []groupedStudentSummaryRow
+	if err := q.Group("s.nama_lengkap, k.nama, k.tingkat").Order("k.nama ASC, k.tingkat ASC, s.nama_lengkap ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
@@ -230,12 +231,12 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	endT, _ := time.Parse("2006-01-02", endDate)
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
-	rows, err := h.getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
+	rows, err := h.getGroupedStudentSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch grouped summary"})
 	}
 	if rows == nil {
-		rows = []groupedClassSummaryRow{}
+		rows = []groupedStudentSummaryRow{}
 	}
 
 	f := excelize.NewFile()
@@ -257,38 +258,39 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	f.SetCellValue(sheet, "A1", fmt.Sprintf("Laporan Absensi %s", strings.ToUpper(typeStr[:1])+typeStr[1:]))
 	f.SetCellValue(sheet, "A2", fmt.Sprintf("Periode: %s s/d %s", startDate, endDate))
 	f.SetCellValue(sheet, "A3", fmt.Sprintf("Filter: kelas=%s | gender=%s | jenjang=%s | status=%s | time_window=%s", attendanceValueOrDash(kelasID), attendanceValueOrDash(gender), attendanceValueOrDash(jenjang), attendanceValueOrDash(status), attendanceValueOrDash(timeWindow)))
-	f.MergeCell(sheet, "A1", "H1")
-	f.MergeCell(sheet, "A2", "H2")
-	f.MergeCell(sheet, "A3", "H3")
+	f.MergeCell(sheet, "A1", "I1")
+	f.MergeCell(sheet, "A2", "I2")
+	f.MergeCell(sheet, "A3", "I3")
 
-	headers := []string{"No", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
+	headers := []string{"No", "Nama Siswa", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
 	for i, h := range headers {
 		cell := fmt.Sprintf("%s5", string(rune('A'+i)))
 		f.SetCellValue(sheet, cell, h)
 		f.SetCellStyle(sheet, cell, cell, headerStyle)
 	}
 
-	for i, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H"} {
-		f.SetColWidth(sheet, col, col, []float64{6, 18, 12, 10, 10, 10, 10, 10}[i])
+	for i, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"} {
+		f.SetColWidth(sheet, col, col, []float64{6, 28, 18, 12, 10, 10, 10, 10, 10}[i])
 	}
 
 	totalRecords := 0
 	for i, r := range rows {
 		row := i + 6
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.KelasNama)
-		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Tingkat)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Hadir)
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Izin)
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Sakit)
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Alpa)
-		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Total)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Nama)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.KelasNama)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Tingkat)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Hadir)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Izin)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Sakit)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Alpa)
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), r.Total)
 		totalRecords += r.Total
 	}
 
 	footerRow := len(rows) + 6
 	f.SetCellValue(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("Total keseluruhan: %d siswa", totalRecords))
-	f.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("H%d", footerRow))
+	f.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("I%d", footerRow))
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=absensi_%s_%s_%s.xlsx", typeStr, startDate, endDate))
@@ -320,12 +322,12 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	endT, _ := time.Parse("2006-01-02", endDate)
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
-	rows, err := h.getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
+	rows, err := h.getGroupedStudentSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch grouped summary"})
 	}
 	if rows == nil {
-		rows = []groupedClassSummaryRow{}
+		rows = []groupedStudentSummaryRow{}
 	}
 
 	pdf := fpdf.New("L", "mm", "A4", "")
@@ -340,12 +342,12 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	pdf.Ln(5)
 
 	pdf.SetFont("Helvetica", "B", 11)
-	pdf.CellFormat(0, 8, "Ringkasan Per Kelas", "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 8, "Ringkasan Per Siswa", "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "B", 9)
 	pdf.SetFillColor(46, 125, 50)
 	pdf.SetTextColor(255, 255, 255)
-	pdfHeaders := []float64{10, 42, 18, 18, 18, 18, 18, 18}
-	headerLabels := []string{"No", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
+	pdfHeaders := []float64{10, 48, 24, 18, 18, 18, 18, 18, 18}
+	headerLabels := []string{"No", "Nama Siswa", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
 	for i, label := range headerLabels {
 		pdf.CellFormat(pdfHeaders[i], 8, label, "1", 0, "C", true, 0, "")
 	}
@@ -356,7 +358,7 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	pdf.SetFillColor(245, 245, 245)
 	for i, r := range rows {
 		fill := i%2 == 1
-		vals := []string{fmt.Sprintf("%d", i+1), r.KelasNama, r.Tingkat, fmt.Sprintf("%d", r.Hadir), fmt.Sprintf("%d", r.Izin), fmt.Sprintf("%d", r.Sakit), fmt.Sprintf("%d", r.Alpa), fmt.Sprintf("%d", r.Total)}
+		vals := []string{fmt.Sprintf("%d", i+1), r.Nama, r.KelasNama, r.Tingkat, fmt.Sprintf("%d", r.Hadir), fmt.Sprintf("%d", r.Izin), fmt.Sprintf("%d", r.Sakit), fmt.Sprintf("%d", r.Alpa), fmt.Sprintf("%d", r.Total)}
 		for j, v := range vals {
 			pdf.CellFormat(pdfHeaders[j], 7, v, "1", 0, "C", fill, 0, "")
 		}
