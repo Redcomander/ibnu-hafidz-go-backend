@@ -154,6 +154,60 @@ func (h *AbsensiHandler) GetHistory(c *fiber.Ctx) error {
 	})
 }
 
+type groupedClassSummaryRow struct {
+	KelasNama string `json:"kelas_nama"`
+	Tingkat   string `json:"tingkat"`
+	Hadir     int    `json:"hadir"`
+	Izin      int    `json:"izin"`
+	Sakit     int    `json:"sakit"`
+	Alpa      int    `json:"alpa"`
+	Total     int    `json:"total"`
+}
+
+func (h *AbsensiHandler) getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow string) ([]groupedClassSummaryRow, error) {
+	table := "absensis"
+	if isDiniyyahAttendanceType(typeStr) {
+		table = "absensi_diniyyahs"
+	}
+
+	q := h.db.Table(table + " a").
+		Select("COALESCE(k.nama, '') as kelas_nama, COALESCE(k.tingkat, '') as tingkat, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN a.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) as alpa, COUNT(*) as total").
+		Joins("JOIN students s ON s.id = a.student_id").
+		Joins("LEFT JOIN kelas k ON k.id = s.kelas_id").
+		Where("a.tanggal >= ? AND a.tanggal < ?", startDate, endExclusive).
+		Where("a.deleted_at IS NULL")
+	if !isDiniyyahAttendanceType(typeStr) {
+		q = q.Joins("JOIN jadwal_formal jf ON jf.id = a.jadwal_formal_id")
+		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
+	}
+	if kelasID != "" {
+		q = q.Where("s.kelas_id = ?", kelasID)
+	}
+	if gender != "" {
+		q = q.Where("k.gender = ?", gender)
+	}
+	if jenjang != "" {
+		switch jenjang {
+		case "smp":
+			q = q.Where("(k.nama LIKE ? OR k.nama LIKE ? OR k.nama LIKE ? OR k.tingkat LIKE ? OR k.tingkat LIKE ? OR k.tingkat LIKE ?)", "%7%", "%8%", "%9%", "%7%", "%8%", "%9%")
+		case "sma":
+			q = q.Where("(k.nama LIKE ? OR k.nama LIKE ? OR k.nama LIKE ? OR k.tingkat LIKE ? OR k.tingkat LIKE ? OR k.tingkat LIKE ?)", "%10%", "%11%", "%12%", "%10%", "%11%", "%12%")
+		}
+	}
+	if status != "" {
+		q = q.Where("a.status = ?", status)
+	}
+	if timeWindow != "" {
+		q = applyTimeWindowFilter(q, "a", timeWindow)
+	}
+
+	var rows []groupedClassSummaryRow
+	if err := q.Group("k.nama, k.tingkat").Order("k.nama ASC, k.tingkat ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ── ExportStatisticsExcel exports attendance statistics to an .xlsx file ──
 
 func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
@@ -176,65 +230,18 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	endT, _ := time.Parse("2006-01-02", endDate)
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
-	table := "absensis"
-	if isDiniyyahAttendanceType(typeStr) {
-		table = "absensi_diniyyahs"
+	rows, err := h.getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch grouped summary"})
 	}
-
-	type Row struct {
-		Name      string `json:"name"`
-		Status    string `json:"status"`
-		Tanggal   string `json:"tanggal"`
-		Catatan   string `json:"catatan"`
-		KelasNama string `json:"kelas_nama"`
-	}
-
-	q := h.db.Table(table).
-		Select(fmt.Sprintf("students.nama_lengkap as name, %s.status, %s.tanggal, %s.catatan, COALESCE(kelas.nama,'') as kelas_nama", table, table, table)).
-		Joins(fmt.Sprintf("JOIN students ON students.id = %s.student_id", table)).
-		Joins("LEFT JOIN kelas ON kelas.id = students.kelas_id").
-		Where(fmt.Sprintf("%s.tanggal >= ? AND %s.tanggal < ?", table, table), startDate, endExclusive).
-		Where(fmt.Sprintf("%s.deleted_at IS NULL", table)).
-		Order(fmt.Sprintf("%s.tanggal DESC, students.nama_lengkap ASC", table))
-	if !isDiniyyahAttendanceType(typeStr) {
-		q = q.Joins(fmt.Sprintf("JOIN jadwal_formal jf ON jf.id = %s.jadwal_formal_id", table))
-		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
-	}
-
-	// Apply filters
-	if kelasID != "" {
-		q = q.Where("students.kelas_id = ?", kelasID)
-	}
-	if gender != "" {
-		q = q.Where("kelas.gender = ?", gender)
-	}
-	if jenjang != "" {
-		switch jenjang {
-		case "smp":
-			q = q.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%7%", "%8%", "%9%")
-		case "sma":
-			q = q.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%10%", "%11%", "%12%")
-		}
-	}
-	if status != "" {
-		q = q.Where(fmt.Sprintf("%s.status = ?", table), status)
-	}
-	if timeWindow != "" {
-		q = applyTimeWindowFilter(q, table, timeWindow)
-	}
-
-	var rows []Row
-	q.Scan(&rows)
 	if rows == nil {
-		rows = []Row{}
+		rows = []groupedClassSummaryRow{}
 	}
 
-	// Build Excel
 	f := excelize.NewFile()
 	sheet := "Absensi"
 	f.SetSheetName("Sheet1", sheet)
 
-	// Header style
 	headerStyle, _ := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF"},
 		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"2E7D32"}},
@@ -247,47 +254,44 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 		},
 	})
 
-	// Title
 	f.SetCellValue(sheet, "A1", fmt.Sprintf("Laporan Absensi %s", strings.ToUpper(typeStr[:1])+typeStr[1:]))
 	f.SetCellValue(sheet, "A2", fmt.Sprintf("Periode: %s s/d %s", startDate, endDate))
-	f.MergeCell(sheet, "A1", "E1")
-	f.MergeCell(sheet, "A2", "E2")
+	f.SetCellValue(sheet, "A3", fmt.Sprintf("Filter: kelas=%s | gender=%s | jenjang=%s | status=%s | time_window=%s", attendanceValueOrDash(kelasID), attendanceValueOrDash(gender), attendanceValueOrDash(jenjang), attendanceValueOrDash(status), attendanceValueOrDash(timeWindow)))
+	f.MergeCell(sheet, "A1", "H1")
+	f.MergeCell(sheet, "A2", "H2")
+	f.MergeCell(sheet, "A3", "H3")
 
-	// Headers
-	headers := []string{"No", "Nama Siswa", "Kelas", "Tanggal", "Status", "Catatan"}
+	headers := []string{"No", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
 	for i, h := range headers {
-		cell := fmt.Sprintf("%s4", string(rune('A'+i)))
+		cell := fmt.Sprintf("%s5", string(rune('A'+i)))
 		f.SetCellValue(sheet, cell, h)
 		f.SetCellStyle(sheet, cell, cell, headerStyle)
 	}
 
-	// Column widths
-	f.SetColWidth(sheet, "A", "A", 5)
-	f.SetColWidth(sheet, "B", "B", 30)
-	f.SetColWidth(sheet, "C", "C", 15)
-	f.SetColWidth(sheet, "D", "D", 15)
-	f.SetColWidth(sheet, "E", "E", 10)
-	f.SetColWidth(sheet, "F", "F", 30)
-
-	// Data rows
-	for i, r := range rows {
-		row := i + 5
-		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Name)
-		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.KelasNama)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Tanggal)
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Status)
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Catatan)
+	for i, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H"} {
+		f.SetColWidth(sheet, col, col, []float64{6, 18, 12, 10, 10, 10, 10, 10}[i])
 	}
 
-	// Summary row
-	summaryRow := len(rows) + 6
-	f.SetCellValue(sheet, fmt.Sprintf("A%d", summaryRow), fmt.Sprintf("Total: %d records", len(rows)))
+	totalRecords := 0
+	for i, r := range rows {
+		row := i + 6
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.KelasNama)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Tingkat)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Hadir)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Izin)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Sakit)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Alpa)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Total)
+		totalRecords += r.Total
+	}
 
-	// Write to response
+	footerRow := len(rows) + 6
+	f.SetCellValue(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("Total keseluruhan: %d siswa", totalRecords))
+	f.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("H%d", footerRow))
+
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=absensi_%s_%s_%s.xlsx", typeStr, startDate, endDate))
-
 	if err := f.Write(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate Excel"})
 	}
@@ -304,6 +308,7 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	gender := c.Query("gender")
 	jenjang := c.Query("jenjang")
 	status := c.Query("status")
+	timeWindow := c.Query("time_window")
 
 	if startDate == "" {
 		now := time.Now()
@@ -315,169 +320,70 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	endT, _ := time.Parse("2006-01-02", endDate)
 	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
 
-	table := "absensis"
-	if isDiniyyahAttendanceType(typeStr) {
-		table = "absensi_diniyyahs"
+	rows, err := h.getGroupedClassSummaryRows(typeStr, startDate, endExclusive, kelasID, gender, jenjang, status, timeWindow)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch grouped summary"})
+	}
+	if rows == nil {
+		rows = []groupedClassSummaryRow{}
 	}
 
-	// --- Get counts ---
-	type SC struct {
-		Status string
-		Count  int
-	}
-	var counts []SC
-	cntQ := h.db.Table(table).
-		Select("status, count(*) as count").
-		Joins(fmt.Sprintf("JOIN students ON students.id = %s.student_id", table)).
-		Where(fmt.Sprintf("%s.tanggal >= ? AND %s.tanggal < ?", table, table), startDate, endExclusive).
-		Where("deleted_at IS NULL").
-		Group("status")
-	if !isDiniyyahAttendanceType(typeStr) {
-		cntQ = cntQ.Joins(fmt.Sprintf("JOIN jadwal_formal jf ON jf.id = %s.jadwal_formal_id", table))
-		cntQ = applyFormalScheduleTypeFilter(cntQ, "jf", typeStr)
-	}
-
-	needKelas := kelasID != "" || gender != "" || jenjang != ""
-	if needKelas {
-		cntQ = cntQ.Joins("JOIN kelas ON kelas.id = students.kelas_id")
-		if kelasID != "" {
-			cntQ = cntQ.Where("students.kelas_id = ?", kelasID)
-		}
-		if gender != "" {
-			cntQ = cntQ.Where("kelas.gender = ?", gender)
-		}
-		if jenjang != "" {
-			switch jenjang {
-			case "smp":
-				cntQ = cntQ.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%7%", "%8%", "%9%")
-			case "sma":
-				cntQ = cntQ.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%10%", "%11%", "%12%")
-			}
-		}
-	}
-	if status != "" {
-		cntQ = cntQ.Where(fmt.Sprintf("%s.status = ?", table), status)
-	}
-	cntQ.Scan(&counts)
-
-	statusMap := map[string]int{"hadir": 0, "izin": 0, "sakit": 0, "alpa": 0}
-	for _, sc := range counts {
-		statusMap[sc.Status] = sc.Count
-	}
-
-	// --- Get detail rows ---
-	type Row struct {
-		Name    string
-		Status  string
-		Tanggal string
-		Catatan string
-	}
-	var rows []Row
-	q := h.db.Table(table).
-		Select(fmt.Sprintf("students.nama_lengkap as name, %s.status, %s.tanggal, %s.catatan", table, table, table)).
-		Joins(fmt.Sprintf("JOIN students ON students.id = %s.student_id", table)).
-		Where(fmt.Sprintf("%s.tanggal >= ? AND %s.tanggal < ?", table, table), startDate, endExclusive).
-		Where(fmt.Sprintf("%s.deleted_at IS NULL", table)).
-		Order(fmt.Sprintf("%s.tanggal DESC", table)).
-		Limit(500)
-	if !isDiniyyahAttendanceType(typeStr) {
-		q = q.Joins(fmt.Sprintf("JOIN jadwal_formal jf ON jf.id = %s.jadwal_formal_id", table))
-		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
-	}
-
-	if needKelas {
-		q = q.Joins("JOIN kelas ON kelas.id = students.kelas_id")
-		if kelasID != "" {
-			q = q.Where("students.kelas_id = ?", kelasID)
-		}
-		if gender != "" {
-			q = q.Where("kelas.gender = ?", gender)
-		}
-		if jenjang != "" {
-			switch jenjang {
-			case "smp":
-				q = q.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%7%", "%8%", "%9%")
-			case "sma":
-				q = q.Where("(kelas.nama LIKE ? OR kelas.nama LIKE ? OR kelas.nama LIKE ?)", "%10%", "%11%", "%12%")
-			}
-		}
-	}
-	if status != "" {
-		q = q.Where(fmt.Sprintf("%s.status = ?", table), status)
-	}
-	q.Scan(&rows)
-
-	// --- Build PDF ---
 	pdf := fpdf.New("L", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 15)
 	pdf.AddPage()
 
-	// Title
 	pdf.SetFont("Helvetica", "B", 16)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Laporan Absensi %s", strings.ToUpper(typeStr[:1])+typeStr[1:]), "", 1, "C", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
 	pdf.CellFormat(0, 7, fmt.Sprintf("Periode: %s s/d %s", startDate, endDate), "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Filter: kelas=%s | gender=%s | jenjang=%s | status=%s | time_window=%s", attendanceValueOrDash(kelasID), attendanceValueOrDash(gender), attendanceValueOrDash(jenjang), attendanceValueOrDash(status), attendanceValueOrDash(timeWindow)), "", 1, "C", false, 0, "")
 	pdf.Ln(5)
 
-	// Summary cards
 	pdf.SetFont("Helvetica", "B", 11)
-	pdf.CellFormat(0, 8, "Ringkasan Statistik", "", 1, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 10)
-
-	summaryItems := []struct {
-		Label string
-		Count int
-	}{
-		{"Hadir", statusMap["hadir"]},
-		{"Izin", statusMap["izin"]},
-		{"Sakit", statusMap["sakit"]},
-		{"Alpa", statusMap["alpa"]},
-	}
-	colW := 65.0
-	for _, item := range summaryItems {
-		pdf.CellFormat(colW, 8, fmt.Sprintf("  %s: %d", item.Label, item.Count), "1", 0, "L", false, 0, "")
-	}
-	pdf.Ln(12)
-
-	// Table header
+	pdf.CellFormat(0, 8, "Ringkasan Per Kelas", "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "B", 9)
 	pdf.SetFillColor(46, 125, 50)
 	pdf.SetTextColor(255, 255, 255)
-	pdfHeaders := []float64{10, 70, 30, 25, 125} // No, Nama, Tanggal, Status, Catatan
-	headerLabels := []string{"No", "Nama Siswa", "Tanggal", "Status", "Catatan"}
+	pdfHeaders := []float64{10, 42, 18, 18, 18, 18, 18, 18}
+	headerLabels := []string{"No", "Kelas", "Tingkat", "Hadir", "Izin", "Sakit", "Alpa", "Total"}
 	for i, label := range headerLabels {
 		pdf.CellFormat(pdfHeaders[i], 8, label, "1", 0, "C", true, 0, "")
 	}
 	pdf.Ln(-1)
 
-	// Table rows
 	pdf.SetFont("Helvetica", "", 8)
 	pdf.SetTextColor(0, 0, 0)
 	pdf.SetFillColor(245, 245, 245)
-
 	for i, r := range rows {
 		fill := i%2 == 1
-		pdf.CellFormat(pdfHeaders[0], 7, fmt.Sprintf("%d", i+1), "1", 0, "C", fill, 0, "")
-		pdf.CellFormat(pdfHeaders[1], 7, truncStr(r.Name, 40), "1", 0, "L", fill, 0, "")
-		pdf.CellFormat(pdfHeaders[2], 7, r.Tanggal, "1", 0, "C", fill, 0, "")
-		pdf.CellFormat(pdfHeaders[3], 7, r.Status, "1", 0, "C", fill, 0, "")
-		pdf.CellFormat(pdfHeaders[4], 7, truncStr(r.Catatan, 70), "1", 0, "L", fill, 0, "")
+		vals := []string{fmt.Sprintf("%d", i+1), r.KelasNama, r.Tingkat, fmt.Sprintf("%d", r.Hadir), fmt.Sprintf("%d", r.Izin), fmt.Sprintf("%d", r.Sakit), fmt.Sprintf("%d", r.Alpa), fmt.Sprintf("%d", r.Total)}
+		for j, v := range vals {
+			pdf.CellFormat(pdfHeaders[j], 7, v, "1", 0, "C", fill, 0, "")
+		}
 		pdf.Ln(-1)
 	}
 
-	// Footer
 	pdf.Ln(5)
 	pdf.SetFont("Helvetica", "I", 8)
-	pdf.CellFormat(0, 5, fmt.Sprintf("Digenerate pada: %s | Total: %d records", time.Now().Format("02/01/2006 15:04"), len(rows)), "", 1, "R", false, 0, "")
+	totalStudents := 0
+	for _, r := range rows {
+		totalStudents += r.Total
+	}
+	pdf.CellFormat(0, 5, fmt.Sprintf("Digenerate pada: %s | Total: %d siswa", time.Now().Format("02/01/2006 15:04"), totalStudents), "", 1, "R", false, 0, "")
 
-	// Write to response
 	c.Set("Content-Type", "application/pdf")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=absensi_%s_%s_%s.pdf", typeStr, startDate, endDate))
-
 	if err := pdf.Output(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate PDF"})
 	}
 	return nil
+}
+
+func attendanceValueOrDash(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "-"
+	}
+	return v
 }
 
 // truncStr truncates a string to maxLen characters.
