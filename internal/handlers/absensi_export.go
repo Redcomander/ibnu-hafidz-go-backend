@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -288,7 +289,51 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 		totalRecords += r.Total
 	}
 
-	footerRow := len(rows) + 6
+	groupedRows := map[string][]groupedStudentSummaryRow{}
+	for _, r := range rows {
+		key := strings.TrimSpace(r.KelasNama + " " + r.Tingkat)
+		if key == "" {
+			key = "Tanpa Kelas"
+		}
+		groupedRows[key] = append(groupedRows[key], r)
+	}
+
+	orderedKeys := make([]string, 0, len(groupedRows))
+	for key := range groupedRows {
+		orderedKeys = append(orderedKeys, key)
+	}
+	sort.Strings(orderedKeys)
+
+	currentRow := 6
+	sectionStyleID, _ := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11, Color: "1F2937"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E2E8F0"}},
+		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "center"},
+	})
+	for _, key := range orderedKeys {
+		sectionTitle := key
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", currentRow), sectionTitle)
+		f.SetCellStyle(sheet, fmt.Sprintf("A%d", currentRow), fmt.Sprintf("I%d", currentRow), sectionStyleID)
+		f.MergeCell(sheet, fmt.Sprintf("A%d", currentRow), fmt.Sprintf("I%d", currentRow))
+		currentRow++
+
+		for i, r := range groupedRows[key] {
+			row := currentRow + i
+			f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
+			f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Nama)
+			f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.KelasNama)
+			f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Tingkat)
+			f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Hadir)
+			f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Izin)
+			f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Sakit)
+			f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Alpa)
+			f.SetCellValue(sheet, fmt.Sprintf("I%d", row), r.Total)
+		}
+		currentRow += len(groupedRows[key])
+		currentRow++
+	}
+
+	footerRow := currentRow
 	f.SetCellValue(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("Total keseluruhan: %d siswa", totalRecords))
 	f.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("I%d", footerRow))
 
@@ -353,16 +398,46 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	}
 	pdf.Ln(-1)
 
+	groupedRows := map[string][]groupedStudentSummaryRow{}
+	for _, r := range rows {
+		key := strings.TrimSpace(r.KelasNama + " " + r.Tingkat)
+		if key == "" {
+			key = "Tanpa Kelas"
+		}
+		groupedRows[key] = append(groupedRows[key], r)
+	}
+
+	orderedKeys := make([]string, 0, len(groupedRows))
+	for key := range groupedRows {
+		orderedKeys = append(orderedKeys, key)
+	}
+	sort.Strings(orderedKeys)
+
 	pdf.SetFont("Helvetica", "", 8)
 	pdf.SetTextColor(0, 0, 0)
 	pdf.SetFillColor(245, 245, 245)
-	for i, r := range rows {
-		fill := i%2 == 1
-		vals := []string{fmt.Sprintf("%d", i+1), r.Nama, r.KelasNama, r.Tingkat, fmt.Sprintf("%d", r.Hadir), fmt.Sprintf("%d", r.Izin), fmt.Sprintf("%d", r.Sakit), fmt.Sprintf("%d", r.Alpa), fmt.Sprintf("%d", r.Total)}
-		for j, v := range vals {
-			pdf.CellFormat(pdfHeaders[j], 7, v, "1", 0, "C", fill, 0, "")
+	for _, groupKey := range orderedKeys {
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.CellFormat(0, 8, fmt.Sprintf("Kelas: %s", groupKey), "", 1, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "B", 9)
+		pdf.SetFillColor(46, 125, 50)
+		pdf.SetTextColor(255, 255, 255)
+		for i, label := range headerLabels {
+			pdf.CellFormat(pdfHeaders[i], 8, label, "1", 0, "C", true, 0, "")
 		}
 		pdf.Ln(-1)
+		pdf.SetFont("Helvetica", "", 8)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFillColor(245, 245, 245)
+		for i, r := range groupedRows[groupKey] {
+			fill := i%2 == 1
+			vals := []string{fmt.Sprintf("%d", i+1), r.Nama, r.KelasNama, r.Tingkat, fmt.Sprintf("%d", r.Hadir), fmt.Sprintf("%d", r.Izin), fmt.Sprintf("%d", r.Sakit), fmt.Sprintf("%d", r.Alpa), fmt.Sprintf("%d", r.Total)}
+			for j, v := range vals {
+				pdf.CellFormat(pdfHeaders[j], 7, v, "1", 0, "C", fill, 0, "")
+			}
+			pdf.Ln(-1)
+		}
+		pdf.Ln(3)
 	}
 
 	pdf.Ln(5)
