@@ -170,7 +170,7 @@ func (h *AbsensiHandler) getGroupedClassSummaryRows(typeStr, startDate, endExclu
 		table = "absensi_diniyyahs"
 	}
 
-	q := h.db.Table(table + " a").
+	q := h.db.Table(table+" a").
 		Select("COALESCE(k.nama, '') as kelas_nama, COALESCE(k.tingkat, '') as tingkat, SUM(CASE WHEN a.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN a.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN a.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN a.status = 'alpa' THEN 1 ELSE 0 END) as alpa, COUNT(*) as total").
 		Joins("JOIN students s ON s.id = a.student_id").
 		Joins("LEFT JOIN kelas k ON k.id = s.kelas_id").

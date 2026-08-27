@@ -1489,7 +1489,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
 	} else {
 		q = q.Joins("LEFT JOIN jadwal_diniyyahs jd ON jd.id = " + table + ".jadwal_diniyyah_id")
-		q = q.Select(table+".id, students.id as student_id, students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat, CONCAT(COALESCE(jd.jam_mulai, ''), IF(COALESCE(jd.jam_mulai, '') != '' AND COALESCE(jd.jam_selesai, '') != '', ' - ', ''), COALESCE(jd.jam_selesai, '')) as jadwal_time")
+		q = q.Select(table + ".id, students.id as student_id, students.nama_lengkap as name, " + table + ".status, " + table + ".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat, CONCAT(COALESCE(jd.jam_mulai, ''), IF(COALESCE(jd.jam_mulai, '') != '' AND COALESCE(jd.jam_selesai, '') != '', ' - ', ''), COALESCE(jd.jam_selesai, '')) as jadwal_time")
 	}
 
 	// Filter by kelas
