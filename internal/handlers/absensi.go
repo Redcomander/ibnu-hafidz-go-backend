@@ -1445,12 +1445,13 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	// ── Student Attendance ──
 	type StudentEntry struct {
-		ID        uint   `json:"id"`
-		StudentID uint   `json:"student_id"`
-		Name      string `json:"name"`
-		Kelas     string `json:"kelas"`
-		Tingkat   string `json:"tingkat"`
-		Catatan   string `json:"catatan"`
+		ID         uint   `json:"id"`
+		StudentID  uint   `json:"student_id"`
+		Name       string `json:"name"`
+		Kelas      string `json:"kelas"`
+		Tingkat    string `json:"tingkat"`
+		JadwalTime string `json:"jadwal_time"`
+		Catatan    string `json:"catatan"`
 	}
 
 	var izinStudents, sakitStudents, alpaStudents []StudentEntry
@@ -1462,13 +1463,14 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	//   3. Count statuses and extract detail lists from that single result
 
 	type AbsensiRow struct {
-		ID        uint   `json:"id"`
-		StudentID uint   `json:"student_id"`
-		Status    string `json:"status"`
-		Name      string `json:"name"`
-		Kelas     string `json:"kelas"`
-		Tingkat   string `json:"tingkat"`
-		Catatan   string `json:"catatan"`
+		ID         uint   `json:"id"`
+		StudentID  uint   `json:"student_id"`
+		Status     string `json:"status"`
+		Name       string `json:"name"`
+		Kelas      string `json:"kelas"`
+		Tingkat    string `json:"tingkat"`
+		JadwalTime string `json:"jadwal_time"`
+		Catatan    string `json:"catatan"`
 	}
 
 	table := "absensis"
@@ -1477,7 +1479,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	q := h.db.Table(table).
-		Select(table+".id, students.id as student_id, students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat").
+		Select(table+".id, students.id as student_id, students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat, CONCAT(COALESCE(jf.jam_mulai, ''), IF(COALESCE(jf.jam_mulai, '') != '' AND COALESCE(jf.jam_selesai, '') != '', ' - ', ''), COALESCE(jf.jam_selesai, '')) as jadwal_time").
 		Joins("JOIN students ON students.id = "+table+".student_id").
 		Joins("LEFT JOIN kelas AS siswa_kelas ON siswa_kelas.id = students.kelas_id").
 		Where(table+".tanggal >= ? AND "+table+".tanggal < ?", startDate, endExclusive).
@@ -1485,6 +1487,9 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	if !isDiniyyahAttendanceType(typeStr) {
 		q = q.Joins("JOIN jadwal_formal jf ON jf.id = " + table + ".jadwal_formal_id")
 		q = applyFormalScheduleTypeFilter(q, "jf", typeStr)
+	} else {
+		q = q.Joins("LEFT JOIN jadwal_diniyyahs jd ON jd.id = " + table + ".jadwal_diniyyah_id")
+		q = q.Select(table+".id, students.id as student_id, students.nama_lengkap as name, "+table+".status, "+table+".catatan, COALESCE(siswa_kelas.nama, '') as kelas, COALESCE(siswa_kelas.tingkat, '') as tingkat, CONCAT(COALESCE(jd.jam_mulai, ''), IF(COALESCE(jd.jam_mulai, '') != '' AND COALESCE(jd.jam_selesai, '') != '', ' - ', ''), COALESCE(jd.jam_selesai, '')) as jadwal_time")
 	}
 
 	// Filter by kelas
@@ -1525,11 +1530,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		countsMap[r.Status]++
 		switch r.Status {
 		case "izin":
-			izinStudents = append(izinStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			izinStudents = append(izinStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, JadwalTime: r.JadwalTime, Catatan: r.Catatan})
 		case "sakit":
-			sakitStudents = append(sakitStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			sakitStudents = append(sakitStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, JadwalTime: r.JadwalTime, Catatan: r.Catatan})
 		case "alpa":
-			alpaStudents = append(alpaStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, Catatan: r.Catatan})
+			alpaStudents = append(alpaStudents, StudentEntry{ID: r.ID, StudentID: r.StudentID, Name: r.Name, Kelas: r.Kelas, Tingkat: r.Tingkat, JadwalTime: r.JadwalTime, Catatan: r.Catatan})
 		}
 	}
 
