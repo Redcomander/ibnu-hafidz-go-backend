@@ -74,13 +74,55 @@ func (h *RevitalisasiHandler) ensureUploadDir(subdir string) string {
 	return destDir
 }
 
+func (h *RevitalisasiHandler) splitStoredPaths(pathValue *string) []string {
+	if pathValue == nil || strings.TrimSpace(*pathValue) == "" {
+		return nil
+	}
+	parts := strings.Split(*pathValue, ";")
+	paths := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			paths = append(paths, trimmed)
+		}
+	}
+	return paths
+}
+
 func (h *RevitalisasiHandler) cleanupPhotoPath(pathValue *string) {
-	if pathValue == nil || *pathValue == "" {
-		return
+	for _, path := range h.splitStoredPaths(pathValue) {
+		if path == "" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(h.uploadPath, filepath.FromSlash(strings.TrimPrefix(path, "/"))))
 	}
-	if err := os.Remove(filepath.Join(h.uploadPath, *pathValue)); err == nil {
-		return
+}
+
+func (h *RevitalisasiHandler) saveUploadedFiles(module string, files []*multipart.FileHeader) (string, error) {
+	if len(files) == 0 {
+		return "", nil
 	}
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		path, err := h.processImage(module, file)
+		if err != nil {
+			return "", err
+		}
+		paths = append(paths, path)
+	}
+	return strings.Join(paths, ";"), nil
+}
+
+func (h *RevitalisasiHandler) getMultipartFiles(c *fiber.Ctx, fieldName string) []*multipart.FileHeader {
+	form, err := c.MultipartForm()
+	if err != nil || form == nil || form.File == nil {
+		return nil
+	}
+	files := form.File[fieldName]
+	if len(files) == 0 {
+		return nil
+	}
+	return files
 }
 
 // createUploadPath creates a unique stored filename and returns the relative path to be persisted in DB.
@@ -351,12 +393,12 @@ func (h *RevitalisasiHandler) CreateAbsenTukang(c *fiber.Ctx) error {
 		Status:   normalizeStatus(payload.Status),
 		Note:     strings.TrimSpace(payload.Note),
 	}
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
-		photoPath, pErr := h.processImage("revitalisasi/absen", file)
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/absen", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
 	if err := h.db.Create(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -401,13 +443,13 @@ func (h *RevitalisasiHandler) UpdateAbsenTukang(c *fiber.Ctx) error {
 		item.Status = normalizeStatus(payload.Status)
 	}
 	item.Note = strings.TrimSpace(payload.Note)
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
-		photoPath, pErr := h.processImage("revitalisasi/absen", file)
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/absen", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -457,12 +499,12 @@ func (h *RevitalisasiHandler) CreateNotaMaterial(c *fiber.Ctx) error {
 	}
 	payload.NomorNota = strings.TrimSpace(payload.NomorNota)
 	payload.Supplier = strings.TrimSpace(payload.Supplier)
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
-		photoPath, pErr := h.processImage("revitalisasi/nota", file)
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/nota", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		payload.PhotoPath = &photoPath
+		payload.PhotoPath = &photoPaths
 	}
 	if err := h.db.Create(&payload).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -491,13 +533,13 @@ func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 	}
 	item.Keterangan = strings.TrimSpace(payload.Keterangan)
 	item.TotalNilai = payload.TotalNilai
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
-		photoPath, pErr := h.processImage("revitalisasi/nota", file)
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/nota", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -545,12 +587,12 @@ func (h *RevitalisasiHandler) CreateNotaMasuk(c *fiber.Ctx) error {
 	payload.NomorNota = strings.TrimSpace(payload.NomorNota)
 	payload.Sumber = strings.TrimSpace(payload.Sumber)
 	payload.Keterangan = strings.TrimSpace(payload.Keterangan)
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
-		photoPath, pErr := h.processImage("revitalisasi/masuk", file)
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/masuk", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		payload.PhotoPath = &photoPath
+		payload.PhotoPath = &photoPaths
 	}
 	if err := h.db.Create(&payload).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -579,13 +621,13 @@ func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 	}
 	item.Jumlah = payload.Jumlah
 	item.Keterangan = strings.TrimSpace(payload.Keterangan)
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
-		photoPath, pErr := h.processImage("revitalisasi/masuk", file)
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/masuk", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -650,19 +692,19 @@ func (h *RevitalisasiHandler) CreateMaterialDatang(c *fiber.Ctx) error {
 		NomorNotaPengeluaran: strings.TrimSpace(payload.NomorNotaPengeluaran),
 		TotalPengeluaran:     payload.TotalPengeluaran,
 	}
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
-		photoPath, pErr := h.processImage("revitalisasi/material", file)
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/material", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
-	if file, err := c.FormFile("nota_pengeluaran"); err == nil && file != nil {
-		notaPath, pErr := h.processImage("revitalisasi/material-nota", file)
+	if files := h.getMultipartFiles(c, "nota_pengeluaran"); len(files) > 0 {
+		notaPaths, pErr := h.saveUploadedFiles("revitalisasi/material-nota", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.NotaPengeluaranPath = &notaPath
+		item.NotaPengeluaranPath = &notaPaths
 	}
 	if err := h.db.Create(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -707,21 +749,21 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 	item.Catatan = strings.TrimSpace(payload.Catatan)
 	item.NomorNotaPengeluaran = strings.TrimSpace(payload.NomorNotaPengeluaran)
 	item.TotalPengeluaran = payload.TotalPengeluaran
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
-		photoPath, pErr := h.processImage("revitalisasi/material", file)
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/material", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
-	if file, err := c.FormFile("nota_pengeluaran"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "nota_pengeluaran"); len(files) > 0 {
 		h.cleanupPhotoPath(item.NotaPengeluaranPath)
-		notaPath, pErr := h.processImage("revitalisasi/material-nota", file)
+		notaPaths, pErr := h.saveUploadedFiles("revitalisasi/material-nota", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.NotaPengeluaranPath = &notaPath
+		item.NotaPengeluaranPath = &notaPaths
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -772,12 +814,12 @@ func (h *RevitalisasiHandler) CreateProgresPembangunan(c *fiber.Ctx) error {
 	if payload.Persentase < 0 || payload.Persentase > 100 {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Persentase harus di antara 0 dan 100"})
 	}
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
-		photoPath, pErr := h.processImage("revitalisasi/progres", file)
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/progres", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		payload.PhotoPath = &photoPath
+		payload.PhotoPath = &photoPaths
 	}
 	if err := h.db.Create(&payload).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -805,13 +847,13 @@ func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 		item.Persentase = payload.Persentase
 	}
 	item.Catatan = strings.TrimSpace(payload.Catatan)
-	if file, err := c.FormFile("photo"); err == nil && file != nil {
+	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
-		photoPath, pErr := h.processImage("revitalisasi/progres", file)
+		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/progres", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPath
+		item.PhotoPath = &photoPaths
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
