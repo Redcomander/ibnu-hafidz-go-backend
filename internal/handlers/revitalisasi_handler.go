@@ -125,6 +125,15 @@ func (h *RevitalisasiHandler) getMultipartFiles(c *fiber.Ctx, fieldName string) 
 	return files
 }
 
+func (h *RevitalisasiHandler) getMultipartValue(c *fiber.Ctx, fieldName string) string {
+	if form, err := c.MultipartForm(); err == nil && form != nil {
+		if values, ok := form.Value[fieldName]; ok && len(values) > 0 {
+			return strings.TrimSpace(values[0])
+		}
+	}
+	return strings.TrimSpace(c.FormValue(fieldName))
+}
+
 // createUploadPath creates a unique stored filename and returns the relative path to be persisted in DB.
 func (h *RevitalisasiHandler) createUploadPath(module string, file *multipart.FileHeader) (string, error) {
 	if file == nil || file.Size == 0 {
@@ -371,7 +380,31 @@ func (h *RevitalisasiHandler) CreateAbsenTukang(c *fiber.Ctx) error {
 		Note     string `json:"note"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		payload.Tanggal = h.getMultipartValue(c, "tanggal")
+		payload.Status = h.getMultipartValue(c, "status")
+		payload.Note = h.getMultipartValue(c, "note")
+		if tukangIDRaw := h.getMultipartValue(c, "tukang_id"); tukangIDRaw != "" {
+			if parsed, err := strconv.ParseUint(tukangIDRaw, 10, 32); err == nil {
+				payload.TukangID = uint(parsed)
+			}
+		}
+		if payload.Tanggal == "" && payload.TukangID == 0 && payload.Status == "" && payload.Note == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		}
+	} else {
+		payload.Tanggal = strings.TrimSpace(payload.Tanggal)
+		payload.Status = strings.TrimSpace(payload.Status)
+		payload.Note = strings.TrimSpace(payload.Note)
+		if payload.Tanggal == "" || payload.TukangID == 0 {
+			payload.Tanggal = h.getMultipartValue(c, "tanggal")
+			payload.Status = h.getMultipartValue(c, "status")
+			payload.Note = h.getMultipartValue(c, "note")
+			if tukangIDRaw := h.getMultipartValue(c, "tukang_id"); tukangIDRaw != "" {
+				if parsed, err := strconv.ParseUint(tukangIDRaw, 10, 32); err == nil {
+					payload.TukangID = uint(parsed)
+				}
+			}
+		}
 	}
 	if payload.Tanggal == "" || payload.TukangID == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal dan tukang wajib diisi"})
@@ -423,7 +456,28 @@ func (h *RevitalisasiHandler) UpdateAbsenTukang(c *fiber.Ctx) error {
 		Note     string `json:"note"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		payload.Tanggal = h.getMultipartValue(c, "tanggal")
+		payload.Status = h.getMultipartValue(c, "status")
+		payload.Note = h.getMultipartValue(c, "note")
+		if tukangIDRaw := h.getMultipartValue(c, "tukang_id"); tukangIDRaw != "" {
+			if parsed, err := strconv.ParseUint(tukangIDRaw, 10, 32); err == nil {
+				payload.TukangID = uint(parsed)
+			}
+		}
+	} else {
+		payload.Tanggal = strings.TrimSpace(payload.Tanggal)
+		payload.Status = strings.TrimSpace(payload.Status)
+		payload.Note = strings.TrimSpace(payload.Note)
+		if payload.Tanggal == "" || payload.TukangID == 0 {
+			payload.Tanggal = h.getMultipartValue(c, "tanggal")
+			payload.Status = h.getMultipartValue(c, "status")
+			payload.Note = h.getMultipartValue(c, "note")
+			if tukangIDRaw := h.getMultipartValue(c, "tukang_id"); tukangIDRaw != "" {
+				if parsed, err := strconv.ParseUint(tukangIDRaw, 10, 32); err == nil {
+					payload.TukangID = uint(parsed)
+				}
+			}
+		}
 	}
 	if payload.Tanggal != "" {
 		dateValue, err := safeDateString(payload.Tanggal)
