@@ -141,6 +141,19 @@ func main() {
 		log.Fatalf("Failed to migrate absensi ekstra: %v", err)
 	}
 
+	// Migrate Revitalisasi SMA
+	if err := db.AutoMigrate(
+		&models.RevitalisasiTukang{},
+		&models.RevitalisasiAbsenTukang{},
+		&models.RevitalisasiNotaMaterial{},
+		&models.RevitalisasiNotaMasuk{},
+		&models.RevitalisasiMaterialDatang{},
+		&models.RevitalisasiProgresPembangunan{},
+		&models.RevitalisasiPrioritas{},
+	); err != nil {
+		log.Printf("Warning: revitalisasi migration: %v", err)
+	}
+
 	// Migrate Gallery & Article
 	if err := db.AutoMigrate(
 		&models.Album{},
@@ -693,6 +706,38 @@ func main() {
 	articles.Get("/comments/pending", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.ListPendingComments)
 	articles.Put("/comments/:id/approve", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.ApproveComment)
 	articles.Delete("/comments/:id", middleware.PermissionAny("article.edit", "article.delete"), articleHandler.DeleteComment)
+
+	// Revitalisasi SMA
+	revitalisasiHandler := handlers.NewRevitalisasiHandler(db, uploadPath)
+	revitalisasi := protected.Group("/revitalisasi")
+	revitalisasi.Get("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListTukang)
+	revitalisasi.Post("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateTukang)
+	revitalisasi.Put("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateTukang)
+	revitalisasi.Delete("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteTukang)
+	revitalisasi.Get("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListAbsenTukang)
+	revitalisasi.Post("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateAbsenTukang)
+	revitalisasi.Put("/absen-tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateAbsenTukang)
+	revitalisasi.Delete("/absen-tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteAbsenTukang)
+	revitalisasi.Get("/nota-material", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListNotaMaterial)
+	revitalisasi.Post("/nota-material", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateNotaMaterial)
+	revitalisasi.Put("/nota-material/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateNotaMaterial)
+	revitalisasi.Delete("/nota-material/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteNotaMaterial)
+	revitalisasi.Get("/nota-masuk", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListNotaMasuk)
+	revitalisasi.Post("/nota-masuk", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateNotaMasuk)
+	revitalisasi.Put("/nota-masuk/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateNotaMasuk)
+	revitalisasi.Delete("/nota-masuk/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteNotaMasuk)
+	revitalisasi.Get("/material-datang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListMaterialDatang)
+	revitalisasi.Post("/material-datang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateMaterialDatang)
+	revitalisasi.Put("/material-datang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateMaterialDatang)
+	revitalisasi.Delete("/material-datang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteMaterialDatang)
+	revitalisasi.Get("/progres-pembangunan", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListProgresPembangunan)
+	revitalisasi.Post("/progres-pembangunan", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateProgresPembangunan)
+	revitalisasi.Put("/progres-pembangunan/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateProgresPembangunan)
+	revitalisasi.Delete("/progres-pembangunan/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteProgresPembangunan)
+	revitalisasi.Get("/prioritas", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListPrioritas)
+	revitalisasi.Post("/prioritas", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreatePrioritas)
+	revitalisasi.Put("/prioritas/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdatePrioritas)
+	revitalisasi.Delete("/prioritas/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeletePrioritas)
 
 	// Prestasi
 	prestasiHandler := handlers.NewPrestasiHandler(db, uploadPath)
