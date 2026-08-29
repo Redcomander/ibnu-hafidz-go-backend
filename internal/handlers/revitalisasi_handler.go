@@ -156,6 +156,30 @@ func (h *RevitalisasiHandler) getMultipartValues(c *fiber.Ctx, fieldName string)
 	return []string{value}
 }
 
+func (h *RevitalisasiHandler) getMultipartFloat(c *fiber.Ctx, fieldName string) float64 {
+	value := h.getMultipartValue(c, fieldName)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
+func (h *RevitalisasiHandler) getMultipartInt(c *fiber.Ctx, fieldName string) int {
+	value := h.getMultipartValue(c, fieldName)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
 func parseFieldValues(values ...string) []string {
 	seen := map[string]struct{}{}
 	result := make([]string, 0, len(values))
@@ -621,7 +645,11 @@ func (h *RevitalisasiHandler) ListNotaMaterial(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) CreateNotaMaterial(c *fiber.Ctx) error {
 	var payload models.RevitalisasiNotaMaterial
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		payload.Tanggal, _ = safeDateString(h.getMultipartValue(c, "tanggal"))
+		payload.NomorNota = h.getMultipartValue(c, "nomor_nota")
+		payload.Supplier = h.getMultipartValue(c, "supplier")
+		payload.Keterangan = h.getMultipartValue(c, "keterangan")
+		payload.TotalNilai = h.getMultipartFloat(c, "total_nilai")
 	}
 	if payload.Tanggal.IsZero() || payload.NomorNota == "" || payload.Supplier == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal, nomor nota, dan supplier wajib diisi"})
@@ -649,7 +677,13 @@ func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 	}
 	var payload models.RevitalisasiNotaMaterial
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		if dateValue, err := safeDateString(h.getMultipartValue(c, "tanggal")); err == nil {
+			payload.Tanggal = dateValue
+		}
+		payload.NomorNota = h.getMultipartValue(c, "nomor_nota")
+		payload.Supplier = h.getMultipartValue(c, "supplier")
+		payload.Keterangan = h.getMultipartValue(c, "keterangan")
+		payload.TotalNilai = h.getMultipartFloat(c, "total_nilai")
 	}
 	if payload.NomorNota != "" {
 		item.NomorNota = strings.TrimSpace(payload.NomorNota)
@@ -661,7 +695,9 @@ func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 		item.Tanggal = payload.Tanggal
 	}
 	item.Keterangan = strings.TrimSpace(payload.Keterangan)
-	item.TotalNilai = payload.TotalNilai
+	if payload.TotalNilai != 0 || h.getMultipartValue(c, "total_nilai") != "" {
+		item.TotalNilai = payload.TotalNilai
+	}
 	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
 		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/nota", files)
@@ -708,7 +744,13 @@ func (h *RevitalisasiHandler) ListNotaMasuk(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) CreateNotaMasuk(c *fiber.Ctx) error {
 	var payload models.RevitalisasiNotaMasuk
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		if dateValue, err := safeDateString(h.getMultipartValue(c, "tanggal")); err == nil {
+			payload.Tanggal = dateValue
+		}
+		payload.NomorNota = h.getMultipartValue(c, "nomor_nota")
+		payload.Sumber = h.getMultipartValue(c, "sumber")
+		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
+		payload.Keterangan = h.getMultipartValue(c, "keterangan")
 	}
 	if payload.Tanggal.IsZero() || payload.NomorNota == "" || payload.Sumber == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal, nomor nota, dan sumber wajib diisi"})
@@ -737,7 +779,13 @@ func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 	}
 	var payload models.RevitalisasiNotaMasuk
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		if dateValue, err := safeDateString(h.getMultipartValue(c, "tanggal")); err == nil {
+			payload.Tanggal = dateValue
+		}
+		payload.NomorNota = h.getMultipartValue(c, "nomor_nota")
+		payload.Sumber = h.getMultipartValue(c, "sumber")
+		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
+		payload.Keterangan = h.getMultipartValue(c, "keterangan")
 	}
 	if payload.NomorNota != "" {
 		item.NomorNota = strings.TrimSpace(payload.NomorNota)
@@ -748,7 +796,9 @@ func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 	if !payload.Tanggal.IsZero() {
 		item.Tanggal = payload.Tanggal
 	}
-	item.Jumlah = payload.Jumlah
+	if payload.Jumlah != 0 || h.getMultipartValue(c, "jumlah") != "" {
+		item.Jumlah = payload.Jumlah
+	}
 	item.Keterangan = strings.TrimSpace(payload.Keterangan)
 	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
@@ -805,7 +855,14 @@ func (h *RevitalisasiHandler) CreateMaterialDatang(c *fiber.Ctx) error {
 		TotalPengeluaran     float64 `form:"total_pengeluaran" json:"total_pengeluaran"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		payload.Tanggal = h.getMultipartValue(c, "tanggal")
+		payload.NamaMaterial = h.getMultipartValue(c, "nama_material")
+		payload.Supplier = h.getMultipartValue(c, "supplier")
+		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
+		payload.Satuan = h.getMultipartValue(c, "satuan")
+		payload.Catatan = h.getMultipartValue(c, "catatan")
+		payload.NomorNotaPengeluaran = h.getMultipartValue(c, "nomor_nota_pengeluaran")
+		payload.TotalPengeluaran = h.getMultipartFloat(c, "total_pengeluaran")
 	}
 	dateValue, err := safeDateString(payload.Tanggal)
 	if err != nil || strings.TrimSpace(payload.NamaMaterial) == "" {
@@ -858,7 +915,14 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 		TotalPengeluaran     float64 `form:"total_pengeluaran" json:"total_pengeluaran"`
 	}
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		payload.Tanggal = h.getMultipartValue(c, "tanggal")
+		payload.NamaMaterial = h.getMultipartValue(c, "nama_material")
+		payload.Supplier = h.getMultipartValue(c, "supplier")
+		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
+		payload.Satuan = h.getMultipartValue(c, "satuan")
+		payload.Catatan = h.getMultipartValue(c, "catatan")
+		payload.NomorNotaPengeluaran = h.getMultipartValue(c, "nomor_nota_pengeluaran")
+		payload.TotalPengeluaran = h.getMultipartFloat(c, "total_pengeluaran")
 	}
 	if payload.NamaMaterial != "" {
 		item.NamaMaterial = strings.TrimSpace(payload.NamaMaterial)
@@ -873,11 +937,21 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 	if payload.Supplier != "" || payload.Tanggal != "" || payload.NamaMaterial != "" {
 		item.Supplier = strings.TrimSpace(payload.Supplier)
 	}
-	item.Jumlah = payload.Jumlah
-	item.Satuan = strings.TrimSpace(payload.Satuan)
-	item.Catatan = strings.TrimSpace(payload.Catatan)
-	item.NomorNotaPengeluaran = strings.TrimSpace(payload.NomorNotaPengeluaran)
-	item.TotalPengeluaran = payload.TotalPengeluaran
+	if payload.Jumlah != 0 || h.getMultipartValue(c, "jumlah") != "" {
+		item.Jumlah = payload.Jumlah
+	}
+	if payload.Satuan != "" || h.getMultipartValue(c, "satuan") != "" {
+		item.Satuan = strings.TrimSpace(payload.Satuan)
+	}
+	if payload.Catatan != "" || h.getMultipartValue(c, "catatan") != "" {
+		item.Catatan = strings.TrimSpace(payload.Catatan)
+	}
+	if payload.NomorNotaPengeluaran != "" || h.getMultipartValue(c, "nomor_nota_pengeluaran") != "" {
+		item.NomorNotaPengeluaran = strings.TrimSpace(payload.NomorNotaPengeluaran)
+	}
+	if payload.TotalPengeluaran != 0 || h.getMultipartValue(c, "total_pengeluaran") != "" {
+		item.TotalPengeluaran = payload.TotalPengeluaran
+	}
 	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
 		h.cleanupPhotoPath(item.PhotoPath)
 		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/material", files)
@@ -933,7 +1007,12 @@ func (h *RevitalisasiHandler) ListProgresPembangunan(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) CreateProgresPembangunan(c *fiber.Ctx) error {
 	var payload models.RevitalisasiProgresPembangunan
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		if dateValue, err := safeDateString(h.getMultipartValue(c, "tanggal")); err == nil {
+			payload.Tanggal = dateValue
+		}
+		payload.NamaArea = h.getMultipartValue(c, "nama_area")
+		payload.Persentase = h.getMultipartInt(c, "persentase")
+		payload.Catatan = h.getMultipartValue(c, "catatan")
 	}
 	if payload.Tanggal.IsZero() || strings.TrimSpace(payload.NamaArea) == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal dan area wajib diisi"})
@@ -964,7 +1043,12 @@ func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 	}
 	var payload models.RevitalisasiProgresPembangunan
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+		if dateValue, err := safeDateString(h.getMultipartValue(c, "tanggal")); err == nil {
+			payload.Tanggal = dateValue
+		}
+		payload.NamaArea = h.getMultipartValue(c, "nama_area")
+		payload.Persentase = h.getMultipartInt(c, "persentase")
+		payload.Catatan = h.getMultipartValue(c, "catatan")
 	}
 	if payload.NamaArea != "" {
 		item.NamaArea = strings.TrimSpace(payload.NamaArea)
@@ -972,7 +1056,7 @@ func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 	if !payload.Tanggal.IsZero() {
 		item.Tanggal = payload.Tanggal
 	}
-	if payload.Persentase >= 0 {
+	if payload.Persentase >= 0 || h.getMultipartValue(c, "persentase") != "" {
 		item.Persentase = payload.Persentase
 	}
 	item.Catatan = strings.TrimSpace(payload.Catatan)
