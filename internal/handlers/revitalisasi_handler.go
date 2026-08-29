@@ -134,6 +134,71 @@ func (h *RevitalisasiHandler) getMultipartValue(c *fiber.Ctx, fieldName string) 
 	return strings.TrimSpace(c.FormValue(fieldName))
 }
 
+func (h *RevitalisasiHandler) getMultipartValues(c *fiber.Ctx, fieldName string) []string {
+	if form, err := c.MultipartForm(); err == nil && form != nil {
+		if values, ok := form.Value[fieldName]; ok && len(values) > 0 {
+			result := make([]string, 0, len(values))
+			for _, value := range values {
+				trimmed := strings.TrimSpace(value)
+				if trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			if len(result) > 0 {
+				return result
+			}
+		}
+	}
+	value := strings.TrimSpace(c.FormValue(fieldName))
+	if value == "" {
+		return nil
+	}
+	return []string{value}
+}
+
+func parseFieldValues(values ...string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, part := range strings.Split(value, ";") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			if _, exists := seen[trimmed]; exists {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func (h *RevitalisasiHandler) removePhotoPaths(pathValue *string, removeList []string) *string {
+	currentPaths := h.splitStoredPaths(pathValue)
+	if len(currentPaths) == 0 || len(removeList) == 0 {
+		return pathValue
+	}
+	removeSet := map[string]struct{}{}
+	for _, removePath := range removeList {
+		removeSet[removePath] = struct{}{}
+	}
+	remaining := make([]string, 0, len(currentPaths))
+	for _, stored := range currentPaths {
+		if _, shouldRemove := removeSet[stored]; shouldRemove {
+			_ = os.Remove(filepath.Join(h.uploadPath, filepath.FromSlash(strings.TrimPrefix(stored, "/"))))
+			continue
+		}
+		remaining = append(remaining, stored)
+	}
+	if len(remaining) == 0 {
+		return nil
+	}
+	joined := strings.Join(remaining, ";")
+	return &joined
+}
+
 // createUploadPath creates a unique stored filename and returns the relative path to be persisted in DB.
 func (h *RevitalisasiHandler) createUploadPath(module string, file *multipart.FileHeader) (string, error) {
 	if file == nil || file.Size == 0 {
@@ -497,13 +562,23 @@ func (h *RevitalisasiHandler) UpdateAbsenTukang(c *fiber.Ctx) error {
 		item.Status = normalizeStatus(payload.Status)
 	}
 	item.Note = strings.TrimSpace(payload.Note)
+
+	removeList := parseFieldValues(h.getMultipartValues(c, "remove_photo")...)
+	if len(removeList) > 0 {
+		item.PhotoPath = h.removePhotoPaths(item.PhotoPath, removeList)
+	}
 	if files := h.getMultipartFiles(c, "photo"); len(files) > 0 {
-		h.cleanupPhotoPath(item.PhotoPath)
 		photoPaths, pErr := h.saveUploadedFiles("revitalisasi/absen", files)
 		if pErr != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: pErr.Error()})
 		}
-		item.PhotoPath = &photoPaths
+		mergedPaths := append(h.splitStoredPaths(item.PhotoPath), parseFieldValues(photoPaths)...)
+		if len(mergedPaths) == 0 {
+			item.PhotoPath = nil
+		} else {
+			joined := strings.Join(mergedPaths, ";")
+			item.PhotoPath = &joined
+		}
 	}
 	if err := h.db.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
