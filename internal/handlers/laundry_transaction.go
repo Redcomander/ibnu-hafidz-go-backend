@@ -26,6 +26,19 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 	perPage := c.QueryInt("per_page", 20)
 	search := c.Query("search")
 	status := c.Query("status") // pending or picked_up
+	dateFromStr := c.Query("date_from")
+	dateToStr := c.Query("date_to")
+
+	now := time.Now().In(jakartaLocation())
+	var dateFrom, dateTo time.Time
+	if dateFromStr == "" || dateToStr == "" {
+		dateFrom = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		dateTo = time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	} else {
+		dateFrom, _ = time.ParseInLocation("2006-01-02", dateFromStr, now.Location())
+		dateTo, _ = time.ParseInLocation("2006-01-02", dateToStr, now.Location())
+		dateTo = time.Date(dateTo.Year(), dateTo.Month(), dateTo.Day(), 23, 59, 59, 0, now.Location())
+	}
 
 	query := h.db.Model(&models.LaundryTransaction{}).
 		Preload("Account").
@@ -37,6 +50,10 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 
 	if status != "" {
 		query = query.Where("status = ?", status)
+	}
+
+	if dateFromStr != "" || dateToStr != "" || (dateFromStr == "" && dateToStr == "") {
+		query = query.Where("tanggal BETWEEN ? AND ?", dateFrom, dateTo)
 	}
 
 	if search != "" {

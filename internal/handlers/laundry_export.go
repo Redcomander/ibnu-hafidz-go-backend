@@ -681,6 +681,21 @@ func (h *LaundryExportHandler) ExportAllWeeklyVendorStatisticsPDF(c *fiber.Ctx) 
 func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 	genderType := c.Query("gender_type")
 	vendorID := c.Query("vendor_id")
+	search := c.Query("search")
+	ownerStatus := c.Query("owner_status")
+	dateFromStr := c.Query("date_from")
+	dateToStr := c.Query("date_to")
+
+	now := time.Now().In(jakartaLocation())
+	var dateFrom, dateTo time.Time
+	if dateFromStr == "" || dateToStr == "" {
+		dateFrom = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		dateTo = time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, now.Location())
+	} else {
+		dateFrom, _ = time.ParseInLocation("2006-01-02", dateFromStr, now.Location())
+		dateTo, _ = time.ParseInLocation("2006-01-02", dateToStr, now.Location())
+		dateTo = time.Date(dateTo.Year(), dateTo.Month(), dateTo.Day(), 23, 59, 59, 0, now.Location())
+	}
 
 	query := h.db.Model(&models.LaundryVendor{}).Where("active = ?", true)
 	if genderType != "" && genderType != "all" {
@@ -691,11 +706,57 @@ func (h *LaundryExportHandler) ExportAllAccountsPDF(c *fiber.Ctx) error {
 	}
 
 	var vendors []models.LaundryVendor
-	// We want active accounts. We can load them via Preload with a condition.
 	query.Preload("Accounts", "active = ?", true).
 		Preload("Accounts.Student").
 		Preload("Accounts.User").
 		Order("name ASC").Find(&vendors)
+
+	filteredVendors := make([]models.LaundryVendor, 0, len(vendors))
+	for _, vendor := range vendors {
+		filteredAccounts := make([]models.LaundryAccount, 0, len(vendor.Accounts))
+		for _, acc := range vendor.Accounts {
+			ownerName := "Unknown"
+			if acc.Student != nil {
+				ownerName = acc.Student.NamaLengkap
+			} else if acc.User != nil {
+				ownerName = acc.User.Name
+			}
+
+			if search != "" {
+				match := strings.Contains(strings.ToLower(acc.NomorLaundry), strings.ToLower(search)) || strings.Contains(strings.ToLower(ownerName), strings.ToLower(search))
+				if !match {
+					continue
+				}
+			}
+
+			if ownerStatus == "unknown" {
+				if acc.Student != nil || acc.User != nil {
+					continue
+				}
+			} else if ownerStatus == "has_owner" {
+				if acc.Student == nil && acc.User == nil {
+					continue
+				}
+			} else if ownerStatus == "orphan" {
+				if acc.Student != nil || acc.User != nil {
+					continue
+				}
+			}
+
+			var periodWeight float64
+			h.db.Model(&models.LaundryTransaction{}).
+				Where("laundry_account_id = ? AND tanggal BETWEEN ? AND ?", acc.ID, dateFrom, dateTo).
+				Select("COALESCE(SUM(berat_kg), 0)").Row().Scan(&periodWeight)
+
+			_ = periodWeight
+			filteredAccounts = append(filteredAccounts, acc)
+		}
+		if len(filteredAccounts) > 0 {
+			vendor.Accounts = filteredAccounts
+			filteredVendors = append(filteredVendors, vendor)
+		}
+	}
+	vendors = filteredVendors
 
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 15)

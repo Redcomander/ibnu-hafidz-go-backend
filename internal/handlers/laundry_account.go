@@ -95,6 +95,12 @@ func (h *LaundryAccountHandler) List(c *fiber.Ctx) error {
 	weekEnd := getEndOfWeek(now)
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	monthEnd := monthStart.AddDate(0, 1, -1).Add(time.Hour*23 + time.Minute*59 + time.Second*59)
+	if dateFromStr != "" && dateToStr != "" {
+		weekStart = dateFrom
+		weekEnd = dateTo
+		monthStart = dateFrom
+		monthEnd = dateTo
+	}
 
 	// Batch: collect all account IDs for GROUP BY queries
 	type weightRow struct {
