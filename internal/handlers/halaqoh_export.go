@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -418,26 +419,55 @@ func (h *HalaqohStatsHandler) fetchStudentData(startDate, endDate, teacherID, ge
 }
 
 func (h *HalaqohStatsHandler) buildStudentTeacherSummary(startDate, endDate, teacherID, gender string) ([]studentTeacherGroupRow, error) {
-	query := h.db.Table("halaqoh_attendances ha").
-		Select("u.name as teacher, s.nama_lengkap as student, SUM(CASE WHEN ha.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN ha.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN ha.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN ha.status = 'alpa' THEN 1 ELSE 0 END) as alpha, COUNT(*) as total").
-		Joins("JOIN halaqoh_assignments ha2 ON ha2.id = ha.halaqoh_assignment_id").
-		Joins("JOIN users u ON u.id = ha2.user_id").
-		Joins("JOIN students s ON s.id = ha2.student_id")
-
-	if startDate != "" && endDate != "" {
-		query = query.Where("ha.date BETWEEN ? AND ?", startDate, endDate)
-	}
-	if teacherID != "" {
-		query = query.Where("ha2.user_id = ?", teacherID)
-	}
-	if gender != "" {
-		query = applyHalaqohStudentGenderFilter(query, gender)
-	}
-
-	var rows []studentTeacherGroupRow
-	if err := query.Group("u.name, s.nama_lengkap").Order("u.name ASC, s.nama_lengkap ASC").Scan(&rows).Error; err != nil {
+	records, err := h.fetchStudentData(startDate, endDate, teacherID, gender)
+	if err != nil {
 		return nil, err
 	}
+
+	grouped := make(map[string]*studentTeacherGroupRow)
+	for _, record := range records {
+		teacherName := "-"
+		if record.HalaqohAssignment.Teacher.ID != 0 {
+			teacherName = record.HalaqohAssignment.Teacher.Name
+		}
+
+		studentName := "-"
+		if record.HalaqohAssignment.Student.ID != 0 {
+			studentName = record.HalaqohAssignment.Student.NamaLengkap
+		}
+
+		key := teacherName + "|" + studentName
+		entry, ok := grouped[key]
+		if !ok {
+			entry = &studentTeacherGroupRow{Teacher: teacherName, Student: studentName}
+			grouped[key] = entry
+		}
+
+		switch strings.ToLower(record.Status) {
+		case "hadir":
+			entry.Hadir++
+		case "izin":
+			entry.Izin++
+		case "sakit":
+			entry.Sakit++
+		case "alpa":
+			entry.Alpha++
+		}
+		entry.Total++
+	}
+
+	rows := make([]studentTeacherGroupRow, 0, len(grouped))
+	for _, value := range grouped {
+		rows = append(rows, *value)
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Teacher == rows[j].Teacher {
+			return rows[i].Student < rows[j].Student
+		}
+		return rows[i].Teacher < rows[j].Teacher
+	})
+
 	return rows, nil
 }
 
