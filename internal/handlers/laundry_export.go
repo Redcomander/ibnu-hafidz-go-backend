@@ -324,6 +324,7 @@ func (h *LaundryExportHandler) ExportVendorStatisticsPDF(c *fiber.Ctx) error {
 func (h *LaundryExportHandler) ExportExceededAccountsExcel(c *fiber.Ctx) error {
 	search := c.Query("search")
 	genderType := c.Query("gender_type")
+	ownerStatus := c.Query("owner_status")
 	dateFromStr := c.Query("date_from")
 	dateToStr := c.Query("date_to")
 
@@ -349,6 +350,12 @@ func (h *LaundryExportHandler) ExportExceededAccountsExcel(c *fiber.Ctx) error {
 
 	if genderType != "" && genderType != "all" {
 		query = query.Where("vendor_id IN (SELECT id FROM laundry_vendors WHERE gender_type = ?)", genderType)
+	}
+
+	if ownerStatus == "orphan" || ownerStatus == "unknown" {
+		query = query.Where("(student_id IS NULL AND user_id IS NULL) OR (student_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM students WHERE id = laundry_accounts.student_id)) OR (user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE id = laundry_accounts.user_id))")
+	} else if ownerStatus == "has_owner" {
+		query = query.Where("(student_id IS NOT NULL AND EXISTS (SELECT 1 FROM students WHERE id = laundry_accounts.student_id)) OR (user_id IS NOT NULL AND EXISTS (SELECT 1 FROM users WHERE id = laundry_accounts.user_id))")
 	}
 
 	var accounts []models.LaundryAccount
