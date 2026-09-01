@@ -275,17 +275,7 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	}
 
 	totalRecords := 0
-	for i, r := range rows {
-		row := i + 6
-		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Nama)
-		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.KelasNama)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Tingkat)
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Hadir)
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Izin)
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Sakit)
-		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Alpa)
-		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), r.Total)
+	for _, r := range rows {
 		totalRecords += r.Total
 	}
 
