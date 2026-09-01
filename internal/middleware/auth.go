@@ -10,27 +10,32 @@ import (
 	"gorm.io/gorm"
 )
 
-// Auth validates JWT access token from Authorization header
+func extractTokenFromRequest(c *fiber.Ctx) string {
+	authHeader := c.Get("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+			return parts[1]
+		}
+	}
+
+	if tokenString := c.Query("token"); tokenString != "" {
+		return tokenString
+	}
+
+	if tokenString := c.Query("ticket"); tokenString != "" {
+		return tokenString
+	}
+
+	return ""
+}
+
+// Auth validates JWT access token from Authorization header or query token.
+// Some browser-based downloads (excel/pdf exports) cannot send the Authorization header
+// via a plain anchor navigation, so a signed query token is accepted there as well.
 func Auth(cfg *config.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Get token from Authorization header or Query param (for SSE)
-		authHeader := c.Get("Authorization")
-		tokenString := ""
-
-		if authHeader != "" {
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
-				tokenString = parts[1]
-			}
-		} else if strings.HasSuffix(c.Path(), "/notifications/stream") {
-			// SSE can authenticate via short-lived query ticket to avoid exposing
-			// the access token in browser-managed EventSource reconnect requests.
-			tokenString = c.Query("token")
-			if tokenString == "" {
-				tokenString = c.Query("ticket")
-			}
-		}
-
+		tokenString := extractTokenFromRequest(c)
 		if tokenString == "" {
 			return fiber.NewError(fiber.StatusUnauthorized, "Missing or invalid authorization")
 		}
@@ -58,6 +63,37 @@ func Auth(cfg *config.Config) fiber.Handler {
 	}
 }
 
+func hasTeacherScopedHalaqohAccess(user *models.User, permissionName string) bool {
+	if user == nil {
+		return false
+	}
+
+	if user.HasPermission(permissionName) {
+		return true
+	}
+
+	allowedPermissions := map[string]struct{}{
+		"students.view":              {},
+		"users.view":                 {},
+		"halaqoh-assignments.create": {},
+		"halaqoh-assignments.edit":   {},
+		"halaqoh-assignments.delete": {},
+		"halaqoh.view_all":           {},
+	}
+	if _, ok := allowedPermissions[permissionName]; !ok {
+		return false
+	}
+
+	for _, role := range user.Roles {
+		roleName := strings.ToLower(strings.TrimSpace(role.Name))
+		if roleName == "teacher" || roleName == "guru" || roleName == "musyrif" || roleName == "tim_presensi" || roleName == "staff" {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Permission checks if the authenticated user has the required permission
 func Permission(permissionName string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -70,7 +106,7 @@ func Permission(permissionName string) fiber.Handler {
 		}
 
 		if user, ok := c.Locals("user").(*models.User); ok && user != nil {
-			if !user.HasPermission(permissionName) {
+			if !hasTeacherScopedHalaqohAccess(user, permissionName) {
 				return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
 					Error:   "forbidden",
 					Message: "You do not have permission to access this resource",
@@ -100,7 +136,7 @@ func Permission(permissionName string) fiber.Handler {
 		}
 
 		// Check permission
-		if !user.HasPermission(permissionName) {
+		if !hasTeacherScopedHalaqohAccess(&user, permissionName) {
 			return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
 				Error:   "forbidden",
 				Message: "You do not have permission to access this resource",
@@ -135,7 +171,7 @@ func PermissionAny(permissionNames ...string) fiber.Handler {
 
 		if user, ok := c.Locals("user").(*models.User); ok && user != nil {
 			for _, permissionName := range permissionNames {
-				if user.HasPermission(permissionName) {
+				if hasTeacherScopedHalaqohAccess(user, permissionName) {
 					return c.Next()
 				}
 			}
@@ -156,7 +192,7 @@ func PermissionAny(permissionNames ...string) fiber.Handler {
 		}
 
 		for _, permissionName := range permissionNames {
-			if user.HasPermission(permissionName) {
+			if hasTeacherScopedHalaqohAccess(&user, permissionName) {
 				c.Locals("user", &user)
 				return c.Next()
 			}

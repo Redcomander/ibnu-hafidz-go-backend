@@ -360,6 +360,8 @@ func main() {
 	users.Put("/:id", middleware.Permission("users.edit"), userHandler.Update)
 	users.Delete("/:id", middleware.Permission("users.delete"), userHandler.Delete)
 
+	protected.Get("/teachers", middleware.PermissionAny("users.view", "halaqoh-assignments.create", "halaqoh-assignments.edit", "halaqoh.view_all"), userHandler.GetTeachers)
+
 	// Roles
 	roleHandler := handlers.NewRoleHandler(db)
 	roles := protected.Group("/roles")
