@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/ibnu-hafidz/web-v2/internal/models"
 
@@ -12,6 +13,42 @@ import (
 // HalaqohStatsHandler provides handlers for halaqoh attendance statistics.
 type HalaqohStatsHandler struct {
 	db *gorm.DB
+}
+
+func normalizeHalaqohGenderFilter(value string) string {
+	v := strings.ToLower(strings.TrimSpace(value))
+	v = strings.ReplaceAll(v, "-", "")
+	v = strings.ReplaceAll(v, "_", "")
+	v = strings.ReplaceAll(v, " ", "")
+
+	switch v {
+	case "l", "lakilaki", "male", "banin", "putra":
+		return "banin"
+	case "p", "perempuan", "female", "banat", "putri":
+		return "banat"
+	default:
+		return ""
+	}
+}
+
+func studentGenderFilterValues(gender string) []string {
+	normalized := normalizeHalaqohGenderFilter(gender)
+	if normalized == "banin" {
+		return []string{"l", "lakilaki", "male", "banin", "putra"}
+	}
+	if normalized == "banat" {
+		return []string{"p", "perempuan", "female", "banat", "putri"}
+	}
+	return nil
+}
+
+func applyHalaqohStudentGenderFilter(query *gorm.DB, gender string) *gorm.DB {
+	normalized := normalizeHalaqohGenderFilter(gender)
+	if normalized == "" {
+		return query
+	}
+	values := studentGenderFilterValues(normalized)
+	return query.Where("LOWER(REPLACE(REPLACE(REPLACE(TRIM(students.jenis_kelamin), '-', ''), '_', ''), ' ', '')) IN ?", values)
 }
 
 // NewHalaqohStatsHandler creates a new HalaqohStatsHandler.
@@ -42,12 +79,11 @@ func (h *HalaqohStatsHandler) StudentStatistics(c *fiber.Ctx) error {
 	}
 
 	if gender != "" {
-		// Need to join through halaqoh_assignments to students if teacherID wasn't joined
 		if teacherID == "" {
 			query = query.Joins("JOIN halaqoh_assignments ON halaqoh_assignments.id = halaqoh_attendances.halaqoh_assignment_id")
 		}
-		query = query.Joins("JOIN students ON students.id = halaqoh_assignments.student_id").
-			Where("students.jenis_kelamin = ?", gender)
+		query = query.Joins("JOIN students ON students.id = halaqoh_assignments.student_id")
+		query = applyHalaqohStudentGenderFilter(query, gender)
 	}
 
 	var records []models.HalaqohAttendance

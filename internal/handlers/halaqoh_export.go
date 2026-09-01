@@ -381,6 +381,16 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherExcel(c *fiber.Ctx) error {
 	return f.Write(c.Response().BodyWriter())
 }
 
+type studentTeacherGroupRow struct {
+	Teacher string
+	Student string
+	Hadir   int
+	Izin    int
+	Sakit   int
+	Alpha   int
+	Total   int
+}
+
 func (h *HalaqohStatsHandler) fetchStudentData(startDate, endDate, teacherID, gender string) ([]models.HalaqohAttendance, error) {
 	query := h.db.Model(&models.HalaqohAttendance{}).
 		Preload("HalaqohAssignment").
@@ -398,13 +408,37 @@ func (h *HalaqohStatsHandler) fetchStudentData(startDate, endDate, teacherID, ge
 		if teacherID == "" {
 			query = query.Joins("JOIN halaqoh_assignments ON halaqoh_assignments.id = halaqoh_attendances.halaqoh_assignment_id")
 		}
-		query = query.Joins("JOIN students ON students.id = halaqoh_assignments.student_id").
-			Where("students.jenis_kelamin = ?", gender)
+		query = query.Joins("JOIN students ON students.id = halaqoh_assignments.student_id")
+		query = applyHalaqohStudentGenderFilter(query, gender)
 	}
 
 	var records []models.HalaqohAttendance
 	err := query.Order("date DESC").Find(&records).Error
 	return records, err
+}
+
+func (h *HalaqohStatsHandler) buildStudentTeacherSummary(startDate, endDate, teacherID, gender string) ([]studentTeacherGroupRow, error) {
+	query := h.db.Table("halaqoh_attendances ha").
+		Select("u.name as teacher, s.nama_lengkap as student, SUM(CASE WHEN ha.status = 'hadir' THEN 1 ELSE 0 END) as hadir, SUM(CASE WHEN ha.status = 'izin' THEN 1 ELSE 0 END) as izin, SUM(CASE WHEN ha.status = 'sakit' THEN 1 ELSE 0 END) as sakit, SUM(CASE WHEN ha.status = 'alpa' THEN 1 ELSE 0 END) as alpha, COUNT(*) as total").
+		Joins("JOIN halaqoh_assignments ha2 ON ha2.id = ha.halaqoh_assignment_id").
+		Joins("JOIN users u ON u.id = ha2.user_id").
+		Joins("JOIN students s ON s.id = ha2.student_id")
+
+	if startDate != "" && endDate != "" {
+		query = query.Where("ha.date BETWEEN ? AND ?", startDate, endDate)
+	}
+	if teacherID != "" {
+		query = query.Where("ha2.user_id = ?", teacherID)
+	}
+	if gender != "" {
+		query = applyHalaqohStudentGenderFilter(query, gender)
+	}
+
+	var rows []studentTeacherGroupRow
+	if err := query.Group("u.name, s.nama_lengkap").Order("u.name ASC, s.nama_lengkap ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 func (h *HalaqohStatsHandler) ExportHalaqohStudentExcel(c *fiber.Ctx) error {
@@ -413,45 +447,47 @@ func (h *HalaqohStatsHandler) ExportHalaqohStudentExcel(c *fiber.Ctx) error {
 	teacherID := c.Query("teacher_id")
 	gender := c.Query("gender")
 
-	records, err := h.fetchStudentData(startDate, endDate, teacherID, gender)
+	if startDate == "" {
+		now := time.Now()
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = time.Now().Format("2006-01-02")
+	}
+
+	summary, err := h.buildStudentTeacherSummary(startDate, endDate, teacherID, gender)
 	if err != nil {
 		return c.Status(500).SendString("Database error")
 	}
 
 	f := excelize.NewFile()
-	sheet := "Record Kehadiran"
+	sheet := "Rekapan Halaqoh Santri"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"No", "Tanggal", "Sesi", "Nama Santri", "Guru Halaqoh", "Status", "Keterangan"}
+	headers := []string{"No", "Nama Guru", "Nama Santri", "Hadir", "Izin", "Sakit", "Alpha", "Total"}
 	for i, header := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet, cell, header)
 	}
 
-	for i, r := range records {
-		row := i + 2
+	currentTeacher := ""
+	row := 2
+	for i, r := range summary {
+		if currentTeacher != r.Teacher {
+			currentTeacher = r.Teacher
+			if row > 2 {
+				f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "")
+			}
+		}
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
-		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Date.Format("2006-01-02"))
-		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Session)
-
-		name := "-"
-		if r.HalaqohAssignment.Student.ID != 0 {
-			name = r.HalaqohAssignment.Student.NamaLengkap
-		}
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), name)
-
-		teacher := "-"
-		if r.HalaqohAssignment.Teacher.ID != 0 {
-			teacher = r.HalaqohAssignment.Teacher.Name
-		}
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), teacher)
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), capitalize(r.Status))
-
-		catatan := ""
-		if r.Notes != nil {
-			catatan = *r.Notes
-		}
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), catatan)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), r.Teacher)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), r.Student)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), r.Hadir)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), r.Izin)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), r.Sakit)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), r.Alpha)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), r.Total)
+		row++
 	}
 
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -475,7 +511,7 @@ func (h *HalaqohStatsHandler) ExportHalaqohStudentPDF(c *fiber.Ctx) error {
 		endDate = time.Now().Format("2006-01-02")
 	}
 
-	records, err := h.fetchStudentData(startDate, endDate, teacherID, gender)
+	summary, err := h.buildStudentTeacherSummary(startDate, endDate, teacherID, gender)
 	if err != nil {
 		return c.Status(500).SendString("Database error")
 	}
@@ -491,37 +527,22 @@ func (h *HalaqohStatsHandler) ExportHalaqohStudentPDF(c *fiber.Ctx) error {
 
 	pdf.SetFont("Arial", "B", 10)
 	pdf.CellFormat(10, 8, "No", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(25, 8, "Tanggal", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(20, 8, "Sesi", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(45, 8, "Nama Guru", "1", 0, "L", false, 0, "")
 	pdf.CellFormat(55, 8, "Nama Santri", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(45, 8, "Guru Halaqoh", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(20, 8, "Status", "1", 1, "C", false, 0, "")
+	pdf.CellFormat(18, 8, "Hadir", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(18, 8, "Izin", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(18, 8, "Sakit", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(18, 8, "Alpha", "1", 1, "C", false, 0, "")
 
 	pdf.SetFont("Arial", "", 10)
-	for i, r := range records {
+	for i, r := range summary {
 		pdf.CellFormat(10, 8, fmt.Sprintf("%d", i+1), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(25, 8, r.Date.Format("02/01/2006"), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(20, 8, r.Session, "1", 0, "C", false, 0, "")
-
-		name := "-"
-		if r.HalaqohAssignment.Student.ID != 0 {
-			name = r.HalaqohAssignment.Student.NamaLengkap
-		}
-		if len(name) > 30 {
-			name = name[:27] + "..."
-		}
-		pdf.CellFormat(55, 8, name, "1", 0, "L", false, 0, "")
-
-		teacher := "-"
-		if r.HalaqohAssignment.Teacher.ID != 0 {
-			teacher = r.HalaqohAssignment.Teacher.Name
-		}
-		if len(teacher) > 23 {
-			teacher = teacher[:20] + "..."
-		}
-		pdf.CellFormat(45, 8, teacher, "1", 0, "L", false, 0, "")
-
-		pdf.CellFormat(20, 8, capitalize(r.Status), "1", 1, "C", false, 0, "")
+		pdf.CellFormat(45, 8, r.Teacher, "1", 0, "L", false, 0, "")
+		pdf.CellFormat(55, 8, r.Student, "1", 0, "L", false, 0, "")
+		pdf.CellFormat(18, 8, fmt.Sprintf("%d", r.Hadir), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, fmt.Sprintf("%d", r.Izin), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, fmt.Sprintf("%d", r.Sakit), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, fmt.Sprintf("%d", r.Alpha), "1", 1, "C", false, 0, "")
 	}
 
 	c.Set("Content-Type", "application/pdf")
