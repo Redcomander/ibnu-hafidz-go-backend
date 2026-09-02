@@ -719,20 +719,20 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		}
 		subHistQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
 	} else if isDiniyyahAttendanceType(typeStr) {
-		subHistQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.date, diniyyah_lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
-				"original.name as original_teacher, substitute_logs.status as original_status, "+
-				"substitute.name as substitute_teacher, substitute_logs.reason").
-			Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
-			Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
-			Joins("JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
-			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
-			Joins("JOIN users original ON original.id = substitute_logs.original_teacher_id").
-			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
-			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-			Where("substitute_logs.deleted_at IS NULL")
+		subHistQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.date, COALESCE(sdls.lesson, diniyyah_lessons.nama, '-') as lesson, COALESCE(sdls.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat), '-') as kelas, "+
+				"COALESCE(sdls.original_teacher, original.name, '-') as original_teacher, substitute_logs_diniyyah.status as original_status, "+
+				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
+			Joins("LEFT JOIN substitute_diniyyah_log_snapshots sdls ON sdls.substitute_diniyyah_log_id = substitute_logs_diniyyah.id").
+			Joins("LEFT JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+			Joins("LEFT JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("LEFT JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("LEFT JOIN kelas ON kelas.id = dkt.kelas_id").
+			Joins("LEFT JOIN users original ON original.id = substitute_logs_diniyyah.original_teacher_id").
+			Joins("JOIN users substitute ON substitute.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if teacherID != "" {
-			subHistQ = subHistQ.Where("(substitute_logs.original_teacher_id = ? OR substitute_logs.substitute_teacher_id = ?)", teacherID, teacherID)
+			subHistQ = subHistQ.Where("(substitute_logs_diniyyah.original_teacher_id = ? OR substitute_logs_diniyyah.substitute_teacher_id = ?)", teacherID, teacherID)
 		}
 		if gender != "" {
 			subHistQ = subHistQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
@@ -740,7 +740,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if kelasID != "" {
 			subHistQ = subHistQ.Where("dkt.kelas_id = ?", kelasID)
 		}
-		subHistQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
+		subHistQ.Order("substitute_logs_diniyyah.date DESC").Scan(&substituteHistory)
 	}
 
 	// Calculate Global Counts
