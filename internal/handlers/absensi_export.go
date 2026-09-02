@@ -591,32 +591,40 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		Count  int
 	}
 	var subCounts []SubCount
-	subQ := h.db.Table("substitute_logs").
-		Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
-		Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
-		Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-		Where("substitute_logs.deleted_at IS NULL")
-
 	if isDiniyyahAttendanceType(typeStr) {
-		subQ = subQ.Where("substitute_logs.jadwal_diniyyah_id IS NOT NULL")
+		subQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
-			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
+			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
 				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 				Where("dkt.kelas_id = ?", kelasID)
 		}
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs_diniyyah.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	} else {
-		subQ = subQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		subQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
+			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	}
-
-	if teacherID != "" {
-		subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
-	}
-	if gender != "" {
-		subQ = subQ.Where("u.gender = ?", gender)
-	}
-
-	subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 
 	for _, sc := range subCounts {
 		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, sc.Count)
@@ -631,30 +639,40 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		Count  int
 	}
 	var originalSubStatusCounts []OriginalSubStatusCount
-	origQ := h.db.Table("substitute_logs").
-		Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, count(*) as count").
-		Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
-		Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
-		Where("substitute_logs.deleted_at IS NULL")
-
 	if isDiniyyahAttendanceType(typeStr) {
-		origQ = origQ.Where("substitute_logs.jadwal_diniyyah_id IS NOT NULL")
+		origQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.status, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.original_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
-			origQ = origQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs.jadwal_diniyyah_id").
+			origQ = origQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
 				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
 				Where("dkt.kelas_id = ?", kelasID)
 		}
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs_diniyyah.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Group("substitute_logs_diniyyah.original_teacher_id, u.name, u.foto_guru, substitute_logs_diniyyah.status").Scan(&originalSubStatusCounts)
 	} else {
-		origQ = origQ.Where("substitute_logs.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		origQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
+			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Group("substitute_logs.original_teacher_id, u.name, u.foto_guru, substitute_logs.status").Scan(&originalSubStatusCounts)
 	}
-	if teacherID != "" {
-		origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
-	}
-	if gender != "" {
-		origQ = origQ.Where("u.gender = ?", gender)
-	}
-	origQ.Group("substitute_logs.original_teacher_id, u.name, u.foto_guru, substitute_logs.status").Scan(&originalSubStatusCounts)
 
 	for _, oc := range originalSubStatusCounts {
 		status := strings.TrimSpace(strings.ToLower(oc.Status))
