@@ -628,7 +628,11 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	}
 
 	for _, sc := range subCounts {
-		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, substituteSessionCount(sc.JamMulai, sc.JamSelesai))
+		count := 1
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		}
+		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, count)
 	}
 
 	// Original teacher absences logged via substitute records should be counted against the original teacher only for absence statuses.
@@ -682,7 +686,11 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if status != "izin" && status != "sakit" && status != "alpha" {
 			continue
 		}
-		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, substituteSessionCount(oc.JamMulai, oc.JamSelesai))
+		count := 1
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(oc.JamMulai, oc.JamSelesai)
+		}
+		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, count)
 	}
 
 	// 2. Fetch Substitute History
@@ -754,7 +762,10 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	totalSub := 0
 	for _, sc := range subCounts {
-		count := substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		count := 1
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		}
 		if teacherID != "" {
 			tid := uint(0)
 			fmt.Sscanf(teacherID, "%d", &tid)

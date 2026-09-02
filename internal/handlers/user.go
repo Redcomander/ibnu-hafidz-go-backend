@@ -31,6 +31,11 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 
 	paginatedQuery, page, perPage := PaginateQuery(c, query, []string{"name", "email"})
 	paginatedQuery.Find(&users)
+	for i := range users {
+		if strings.TrimSpace(users[i].Name) == "" {
+			users[i].Name = userDisplayName(users[i])
+		}
+	}
 
 	return c.JSON(BuildPaginatedResponse(users, total, page, perPage))
 }
@@ -48,6 +53,16 @@ func (h *UserHandler) buildUserExportQuery(c *fiber.Ctx) *gorm.DB {
 	}
 
 	return query
+}
+
+func userDisplayName(user models.User) string {
+	for _, value := range []string{user.Name, user.Username, user.Email} {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return "Tanpa nama"
 }
 
 func userExportText(value *string) string {
@@ -383,6 +398,11 @@ func (h *UserHandler) GetTeachers(c *fiber.Ctx) error {
 
 	if err := query.Distinct("users.id").Preload("Roles").Find(&teachers).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch teachers"})
+	}
+	for i := range teachers {
+		if strings.TrimSpace(teachers[i].Name) == "" {
+			teachers[i].Name = userDisplayName(teachers[i])
+		}
 	}
 
 	return c.JSON(teachers)

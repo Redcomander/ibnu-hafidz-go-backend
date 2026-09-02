@@ -1663,7 +1663,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	subMap := make(map[uint]int)
 	for _, sc := range subCounts {
-		subMap[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		count := 1
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		}
+		subMap[sc.ID] += count
 	}
 
 	for i := range teacherSummary {
