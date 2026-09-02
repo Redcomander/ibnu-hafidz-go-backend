@@ -778,6 +778,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	}
 	teacherCountsMap["Substitute"] = totalSub
 
+	exportTimestamp := time.Now().Format("2006-01-02 15:04:05")
+
 	// Build PDF
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
@@ -788,6 +790,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	pdf.SetFont("Arial", "", 12)
 	pdf.CellFormat(0, 8, "Periode: "+startDate+" s/d "+endDate, "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 8, "Tanggal Export: "+exportTimestamp, "", 1, "C", false, 0, "")
 	pdf.Ln(5)
 
 	// Global Counts
@@ -849,7 +852,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "application/pdf")
-	filename := fmt.Sprintf("Rekapan_Absensi_Guru_%s_%s_%s.pdf", typeStr, startDate, endDate)
+	filename := fmt.Sprintf("Rekapan_Absensi_Guru_%s_%s_%s_%s.pdf", typeStr, startDate, endDate, time.Now().Format("20060102_150405"))
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
@@ -883,10 +886,13 @@ func (h *AbsensiHandler) ExportTeacherMissingAttendancePDF(c *fiber.Ctx) error {
 	pdf.SetAutoPageBreak(true, 15)
 	pdf.AddPage()
 
+	exportTimestamp := time.Now().Format("2006-01-02 15:04:05")
+
 	pdf.SetFont("Arial", "B", 16)
 	pdf.CellFormat(0, 10, "Laporan Guru Belum Isi Absensi Santri", "", 1, "C", false, 0, "")
 	pdf.SetFont("Arial", "", 11)
 	pdf.CellFormat(0, 7, fmt.Sprintf("Tipe: %s | Periode: %s s/d %s", strings.ToUpper(typeStr), startDate, endDate), "", 1, "C", false, 0, "")
+	pdf.CellFormat(0, 7, "Tanggal Export: "+exportTimestamp, "", 1, "C", false, 0, "")
 	pdf.Ln(3)
 
 	pdf.SetFont("Arial", "", 10)
@@ -919,7 +925,7 @@ func (h *AbsensiHandler) ExportTeacherMissingAttendancePDF(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", "application/pdf")
-	filename := fmt.Sprintf("Laporan_Guru_Belum_Isi_Absensi_%s_%s_%s.pdf", typeStr, startDate, endDate)
+	filename := fmt.Sprintf("Laporan_Guru_Belum_Isi_Absensi_%s_%s_%s_%s.pdf", typeStr, startDate, endDate, time.Now().Format("20060102_150405"))
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 
 	return pdf.Output(c.Response().BodyWriter())
