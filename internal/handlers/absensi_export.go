@@ -585,15 +585,16 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	// Substitute Counts
 	type SubCount struct {
-		ID     uint
-		Name   string
-		Avatar string
-		Count  int
+		ID         uint
+		Name       string
+		Avatar     string
+		JamMulai   string
+		JamSelesai string
 	}
 	var subCounts []SubCount
 	if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai").
 			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
@@ -607,10 +608,10 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
+		subQ.Scan(&subCounts)
 	} else {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, COALESCE(substitute_logs.jam_mulai, jadwal_formal.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jadwal_formal.jam_selesai) as jam_selesai").
 			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
@@ -623,25 +624,27 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
+		subQ.Scan(&subCounts)
 	}
 
 	for _, sc := range subCounts {
-		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, sc.Count)
+		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, substituteSessionCount(sc.JamMulai, sc.JamSelesai))
 	}
 
 	// Original teacher absences logged via substitute records should be counted against the original teacher only for absence statuses.
 	type OriginalSubStatusCount struct {
-		ID     uint
-		Name   string
-		Avatar string
-		Status string
-		Count  int
+		ID         uint
+		Name       string
+		Avatar     string
+		Status     string
+		JamMulai   string
+		JamSelesai string
+		Count      int
 	}
 	var originalSubStatusCounts []OriginalSubStatusCount
 	if isDiniyyahAttendanceType(typeStr) {
 		origQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.status, count(*) as count").
+			Select("substitute_logs_diniyyah.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.status, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai").
 			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.original_teacher_id").
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
@@ -655,10 +658,10 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			origQ = origQ.Where("u.gender = ?", gender)
 		}
-		origQ.Group("substitute_logs_diniyyah.original_teacher_id, u.name, u.foto_guru, substitute_logs_diniyyah.status").Scan(&originalSubStatusCounts)
+		origQ.Scan(&originalSubStatusCounts)
 	} else {
 		origQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, count(*) as count").
+			Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, COALESCE(substitute_logs.jam_mulai, jadwal_formal.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jadwal_formal.jam_selesai) as jam_selesai").
 			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
@@ -671,7 +674,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			origQ = origQ.Where("u.gender = ?", gender)
 		}
-		origQ.Group("substitute_logs.original_teacher_id, u.name, u.foto_guru, substitute_logs.status").Scan(&originalSubStatusCounts)
+		origQ.Scan(&originalSubStatusCounts)
 	}
 
 	for _, oc := range originalSubStatusCounts {
@@ -679,7 +682,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if status != "izin" && status != "sakit" && status != "alpha" {
 			continue
 		}
-		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, oc.Count)
+		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, substituteSessionCount(oc.JamMulai, oc.JamSelesai))
 	}
 
 	// 2. Fetch Substitute History
@@ -751,14 +754,15 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	totalSub := 0
 	for _, sc := range subCounts {
+		count := substituteSessionCount(sc.JamMulai, sc.JamSelesai)
 		if teacherID != "" {
 			tid := uint(0)
 			fmt.Sscanf(teacherID, "%d", &tid)
 			if sc.ID == tid {
-				totalSub += sc.Count
+				totalSub += count
 			}
 		} else {
-			totalSub += sc.Count
+			totalSub += count
 		}
 	}
 	teacherCountsMap["Substitute"] = totalSub

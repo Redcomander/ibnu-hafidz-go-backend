@@ -1,6 +1,9 @@
 package handlers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyTeacherSubstituteCountsDoesNotInflateHadir(t *testing.T) {
 	summary := []TeacherSummaryEntry{{ID: 1, Name: "Guru A", Hadir: 2}}
@@ -25,5 +28,31 @@ func TestApplyOriginalTeacherStatusCountsOnlyAbsenceStatuses(t *testing.T) {
 	summary = applyOriginalTeacherStatus(summary, 2, "Guru B", "", "Izin", 1)
 	if summary[0].Izin != 1 {
 		t.Fatalf("expected Izin to be 1, got %d", summary[0].Izin)
+	}
+}
+
+func TestSessionCountFromTimeRangeCountsAcrossMorningBreak(t *testing.T) {
+	cases := map[string]int{
+		"08:00-09:30": 2,
+		"08:15-09:30": 2,
+		"10:00-11:30": 2,
+		"08:00-11:30": 2,
+		"08:15-10:00": 2,
+		"09:30-10:15": 2,
+		"08:00-08:30": 1,
+		"":            1,
+	}
+
+	for rangeText, want := range cases {
+		start, end, ok := strings.Cut(rangeText, "-")
+		if !ok {
+			if got := substituteSessionCount("", ""); got != want {
+				t.Fatalf("expected empty range count to be %d, got %d", want, got)
+			}
+			continue
+		}
+		if got := substituteSessionCount(start, end); got != want {
+			t.Fatalf("range %q => expected %d, got %d", rangeText, want, got)
+		}
 	}
 }

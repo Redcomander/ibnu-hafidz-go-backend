@@ -1642,12 +1642,13 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	// Add substitute counts to teacher summary
 	type SubCount struct {
-		ID    uint
-		Count int
+		ID         uint
+		JamMulai   string
+		JamSelesai string
 	}
 	var subCounts []SubCount
 	subQ := h.db.Table("substitute_logs").
-		Select("substitute_teacher_id as id, count(*) as count").
+		Select("substitute_teacher_id as id, COALESCE(jam_mulai, jadwal_formal.jam_mulai) as jam_mulai, COALESCE(jam_selesai, jadwal_formal.jam_selesai) as jam_selesai").
 		Where("date >= ? AND date < ?", startDate, endExclusive).
 		Where("deleted_at IS NULL")
 
@@ -1658,11 +1659,11 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 	}
 
-	subQ.Group("substitute_teacher_id").Scan(&subCounts)
+	subQ.Scan(&subCounts)
 
 	subMap := make(map[uint]int)
 	for _, sc := range subCounts {
-		subMap[sc.ID] = sc.Count
+		subMap[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
 	}
 
 	for i := range teacherSummary {

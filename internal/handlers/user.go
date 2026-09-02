@@ -370,18 +370,18 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "User deleted successfully"})
 }
 
-// GetTeachers returns all users with 'teacher' role
+// GetTeachers returns all active users with teacher-like roles used by the Halaqoh UI.
 func (h *UserHandler) GetTeachers(c *fiber.Ctx) error {
 	var teachers []models.User
 
-	// Assuming there is a Role 'teacher' or 'Guru'
-	// Linking via UserRoles table
-	if err := h.db.Joins("JOIN user_roles ON user_roles.user_id = users.id").
-		Joins("JOIN roles ON roles.id = user_roles.role_id").
-		Where("roles.name LIKE ?", "%teacher%"). // or 'guru'? Safe bet to check both or standard 'teacher'
-		Or("roles.name LIKE ?", "%guru%").
-		Preload("Roles").
-		Find(&teachers).Error; err != nil {
+	query := h.db.Model(&models.User{}).
+		Joins("JOIN role_user ON role_user.user_id = users.id").
+		Joins("JOIN roles ON roles.id = role_user.role_id").
+		Where("users.deleted_at IS NULL").
+		Where("LOWER(roles.name) LIKE ? OR LOWER(roles.name) LIKE ? OR LOWER(roles.name) LIKE ?",
+			"%teacher%", "%guru%", "%musyrif%")
+
+	if err := query.Distinct("users.id").Preload("Roles").Find(&teachers).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch teachers"})
 	}
 
