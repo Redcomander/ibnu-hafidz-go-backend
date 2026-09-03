@@ -2050,16 +2050,29 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		inSummaryMap[oc.ID] = len(teacherSummary) - 1
 	}
 
-	if !isDiniyyahAttendanceType(typeStr) {
+	if isDiniyyahAttendanceType(typeStr) {
+		diniyyahSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			if sc.ID == 0 {
+				continue
+			}
+			diniyyahSubstituteTotals[sc.ID] += 1
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
+		}
+		teacherCountsMap["Substitute"] = 0
+		for _, total := range diniyyahSubstituteTotals {
+			teacherCountsMap["Substitute"] += total
+		}
+	} else {
 		formalSubstituteTotals := map[uint]int{}
 		for _, sc := range subCounts {
-			count := sc.Count
-			if count <= 0 {
-				count = 1
+			count := 1
+			if sc.ID == 0 {
+				continue
 			}
-			if !isDiniyyahAttendanceType(typeStr) {
-				count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
-			}
+			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
 			formalSubstituteTotals[sc.ID] += count
 		}
 		for i := range teacherSummary {

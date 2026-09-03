@@ -820,23 +820,37 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		}
 	}
 
-	formalSubstituteTotals := map[uint]int{}
-	for _, sc := range subCounts {
-		count := 1
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+	if isDiniyyahAttendanceType(typeStr) {
+		diniyyahSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			if sc.ID == 0 {
+				continue
+			}
+			diniyyahSubstituteTotals[sc.ID] += 1
 		}
-		formalSubstituteTotals[sc.ID] += count
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
+		}
+		teacherCountsMap["Substitute"] = 0
+		for _, total := range diniyyahSubstituteTotals {
+			teacherCountsMap["Substitute"] += total
+		}
+	} else {
+		formalSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			if sc.ID == 0 {
+				continue
+			}
+			formalSubstituteTotals[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
+		}
+		teacherCountsMap["Substitute"] = 0
+		for _, total := range formalSubstituteTotals {
+			teacherCountsMap["Substitute"] += total
+		}
 	}
-	for i := range teacherSummary {
-		teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
-	}
-
-	totalSub := 0
-	for _, count := range formalSubstituteTotals {
-		totalSub += count
-	}
-	teacherCountsMap["Substitute"] = totalSub
 
 	exportTimestamp := time.Now().Format("2006-01-02 15:04:05")
 
