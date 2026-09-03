@@ -1785,23 +1785,27 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			rawStatusQ = rawStatusQ.Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").Where("lkt.kelas_id = ?", kelasID)
 		}
 		rawStatusQ.Group("ta.user_id, ta.status, COALESCE(jf.jam_mulai, '-'), COALESCE(jf.jam_selesai, '-')").Scan(&formalStatusRows)
+
+		formalStatusTotals := map[uint]map[string]int{}
 		for _, row := range formalStatusRows {
 			normCount := normalizeFormalTeacherStatusCount(row.Status, row.Count, row.JamMulai, row.JamSelesai)
 			if normCount <= 0 {
 				continue
 			}
-			for i := range teacherSummary {
-				if teacherSummary[i].ID == row.ID {
-					switch strings.ToLower(row.Status) {
-					case "izin":
-						teacherSummary[i].Izin = normCount
-					case "sakit":
-						teacherSummary[i].Sakit = normCount
-					case "alpha":
-						teacherSummary[i].Alpha = normCount
-					}
-					break
-				}
+			if formalStatusTotals[row.ID] == nil {
+				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0}
+			}
+			formalStatusTotals[row.ID][strings.ToLower(row.Status)] += normCount
+		}
+
+		for i := range teacherSummary {
+			teacherSummary[i].Izin = 0
+			teacherSummary[i].Sakit = 0
+			teacherSummary[i].Alpha = 0
+			if totals, ok := formalStatusTotals[teacherSummary[i].ID]; ok {
+				teacherSummary[i].Izin = totals["izin"]
+				teacherSummary[i].Sakit = totals["sakit"]
+				teacherSummary[i].Alpha = totals["alpha"]
 			}
 		}
 		teacherCountsMap["Izin"] = 0
@@ -2046,20 +2050,25 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		inSummaryMap[oc.ID] = len(teacherSummary) - 1
 	}
 
-	// Update Substitute Total Count with formal session-based counting.
-	for _, sub := range substituteHistory {
-		count := 1
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sub.StartTime, sub.EndTime)
-		}
-		if teacherID != "" {
-			parsedID, err := strconv.Atoi(teacherID)
-			if err == nil && sub.SubstituteTeacherID == uint(parsedID) {
-				teacherCountsMap["Substitute"] += count
+	if !isDiniyyahAttendanceType(typeStr) {
+		formalSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			count := sc.Count
+			if count <= 0 {
+				count = 1
 			}
-			continue
+			if !isDiniyyahAttendanceType(typeStr) {
+				count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+			}
+			formalSubstituteTotals[sc.ID] += count
 		}
-		teacherCountsMap["Substitute"] += count
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
+		}
+		teacherCountsMap["Substitute"] = 0
+		for _, total := range formalSubstituteTotals {
+			teacherCountsMap["Substitute"] += total
+		}
 	}
 
 	// 3. Absence History (Izin, Sakit, Alpha) for table display

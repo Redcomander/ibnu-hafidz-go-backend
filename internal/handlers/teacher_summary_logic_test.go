@@ -79,3 +79,19 @@ func TestCountFormalSessionUnitsUsesSessionBasedTotals(t *testing.T) {
 		t.Fatalf("expected Hadir to be excluded from session totals, got %d", got["Hadir"])
 	}
 }
+
+func TestFormalStatusAggregationDoesNotOverwriteMultiRowTeacherTotals(t *testing.T) {
+	rows := []formalSessionCountRow{
+		{Status: "Izin", StartTime: "08:00", EndTime: "09:30"},
+		{Status: "Sakit", StartTime: "10:00", EndTime: "11:30"},
+		{Status: "Izin", StartTime: "10:00", EndTime: "11:30"},
+	}
+
+	got := countFormalSessionUnits(rows)
+	if got["Izin"] != 4 {
+		t.Fatalf("expected aggregated Izin total to be 4, got %d", got["Izin"])
+	}
+	if got["Sakit"] != 2 {
+		t.Fatalf("expected aggregated Sakit total to be 2, got %d", got["Sakit"])
+	}
+}
