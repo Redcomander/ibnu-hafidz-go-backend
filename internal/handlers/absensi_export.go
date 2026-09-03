@@ -586,17 +586,15 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	// Substitute Counts
 	type SubCount struct {
-		ID         uint
-		Name       string
-		Avatar     string
-		JamMulai   string
-		JamSelesai string
-		Count      int
+		ID     uint
+		Name   string
+		Avatar string
+		Count  int
 	}
 	var subCounts []SubCount
 	if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai, count(*) as count").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
 			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
@@ -610,10 +608,10 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru, substitute_logs_diniyyah.jam_mulai, substitute_logs_diniyyah.jam_selesai").Scan(&subCounts)
+		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	} else {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, COALESCE(substitute_logs.jam_mulai, jf.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jf.jam_selesai) as jam_selesai, count(*) as count").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
 			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
@@ -626,14 +624,11 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru, COALESCE(substitute_logs.jam_mulai, jf.jam_mulai), COALESCE(substitute_logs.jam_selesai, jf.jam_selesai)").Scan(&subCounts)
+		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
 	}
 
 	for _, sc := range subCounts {
-		count := sc.Count
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
-		}
+		count := sc.Count * 2
 		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, count)
 	}
 
@@ -898,7 +893,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			diniyyahSubstituteTotals[sc.ID] += sc.Count
+			diniyyahSubstituteTotals[sc.ID] += sc.Count * 2
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
@@ -913,7 +908,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			formalSubstituteTotals[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+			formalSubstituteTotals[sc.ID] += sc.Count * 2
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]

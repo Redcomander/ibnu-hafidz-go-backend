@@ -1642,25 +1642,26 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	// Add substitute counts to teacher summary
 	type SubCount struct {
-		ID         uint
-		JamMulai   string
-		JamSelesai string
+		ID    uint
+		Count int
 	}
 	var subCounts []SubCount
 	var subQ *gorm.DB
 	if isDiniyyahAttendanceType(typeStr) {
 		subQ = h.db.Table("substitute_logs").
-			Select("substitute_teacher_id as id, jam_mulai as jam_mulai, jam_selesai as jam_selesai").
+			Select("substitute_teacher_id as id, count(*) as count").
 			Where("date >= ? AND date < ?", startDate, endExclusive).
 			Where("deleted_at IS NULL").
-			Where("jadwal_diniyyah_id IS NOT NULL")
+			Where("jadwal_diniyyah_id IS NOT NULL").
+			Group("substitute_teacher_id")
 	} else {
 		subQ = h.db.Table("substitute_logs").
-			Select("substitute_logs.substitute_teacher_id as id, COALESCE(substitute_logs.jam_mulai, jf.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jf.jam_selesai) as jam_selesai").
+			Select("substitute_logs.substitute_teacher_id as id, count(*) as count").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
 			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
-			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id").
+			Group("substitute_logs.substitute_teacher_id")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 	}
 
@@ -1668,11 +1669,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	subMap := make(map[uint]int)
 	for _, sc := range subCounts {
-		count := 1
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
-		}
-		subMap[sc.ID] += count
+		subMap[sc.ID] += sc.Count * 2
 	}
 
 	for i := range teacherSummary {
@@ -1959,10 +1956,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	}
 
 	for _, sc := range subCounts {
-		count := sc.Count
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
-		}
+		count := sc.Count * 2
 		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, count)
 		for i, entry := range teacherSummary {
 			if entry.ID == sc.ID {
@@ -2080,7 +2074,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			diniyyahSubstituteTotals[sc.ID] += sc.Count
+			diniyyahSubstituteTotals[sc.ID] += sc.Count * 2
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
@@ -2095,7 +2089,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			formalSubstituteTotals[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+			formalSubstituteTotals[sc.ID] += sc.Count * 2
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
