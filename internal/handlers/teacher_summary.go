@@ -177,3 +177,17 @@ func applyOriginalTeacherStatus(summary []TeacherSummaryEntry, teacherID uint, t
 	}
 	return summary
 }
+
+func normalizeFormalTeacherStatusCount(status string, count int, startTime, endTime string) int {
+	status = strings.TrimSpace(strings.ToLower(status))
+	if status == "" || status == "hadir" {
+		return 0
+	}
+	if count <= 0 {
+		return 0
+	}
+	if startTime == "" && endTime == "" {
+		return count
+	}
+	return count * substituteSessionCount(startTime, endTime)
+}

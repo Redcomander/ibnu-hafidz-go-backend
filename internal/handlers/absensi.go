@@ -1759,6 +1759,61 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		teacherCountsMap["Alpha"] += t.Alpha
 	}
 
+	if !isDiniyyahAttendanceType(typeStr) {
+		var formalStatusRows []struct {
+			ID       uint
+			Status   string
+			JamMulai string
+			JamSelesai string
+			Count    int
+		}
+		rawStatusQ := h.db.Table("teacher_attendances ta").
+			Select("ta.user_id as id, ta.status, COALESCE(jf.jam_mulai, '-') as jam_mulai, COALESCE(jf.jam_selesai, '-') as jam_selesai, count(*) as count").
+			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_formal_id IS NOT NULL").
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
+		if teacherID != "" {
+			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN users u ON u.id = ta.user_id").Where("u.gender = ?", gender)
+		}
+		if kelasID != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").Where("lkt.kelas_id = ?", kelasID)
+		}
+		rawStatusQ.Group("ta.user_id, ta.status, COALESCE(jf.jam_mulai, '-'), COALESCE(jf.jam_selesai, '-')").Scan(&formalStatusRows)
+		for _, row := range formalStatusRows {
+			normCount := normalizeFormalTeacherStatusCount(row.Status, row.Count, row.JamMulai, row.JamSelesai)
+			if normCount <= 0 {
+				continue
+			}
+			for i := range teacherSummary {
+				if teacherSummary[i].ID == row.ID {
+					switch strings.ToLower(row.Status) {
+					case "izin":
+						teacherSummary[i].Izin = normCount
+					case "sakit":
+						teacherSummary[i].Sakit = normCount
+					case "alpha":
+						teacherSummary[i].Alpha = normCount
+					}
+					break
+				}
+			}
+		}
+		teacherCountsMap["Izin"] = 0
+		teacherCountsMap["Sakit"] = 0
+		teacherCountsMap["Alpha"] = 0
+		for _, t := range teacherSummary {
+			teacherCountsMap["Izin"] += t.Izin
+			teacherCountsMap["Sakit"] += t.Sakit
+			teacherCountsMap["Alpha"] += t.Alpha
+		}
+	}
+
 	// 2. Substitute History
 	type SubHistoryEntry struct {
 		ID                  uint      `json:"id"`
