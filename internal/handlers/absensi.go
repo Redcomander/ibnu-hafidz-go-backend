@@ -1945,6 +1945,9 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	for _, sc := range subCounts {
 		count := sc.Count
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		}
 		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, count)
 		for i, entry := range teacherSummary {
 			if entry.ID == sc.ID {
@@ -2068,7 +2071,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			formalSubstituteTotals[sc.ID] += sc.Count
+			formalSubstituteTotals[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
