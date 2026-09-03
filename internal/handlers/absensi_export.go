@@ -751,7 +751,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		subHistQ.Order("substitute_logs_diniyyah.date DESC").Scan(&substituteHistory)
 	}
 
-	// Calculate Global Counts
+	// Calculate Global Counts from the teacher summary itself, then re-normalize
+	// formal absence and substitute totals using session-aware math.
 	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Substitute": 0}
 	for _, t := range teacherSummary {
 		teacherCountsMap["Hadir"] += t.Hadir
@@ -819,21 +820,21 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		}
 	}
 
-	totalSub := 0
+	formalSubstituteTotals := map[uint]int{}
 	for _, sc := range subCounts {
 		count := 1
 		if !isDiniyyahAttendanceType(typeStr) {
 			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
 		}
-		if teacherID != "" {
-			tid := uint(0)
-			fmt.Sscanf(teacherID, "%d", &tid)
-			if sc.ID == tid {
-				totalSub += count
-			}
-		} else {
-			totalSub += count
-		}
+		formalSubstituteTotals[sc.ID] += count
+	}
+	for i := range teacherSummary {
+		teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
+	}
+
+	totalSub := 0
+	for _, count := range formalSubstituteTotals {
+		totalSub += count
 	}
 	teacherCountsMap["Substitute"] = totalSub
 
