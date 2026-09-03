@@ -1722,7 +1722,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	// ── Teacher Attendance ──
 	var teacherSummary []TeacherSummaryEntry
-	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Substitute": 0}
+	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Dinas": 0, "Substitute": 0}
 
 	// 1. Fetch Teacher Summary (Per-teacher counts)
 	summaryQ := h.db.Table("teacher_attendances ta").
@@ -1730,7 +1730,8 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Hadir' THEN 1 ELSE 0 END) as hadir, "+
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
-			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha").
+			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
+			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -1762,6 +1763,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		teacherCountsMap["Izin"] += t.Izin
 		teacherCountsMap["Sakit"] += t.Sakit
 		teacherCountsMap["Alpha"] += t.Alpha
+		teacherCountsMap["Dinas"] += t.Dinas
 	}
 
 	if !isDiniyyahAttendanceType(typeStr) {
@@ -1778,7 +1780,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
 		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
 		if teacherID != "" {
 			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
@@ -1798,7 +1800,11 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 				continue
 			}
 			if formalStatusTotals[row.ID] == nil {
-				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0}
+				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
+			}
+			if strings.EqualFold(row.Status, "Dinas Luar") {
+				formalStatusTotals[row.ID]["dinas"] += normCount
+				continue
 			}
 			formalStatusTotals[row.ID][strings.ToLower(row.Status)] += normCount
 		}
@@ -1807,19 +1813,23 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			teacherSummary[i].Izin = 0
 			teacherSummary[i].Sakit = 0
 			teacherSummary[i].Alpha = 0
+			teacherSummary[i].Dinas = 0
 			if totals, ok := formalStatusTotals[teacherSummary[i].ID]; ok {
 				teacherSummary[i].Izin = totals["izin"]
 				teacherSummary[i].Sakit = totals["sakit"]
 				teacherSummary[i].Alpha = totals["alpha"]
+				teacherSummary[i].Dinas = totals["dinas"]
 			}
 		}
 		teacherCountsMap["Izin"] = 0
 		teacherCountsMap["Sakit"] = 0
 		teacherCountsMap["Alpha"] = 0
+		teacherCountsMap["Dinas"] = 0
 		for _, t := range teacherSummary {
 			teacherCountsMap["Izin"] += t.Izin
 			teacherCountsMap["Sakit"] += t.Sakit
 			teacherCountsMap["Alpha"] += t.Alpha
+			teacherCountsMap["Dinas"] += t.Dinas
 		}
 	}
 
@@ -2011,7 +2021,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	for _, oc := range originalSubStatusCounts {
 		status := strings.TrimSpace(strings.ToLower(oc.Status))
-		if status != "izin" && status != "sakit" && status != "alpha" {
+		if status != "izin" && status != "sakit" && status != "alpha" && status != "dinas" && status != "dinas luar" {
 			continue
 		}
 		count := oc.Count
@@ -2055,6 +2065,9 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 		case "alpha":
 			entry.Alpha = count
 			teacherCountsMap["Alpha"] += count
+		case "dinas", "dinas luar":
+			entry.Dinas = count
+			teacherCountsMap["Dinas"] += count
 		}
 
 		teacherSummary = append(teacherSummary, entry)

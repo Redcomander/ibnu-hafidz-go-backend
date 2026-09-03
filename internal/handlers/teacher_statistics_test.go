@@ -39,6 +39,57 @@ func setupTeacherStatisticsSchema(t *testing.T, db *gorm.DB) {
 // teacher_attendances row) must still show up as a non-zero Substitute count for the
 // substitute teacher and a non-zero Izin count for the original absent teacher, for the
 // exact date range requested by the frontend.
+func TestGetTeacherStatisticsCountsDinasLuarAsDinas(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+	setupTeacherStatisticsSchema(t, db)
+
+	if err := db.Exec(`INSERT INTO users (id, name) VALUES (1, 'Original Teacher')`).Error; err != nil {
+		t.Fatalf("seed original teacher: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO users (id, name) VALUES (2, 'Substitute Teacher')`).Error; err != nil {
+		t.Fatalf("seed substitute teacher: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO jadwal_formal (id, lesson_kelas_teacher_id, hari, jam_mulai, jam_selesai) VALUES (10, 1, 'Senin', '08:00:00', '09:30:00')`).Error; err != nil {
+		t.Fatalf("seed schedule: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO substitute_logs (jadwal_formal_id, original_teacher_id, substitute_teacher_id, date, status, reason) VALUES (10, 1, 2, '2026-09-03', 'Dinas Luar', 'Kegiatan dinas')`).Error; err != nil {
+		t.Fatalf("seed substitute log: %v", err)
+	}
+
+	handler := NewAbsensiHandler(db)
+	app := fiber.New()
+	app.Get("/attendance/teacher-statistics", handler.GetTeacherStatistics)
+
+	req := httptest.NewRequest(http.MethodGet, "/attendance/teacher-statistics?type=formal&start_date=2026-09-01&end_date=2026-09-30", nil)
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	var payload struct {
+		TeacherCounts map[string]int `json:"teacher_counts"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if payload.TeacherCounts["Dinas"] != 2 {
+		t.Fatalf("expected Dinas count 2, got %d (payload: %+v)", payload.TeacherCounts["Dinas"], payload.TeacherCounts)
+	}
+	if payload.TeacherCounts["Izin"] != 0 {
+		t.Fatalf("expected Izin count 0 when status is Dinas Luar, got %d (payload: %+v)", payload.TeacherCounts["Izin"], payload.TeacherCounts)
+	}
+	if payload.TeacherCounts["Substitute"] != 2 {
+		t.Fatalf("expected Substitute count 2, got %d (payload: %+v)", payload.TeacherCounts["Substitute"], payload.TeacherCounts)
+	}
+}
+
 func TestGetTeacherStatisticsCountsSubstituteAndIzinFromLogOnly(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

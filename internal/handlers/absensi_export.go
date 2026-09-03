@@ -558,7 +558,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Hadir' THEN 1 ELSE 0 END) as hadir, "+
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
-			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha").
+			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
+			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -685,6 +686,62 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	}
 
 	// 2. Fetch Substitute History
+	if !isDiniyyahAttendanceType(typeStr) {
+		var formalStatusRows []struct {
+			ID         uint
+			Status     string
+			JamMulai   string
+			JamSelesai string
+			Count      int
+		}
+		rawStatusQ := h.db.Table("teacher_attendances ta").
+			Select("ta.user_id as id, ta.status, COALESCE(jf.jam_mulai, '-') as jam_mulai, COALESCE(jf.jam_selesai, '-') as jam_selesai, count(*) as count").
+			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_formal_id IS NOT NULL").
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
+		if teacherID != "" {
+			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN users u ON u.id = ta.user_id").Where("u.gender = ?", gender)
+		}
+		if kelasID != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").Where("lkt.kelas_id = ?", kelasID)
+		}
+		rawStatusQ.Group("ta.user_id, ta.status, COALESCE(jf.jam_mulai, '-'), COALESCE(jf.jam_selesai, '-')").Scan(&formalStatusRows)
+
+		formalStatusTotals := map[uint]map[string]int{}
+		for _, row := range formalStatusRows {
+			normCount := normalizeFormalTeacherStatusCount(row.Status, row.Count, row.JamMulai, row.JamSelesai)
+			if normCount <= 0 {
+				continue
+			}
+			if formalStatusTotals[row.ID] == nil {
+				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
+			}
+			if strings.EqualFold(row.Status, "Dinas Luar") {
+				formalStatusTotals[row.ID]["dinas"] += normCount
+				continue
+			}
+			formalStatusTotals[row.ID][strings.ToLower(row.Status)] += normCount
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Izin = 0
+			teacherSummary[i].Sakit = 0
+			teacherSummary[i].Alpha = 0
+			teacherSummary[i].Dinas = 0
+			if totals, ok := formalStatusTotals[teacherSummary[i].ID]; ok {
+				teacherSummary[i].Izin = totals["izin"]
+				teacherSummary[i].Sakit = totals["sakit"]
+				teacherSummary[i].Alpha = totals["alpha"]
+				teacherSummary[i].Dinas = totals["dinas"]
+			}
+		}
+	}
+
 	type SubHistoryEntry struct {
 		Date              time.Time
 		Lesson            string
@@ -815,7 +872,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	// teacher_attendances row) on top of the session-aware totals computed above.
 	for _, oc := range originalSubStatusCounts {
 		status := strings.TrimSpace(strings.ToLower(oc.Status))
-		if status != "izin" && status != "sakit" && status != "alpha" {
+		if status != "izin" && status != "sakit" && status != "alpha" && status != "dinas" && status != "dinas luar" {
 			continue
 		}
 		count := 1
@@ -830,6 +887,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			teacherCountsMap["Sakit"] += count
 		case "alpha":
 			teacherCountsMap["Alpha"] += count
+		case "dinas", "dinas luar":
+			teacherCountsMap["Dinas"] += count
 		}
 	}
 
@@ -884,11 +943,12 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	pdf.SetFont("Arial", "B", 12)
 	pdf.CellFormat(0, 10, "Ringkasan Total", "", 1, "L", false, 0, "")
 	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(0, 7, fmt.Sprintf("Total\n%d", teacherCountsMap["Hadir"]+teacherCountsMap["Izin"]+teacherCountsMap["Sakit"]+teacherCountsMap["Alpha"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Total\n%d", teacherCountsMap["Hadir"]+teacherCountsMap["Izin"]+teacherCountsMap["Sakit"]+teacherCountsMap["Alpha"]+teacherCountsMap["Dinas"]), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 7, fmt.Sprintf("Hadir\n%d", teacherCountsMap["Hadir"]), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 7, fmt.Sprintf("Izin\n%d", teacherCountsMap["Izin"]), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 7, fmt.Sprintf("Sakit\n%d", teacherCountsMap["Sakit"]), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 7, fmt.Sprintf("Alpha\n%d", teacherCountsMap["Alpha"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Dinas\n%d", teacherCountsMap["Dinas"]), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 7, fmt.Sprintf("Substitute\n%d", teacherCountsMap["Substitute"]), "", 1, "L", false, 0, "")
 	pdf.Ln(5)
 
@@ -897,24 +957,26 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	pdf.CellFormat(0, 10, "Rekapan Per Guru", "", 1, "L", false, 0, "")
 
 	pdf.SetFont("Arial", "B", 10)
-	// Headers: No | Nama Guru | H | I | S | A | Sub
+	// Headers: No | Nama Guru | H | I | S | A | D | Sub
 	pdf.CellFormat(10, 8, "No", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(90, 8, "Nama Guru", "1", 0, "L", false, 0, "")
-	pdf.CellFormat(15, 8, "Hadir", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(15, 8, "Izin", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(15, 8, "Sakit", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(15, 8, "Alpha", "1", 0, "C", false, 0, "")
-	pdf.CellFormat(20, 8, "Substitute", "1", 1, "C", false, 0, "")
+	pdf.CellFormat(80, 8, "Nama Guru", "1", 0, "L", false, 0, "")
+	pdf.CellFormat(12, 8, "H", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(12, 8, "I", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(12, 8, "S", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(12, 8, "A", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(15, 8, "Dinas", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(18, 8, "Sub", "1", 1, "C", false, 0, "")
 
 	pdf.SetFont("Arial", "", 10)
 	for i, t := range teacherSummary {
 		pdf.CellFormat(10, 8, fmt.Sprintf("%d", i+1), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(90, 8, truncStr(t.Name, 40), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(15, 8, fmt.Sprintf("%d", t.Hadir), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(15, 8, fmt.Sprintf("%d", t.Izin), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(15, 8, fmt.Sprintf("%d", t.Sakit), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(15, 8, fmt.Sprintf("%d", t.Alpha), "1", 0, "C", false, 0, "")
-		pdf.CellFormat(20, 8, fmt.Sprintf("%d", t.Substitute), "1", 1, "C", false, 0, "")
+		pdf.CellFormat(80, 8, truncStr(t.Name, 40), "1", 0, "L", false, 0, "")
+		pdf.CellFormat(12, 8, fmt.Sprintf("%d", t.Hadir), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(12, 8, fmt.Sprintf("%d", t.Izin), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(12, 8, fmt.Sprintf("%d", t.Sakit), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(12, 8, fmt.Sprintf("%d", t.Alpha), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(15, 8, fmt.Sprintf("%d", t.Dinas), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(18, 8, fmt.Sprintf("%d", t.Substitute), "1", 1, "C", false, 0, "")
 	}
 
 	pdf.Ln(10)
