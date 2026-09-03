@@ -9,6 +9,7 @@ import (
 // RevitalisasiTukang stores worker master data for the SMA revitalization project.
 type RevitalisasiTukang struct {
 	ID        uint           `gorm:"primaryKey" json:"id"`
+	Jenis     string         `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Name      string         `gorm:"size:150;not null" json:"name"`
 	Divisi    string         `gorm:"size:150" json:"divisi"`
 	Area      string         `gorm:"size:150" json:"area"`
@@ -27,6 +28,7 @@ func (RevitalisasiTukang) TableName() string { return "revitalisasi_tukang" }
 // RevitalisasiAbsenTukang stores daily attendance for workers.
 type RevitalisasiAbsenTukang struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
+	Jenis     string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Tanggal   time.Time `gorm:"type:date;not null;index" json:"tanggal"`
 	TukangID  uint      `gorm:"not null;index" json:"tukang_id"`
 	Status    string    `gorm:"size:20;not null;default:hadir" json:"status"`
@@ -43,6 +45,7 @@ func (RevitalisasiAbsenTukang) TableName() string { return "revitalisasi_absen_t
 // RevitalisasiNotaMaterial tracks supplier notes and incoming material receipts.
 type RevitalisasiNotaMaterial struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
+	Jenis      string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Tanggal    time.Time `gorm:"type:date;not null;index" json:"tanggal"`
 	NomorNota  string    `gorm:"size:80;not null;index" json:"nomor_nota"`
 	Supplier   string    `gorm:"size:150;not null" json:"supplier"`
@@ -58,6 +61,7 @@ func (RevitalisasiNotaMaterial) TableName() string { return "revitalisasi_nota_m
 // RevitalisasiNotaMasuk stores cash-in notes for the revitalization project.
 type RevitalisasiNotaMasuk struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
+	Jenis      string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Tanggal    time.Time `gorm:"type:date;not null;index" json:"tanggal"`
 	NomorNota  string    `gorm:"size:80;not null;index" json:"nomor_nota"`
 	Sumber     string    `gorm:"size:150;not null" json:"sumber"`
@@ -73,6 +77,7 @@ func (RevitalisasiNotaMasuk) TableName() string { return "revitalisasi_nota_masu
 // RevitalisasiMaterialDatang stores incoming material records by item.
 type RevitalisasiMaterialDatang struct {
 	ID                   uint      `gorm:"primaryKey" json:"id"`
+	Jenis                string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Tanggal              time.Time `gorm:"type:date;not null;index" json:"tanggal"`
 	NamaMaterial         string    `gorm:"size:150;not null" json:"nama_material"`
 	Supplier             string    `gorm:"size:150" json:"supplier"`
@@ -92,6 +97,7 @@ func (RevitalisasiMaterialDatang) TableName() string { return "revitalisasi_mate
 // RevitalisasiProgresPembangunan stores area progress and visual documentation.
 type RevitalisasiProgresPembangunan struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
+	Jenis      string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Tanggal    time.Time `gorm:"type:date;not null;index" json:"tanggal"`
 	NamaArea   string    `gorm:"size:150;not null" json:"nama_area"`
 	Persentase int       `gorm:"not null;default:0" json:"persentase"`
@@ -106,6 +112,7 @@ func (RevitalisasiProgresPembangunan) TableName() string { return "revitalisasi_
 // RevitalisasiPrioritas stores the project priority list shown on the dashboard.
 type RevitalisasiPrioritas struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
+	Jenis     string    `gorm:"size:20;not null;default:sma;index" json:"jenis"`
 	Judul     string    `gorm:"size:150;not null" json:"judul"`
 	Deskripsi string    `gorm:"type:text" json:"deskripsi"`
 	Tingkat   string    `gorm:"size:30;default:medium" json:"tingkat"`

@@ -1,6 +1,9 @@
 package handlers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeStatus(t *testing.T) {
 	cases := map[string]string{
@@ -16,6 +19,27 @@ func TestNormalizeStatus(t *testing.T) {
 	for input, want := range cases {
 		if got := normalizeStatus(input); got != want {
 			t.Fatalf("normalizeStatus(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestResolveRevitalisasiJenis(t *testing.T) {
+	cases := map[string]string{
+		"/revitalisasi/tukang":               "sma",
+		"/revitalisasi-smp/tukang":           "smp",
+		"/revitalisasi/tukang?jenis=smp":     "smp",
+		"/revitalisasi/tukang?jenis=unknown": "sma",
+	}
+
+	for input, want := range cases {
+		path := input
+		query := ""
+		if idx := strings.Index(input, "?jenis="); idx >= 0 {
+			path = input[:idx]
+			query = input[idx+7:]
+		}
+		if got := resolveRevitalisasiJenis(path, query); got != want {
+			t.Fatalf("resolveRevitalisasiJenis(%q, %q) = %q, want %q", path, query, got, want)
 		}
 	}
 }

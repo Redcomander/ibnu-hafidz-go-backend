@@ -49,6 +49,19 @@ func normalizeStatus(raw string) string {
 	}
 }
 
+func resolveRevitalisasiJenis(path string, queryValue string) string {
+	query := strings.ToLower(strings.TrimSpace(queryValue))
+	switch query {
+	case "smp", "sma":
+		return query
+	}
+	lowerPath := strings.ToLower(strings.TrimSpace(path))
+	if strings.Contains(lowerPath, "/revitalisasi-smp") {
+		return "smp"
+	}
+	return "sma"
+}
+
 func isAllowedImageExtension(ext string) bool {
 	ext = strings.ToLower(strings.TrimSpace(ext))
 	switch ext {
@@ -349,9 +362,10 @@ func (h *RevitalisasiHandler) processImage(module string, file *multipart.FileHe
 // ============ Tukang ============
 
 func (h *RevitalisasiHandler) ListTukang(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	search := strings.TrimSpace(c.Query("search"))
 	statusFilter := strings.TrimSpace(c.Query("status"))
-	query := h.db.Model(&models.RevitalisasiTukang{}).Order("updated_at desc")
+	query := h.db.Model(&models.RevitalisasiTukang{}).Where("jenis = ?", jenis).Order("updated_at desc")
 	if search != "" {
 		like := "%" + search + "%"
 		query = query.Where("name LIKE ? OR divisi LIKE ? OR area LIKE ? OR phone LIKE ?", like, like, like, like)
@@ -375,6 +389,7 @@ func (h *RevitalisasiHandler) CreateTukang(c *fiber.Ctx) error {
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
 	}
+	payload.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
 	payload.Name = strings.TrimSpace(payload.Name)
 	payload.Divisi = strings.TrimSpace(payload.Divisi)
 	payload.Area = strings.TrimSpace(payload.Area)
@@ -400,6 +415,11 @@ func (h *RevitalisasiHandler) UpdateTukang(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
 	}
 
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
+	}
 	item.Name = strings.TrimSpace(payload.Name)
 	item.Divisi = strings.TrimSpace(payload.Divisi)
 	item.Area = strings.TrimSpace(payload.Area)
@@ -430,12 +450,13 @@ func (h *RevitalisasiHandler) DeleteTukang(c *fiber.Ctx) error {
 // ============ Absen Tukang ============
 
 func (h *RevitalisasiHandler) ListAbsenTukang(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	dateFrom := c.Query("date_from")
 	dateTo := c.Query("date_to")
 	status := strings.TrimSpace(c.Query("status"))
 	search := strings.TrimSpace(c.Query("search"))
 
-	query := h.db.Model(&models.RevitalisasiAbsenTukang{}).Preload("Tukang")
+	query := h.db.Model(&models.RevitalisasiAbsenTukang{}).Where("revitalisasi_absen_tukang.jenis = ?", jenis).Preload("Tukang")
 	if dateFrom != "" {
 		if t, err := safeDateString(dateFrom); err == nil {
 			query = query.Where("tanggal >= ?", t)
@@ -510,6 +531,7 @@ func (h *RevitalisasiHandler) CreateAbsenTukang(c *fiber.Ctx) error {
 	}
 
 	item := models.RevitalisasiAbsenTukang{
+		Jenis:    resolveRevitalisasiJenis(c.Path(), ""),
 		Tanggal:  dateValue,
 		TukangID: payload.TukangID,
 		Status:   normalizeStatus(payload.Status),
@@ -629,8 +651,9 @@ func (h *RevitalisasiHandler) DeleteAbsenTukang(c *fiber.Ctx) error {
 // ============ Nota Material ============
 
 func (h *RevitalisasiHandler) ListNotaMaterial(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	search := strings.TrimSpace(c.Query("search"))
-	query := h.db.Model(&models.RevitalisasiNotaMaterial{}).Order("tanggal desc, id desc")
+	query := h.db.Model(&models.RevitalisasiNotaMaterial{}).Where("jenis = ?", jenis).Order("tanggal desc, id desc")
 	if search != "" {
 		like := "%" + search + "%"
 		query = query.Where("nomor_nota LIKE ? OR supplier LIKE ? OR keterangan LIKE ?", like, like, like)
@@ -651,6 +674,7 @@ func (h *RevitalisasiHandler) CreateNotaMaterial(c *fiber.Ctx) error {
 		payload.Keterangan = h.getMultipartValue(c, "keterangan")
 		payload.TotalNilai = h.getMultipartFloat(c, "total_nilai")
 	}
+	payload.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
 	if payload.Tanggal.IsZero() || payload.NomorNota == "" || payload.Supplier == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal, nomor nota, dan supplier wajib diisi"})
 	}
@@ -684,6 +708,11 @@ func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 		payload.Supplier = h.getMultipartValue(c, "supplier")
 		payload.Keterangan = h.getMultipartValue(c, "keterangan")
 		payload.TotalNilai = h.getMultipartFloat(c, "total_nilai")
+	}
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
 	}
 	if payload.NomorNota != "" {
 		item.NomorNota = strings.TrimSpace(payload.NomorNota)
@@ -728,8 +757,9 @@ func (h *RevitalisasiHandler) DeleteNotaMaterial(c *fiber.Ctx) error {
 // ============ Nota Masuk ============
 
 func (h *RevitalisasiHandler) ListNotaMasuk(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	search := strings.TrimSpace(c.Query("search"))
-	query := h.db.Model(&models.RevitalisasiNotaMasuk{}).Order("tanggal desc, id desc")
+	query := h.db.Model(&models.RevitalisasiNotaMasuk{}).Where("jenis = ?", jenis).Order("tanggal desc, id desc")
 	if search != "" {
 		like := "%" + search + "%"
 		query = query.Where("nomor_nota LIKE ? OR sumber LIKE ? OR keterangan LIKE ?", like, like, like)
@@ -752,6 +782,7 @@ func (h *RevitalisasiHandler) CreateNotaMasuk(c *fiber.Ctx) error {
 		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
 		payload.Keterangan = h.getMultipartValue(c, "keterangan")
 	}
+	payload.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
 	if payload.Tanggal.IsZero() || payload.NomorNota == "" || payload.Sumber == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal, nomor nota, dan sumber wajib diisi"})
 	}
@@ -786,6 +817,11 @@ func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 		payload.Sumber = h.getMultipartValue(c, "sumber")
 		payload.Jumlah = h.getMultipartFloat(c, "jumlah")
 		payload.Keterangan = h.getMultipartValue(c, "keterangan")
+	}
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
 	}
 	if payload.NomorNota != "" {
 		item.NomorNota = strings.TrimSpace(payload.NomorNota)
@@ -830,8 +866,9 @@ func (h *RevitalisasiHandler) DeleteNotaMasuk(c *fiber.Ctx) error {
 // ============ Material Datang ============
 
 func (h *RevitalisasiHandler) ListMaterialDatang(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	search := strings.TrimSpace(c.Query("search"))
-	query := h.db.Model(&models.RevitalisasiMaterialDatang{}).Order("tanggal desc, id desc")
+	query := h.db.Model(&models.RevitalisasiMaterialDatang{}).Where("jenis = ?", jenis).Order("tanggal desc, id desc")
 	if search != "" {
 		like := "%" + search + "%"
 		query = query.Where("nama_material LIKE ? OR supplier LIKE ? OR catatan LIKE ?", like, like, like)
@@ -869,6 +906,7 @@ func (h *RevitalisasiHandler) CreateMaterialDatang(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal dan nama material wajib diisi"})
 	}
 	item := models.RevitalisasiMaterialDatang{
+		Jenis:                resolveRevitalisasiJenis(c.Path(), ""),
 		Tanggal:              dateValue,
 		NamaMaterial:         strings.TrimSpace(payload.NamaMaterial),
 		Supplier:             strings.TrimSpace(payload.Supplier),
@@ -905,6 +943,7 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Material tidak ditemukan"})
 	}
 	var payload struct {
+		Jenis                string  `form:"jenis" json:"jenis"`
 		Tanggal              string  `form:"tanggal" json:"tanggal"`
 		NamaMaterial         string  `form:"nama_material" json:"nama_material"`
 		Supplier             string  `form:"supplier" json:"supplier"`
@@ -923,6 +962,11 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 		payload.Catatan = h.getMultipartValue(c, "catatan")
 		payload.NomorNotaPengeluaran = h.getMultipartValue(c, "nomor_nota_pengeluaran")
 		payload.TotalPengeluaran = h.getMultipartFloat(c, "total_pengeluaran")
+	}
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
 	}
 	if payload.NamaMaterial != "" {
 		item.NamaMaterial = strings.TrimSpace(payload.NamaMaterial)
@@ -991,8 +1035,9 @@ func (h *RevitalisasiHandler) DeleteMaterialDatang(c *fiber.Ctx) error {
 // ============ Progres Pembangunan ============
 
 func (h *RevitalisasiHandler) ListProgresPembangunan(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	search := strings.TrimSpace(c.Query("search"))
-	query := h.db.Model(&models.RevitalisasiProgresPembangunan{}).Order("tanggal desc, id desc")
+	query := h.db.Model(&models.RevitalisasiProgresPembangunan{}).Where("jenis = ?", jenis).Order("tanggal desc, id desc")
 	if search != "" {
 		like := "%" + search + "%"
 		query = query.Where("nama_area LIKE ? OR catatan LIKE ?", like, like)
@@ -1014,6 +1059,7 @@ func (h *RevitalisasiHandler) CreateProgresPembangunan(c *fiber.Ctx) error {
 		payload.Persentase = h.getMultipartInt(c, "persentase")
 		payload.Catatan = h.getMultipartValue(c, "catatan")
 	}
+	payload.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
 	if payload.Tanggal.IsZero() || strings.TrimSpace(payload.NamaArea) == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "Tanggal dan area wajib diisi"})
 	}
@@ -1049,6 +1095,11 @@ func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 		payload.NamaArea = h.getMultipartValue(c, "nama_area")
 		payload.Persentase = h.getMultipartInt(c, "persentase")
 		payload.Catatan = h.getMultipartValue(c, "catatan")
+	}
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
 	}
 	if payload.NamaArea != "" {
 		item.NamaArea = strings.TrimSpace(payload.NamaArea)
@@ -1090,7 +1141,8 @@ func (h *RevitalisasiHandler) DeleteProgresPembangunan(c *fiber.Ctx) error {
 // ============ Prioritas Dashboard ============
 
 func (h *RevitalisasiHandler) ListPrioritas(c *fiber.Ctx) error {
-	query := h.db.Model(&models.RevitalisasiPrioritas{}).Order("urutan asc, id asc")
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
+	query := h.db.Model(&models.RevitalisasiPrioritas{}).Where("jenis = ?", jenis).Order("urutan asc, id asc")
 	var items []models.RevitalisasiPrioritas
 	if err := query.Find(&items).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
@@ -1103,6 +1155,7 @@ func (h *RevitalisasiHandler) CreatePrioritas(c *fiber.Ctx) error {
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
 	}
+	payload.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
 	payload.Judul = strings.TrimSpace(payload.Judul)
 	payload.Deskripsi = strings.TrimSpace(payload.Deskripsi)
 	payload.Tingkat = strings.TrimSpace(payload.Tingkat)
@@ -1127,6 +1180,11 @@ func (h *RevitalisasiHandler) UpdatePrioritas(c *fiber.Ctx) error {
 	var payload models.RevitalisasiPrioritas
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "bad_request", Message: "Invalid payload"})
+	}
+	if payload.Jenis != "" {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), payload.Jenis)
+	} else {
+		item.Jenis = resolveRevitalisasiJenis(c.Path(), item.Jenis)
 	}
 	if payload.Judul != "" {
 		item.Judul = strings.TrimSpace(payload.Judul)
