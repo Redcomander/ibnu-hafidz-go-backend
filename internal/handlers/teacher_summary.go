@@ -17,6 +17,33 @@ type TeacherSummaryEntry struct {
 	Substitute int    `json:"substitute"`
 }
 
+type formalSessionCountRow struct {
+	Status    string
+	StartTime string
+	EndTime   string
+}
+
+func countFormalSessionUnits(rows []formalSessionCountRow) map[string]int {
+	counts := map[string]int{"Izin": 0, "Sakit": 0, "Alpha": 0, "Substitute": 0}
+	for _, row := range rows {
+		status := strings.TrimSpace(strings.ToLower(row.Status))
+		if status == "" || status == "hadir" {
+			continue
+		}
+		switch status {
+		case "izin":
+			counts["Izin"] += substituteSessionCount(row.StartTime, row.EndTime)
+		case "sakit":
+			counts["Sakit"] += substituteSessionCount(row.StartTime, row.EndTime)
+		case "alpha":
+			counts["Alpha"] += substituteSessionCount(row.StartTime, row.EndTime)
+		case "substitute":
+			counts["Substitute"] += substituteSessionCount(row.StartTime, row.EndTime)
+		}
+	}
+	return counts
+}
+
 func substituteSessionCount(startTime, endTime string) int {
 	start := normalizeSubstituteTime(startTime)
 	end := normalizeSubstituteTime(endTime)

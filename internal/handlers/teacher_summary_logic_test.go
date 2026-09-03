@@ -56,3 +56,26 @@ func TestSessionCountFromTimeRangeCountsAcrossMorningBreak(t *testing.T) {
 		}
 	}
 }
+
+func TestCountFormalSessionUnitsUsesSessionBasedTotals(t *testing.T) {
+	rows := []formalSessionCountRow{
+		{Status: "Izin", StartTime: "08:00", EndTime: "09:30"},
+		{Status: "Sakit", StartTime: "10:00", EndTime: "11:30"},
+		{Status: "Alpha", StartTime: "08:15", EndTime: "08:45"},
+		{Status: "Hadir", StartTime: "08:00", EndTime: "09:30"},
+	}
+
+	got := countFormalSessionUnits(rows)
+	if got["Izin"] != 2 {
+		t.Fatalf("expected Izin session total to be 2, got %d", got["Izin"])
+	}
+	if got["Sakit"] != 2 {
+		t.Fatalf("expected Sakit session total to be 2, got %d", got["Sakit"])
+	}
+	if got["Alpha"] != 1 {
+		t.Fatalf("expected Alpha session total to be 1, got %d", got["Alpha"])
+	}
+	if got["Hadir"] != 0 {
+		t.Fatalf("expected Hadir to be excluded from session totals, got %d", got["Hadir"])
+	}
+}
