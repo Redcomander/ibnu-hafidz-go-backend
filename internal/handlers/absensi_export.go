@@ -530,6 +530,437 @@ func (h *AbsensiHandler) getMissingTeacherAttendanceRows(typeStr, startDate, end
 	return rows, err
 }
 
+// ── ExportTeacherStatisticsExcel exports teacher statistics to an .xlsx file ──
+func (h *AbsensiHandler) ExportTeacherStatisticsExcel(c *fiber.Ctx) error {
+	typeStr := c.Query("type", "formal")
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+	teacherID := c.Query("teacher_id")
+	gender := c.Query("gender")
+	kelasID := c.Query("kelas_id")
+
+	if startDate == "" {
+		now := time.Now().In(jakartaLocation())
+		startDate = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format("2006-01-02")
+	}
+	if endDate == "" {
+		endDate = time.Now().In(jakartaLocation()).Format("2006-01-02")
+	}
+
+	endT, _ := time.Parse("2006-01-02", endDate)
+	endExclusive := endT.AddDate(0, 0, 1).Format("2006-01-02")
+
+	var teacherSummary []TeacherSummaryEntry
+	summaryQ := h.db.Table("teacher_attendances ta").
+		Select("u.id, u.name, u.foto_guru as avatar, "+
+			"SUM(CASE WHEN ta.status = 'Hadir' THEN 1 ELSE 0 END) as hadir, "+
+			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
+			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
+			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
+			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
+		Joins("JOIN users u ON u.id = ta.user_id").
+		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+		Where("ta.deleted_at IS NULL")
+
+	if isDiniyyahAttendanceType(typeStr) {
+		summaryQ = summaryQ.Where("ta.jadwal_diniyyah_id IS NOT NULL")
+		if kelasID != "" {
+			summaryQ = summaryQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = ta.jadwal_diniyyah_id").
+				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+				Where("dkt.kelas_id = ?", kelasID)
+		}
+	} else {
+		summaryQ = summaryQ.Where("ta.jadwal_formal_id IS NOT NULL").Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id")
+		summaryQ = applyFormalScheduleTypeFilter(summaryQ, "jf", typeStr)
+	}
+	if teacherID != "" {
+		summaryQ = summaryQ.Where("ta.user_id = ?", teacherID)
+	}
+	if gender != "" {
+		summaryQ = summaryQ.Where("u.gender = ?", gender)
+	}
+	summaryQ.Group("u.id, u.name, u.foto_guru").Scan(&teacherSummary)
+
+	type SubCount struct {
+		ID     uint
+		Name   string
+		Avatar string
+		Count  int
+	}
+	var subCounts []SubCount
+	if isDiniyyahAttendanceType(typeStr) {
+		subQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
+		if kelasID != "" {
+			subQ = subQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+				Where("dkt.kelas_id = ?", kelasID)
+		}
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs_diniyyah.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
+	} else {
+		subQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, count(*) as count").
+			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
+		if teacherID != "" {
+			subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			subQ = subQ.Where("u.gender = ?", gender)
+		}
+		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru").Scan(&subCounts)
+	}
+
+	for _, sc := range subCounts {
+		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, sc.Count*2)
+	}
+
+	type OriginalSubStatusCount struct {
+		ID         uint
+		Name       string
+		Avatar     string
+		Status     string
+		JamMulai   string
+		JamSelesai string
+		Count      int
+	}
+	var originalSubStatusCounts []OriginalSubStatusCount
+	if isDiniyyahAttendanceType(typeStr) {
+		origQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.status, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai").
+			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.original_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
+		if kelasID != "" {
+			origQ = origQ.Joins("JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+				Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+				Where("dkt.kelas_id = ?", kelasID)
+		}
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs_diniyyah.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Scan(&originalSubStatusCounts)
+	} else {
+		origQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.original_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs.status, COALESCE(substitute_logs.jam_mulai, jf.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jf.jam_selesai) as jam_selesai").
+			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL").
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
+		if teacherID != "" {
+			origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
+		}
+		if gender != "" {
+			origQ = origQ.Where("u.gender = ?", gender)
+		}
+		origQ.Scan(&originalSubStatusCounts)
+	}
+
+	type SubHistoryEntry struct {
+		Date              time.Time
+		Lesson            string
+		Kelas             string
+		OriginalTeacher   string
+		OriginalStatus    string
+		SubstituteTeacher string
+		Reason            string
+	}
+	var substituteHistory []SubHistoryEntry
+	if !isDiniyyahAttendanceType(typeStr) {
+		subHistQ := h.db.Table("substitute_logs").
+			Select("substitute_logs.date, lessons.nama as lesson, CONCAT(kelas.nama, ' ', kelas.tingkat) as kelas, "+
+				"original.name as original_teacher, substitute_logs.status as original_status, "+
+				"substitute.name as substitute_teacher, substitute_logs.reason").
+			Joins("JOIN jadwal_formal ON jadwal_formal.id = substitute_logs.jadwal_formal_id").
+			Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
+			Joins("JOIN lessons ON lessons.id = lkt.lesson_id").
+			Joins("JOIN kelas ON kelas.id = lkt.kelas_id").
+			Joins("JOIN users original ON original.id = substitute_logs.original_teacher_id").
+			Joins("JOIN users substitute ON substitute.id = substitute_logs.substitute_teacher_id").
+			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
+			Where("substitute_logs.deleted_at IS NULL")
+		subHistQ = applyFormalScheduleTypeFilter(subHistQ, "jadwal_formal", typeStr)
+		if teacherID != "" {
+			subHistQ = subHistQ.Where("(substitute_logs.original_teacher_id = ? OR substitute_logs.substitute_teacher_id = ?)", teacherID, teacherID)
+		}
+		if gender != "" {
+			subHistQ = subHistQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
+		}
+		subHistQ.Order("substitute_logs.date DESC").Scan(&substituteHistory)
+	} else {
+		subHistQ := h.db.Table("substitute_logs_diniyyah").
+			Select("substitute_logs_diniyyah.date, COALESCE(sdls.lesson, diniyyah_lessons.nama, '-') as lesson, COALESCE(sdls.kelas, CONCAT(kelas.nama, ' ', kelas.tingkat), '-') as kelas, "+
+				"COALESCE(sdls.original_teacher, original.name, '-') as original_teacher, substitute_logs_diniyyah.status as original_status, "+
+				"substitute.name as substitute_teacher, substitute_logs_diniyyah.reason").
+			Joins("LEFT JOIN substitute_diniyyah_log_snapshots sdls ON sdls.substitute_diniyyah_log_id = substitute_logs_diniyyah.id").
+			Joins("LEFT JOIN jadwal_diniyyahs jd ON jd.id = substitute_logs_diniyyah.jadwal_diniyyah_id").
+			Joins("LEFT JOIN diniyyah_kelas_teachers dkt ON dkt.id = jd.diniyyah_kelas_teacher_id").
+			Joins("LEFT JOIN diniyyah_lessons ON diniyyah_lessons.id = dkt.diniyyah_lesson_id").
+			Joins("LEFT JOIN kelas ON kelas.id = dkt.kelas_id").
+			Joins("LEFT JOIN users original ON original.id = substitute_logs_diniyyah.original_teacher_id").
+			Joins("JOIN users substitute ON substitute.id = substitute_logs_diniyyah.substitute_teacher_id").
+			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
+		if teacherID != "" {
+			subHistQ = subHistQ.Where("(substitute_logs_diniyyah.original_teacher_id = ? OR substitute_logs_diniyyah.substitute_teacher_id = ?)", teacherID, teacherID)
+		}
+		if gender != "" {
+			subHistQ = subHistQ.Where("(original.gender = ? OR substitute.gender = ?)", gender, gender)
+		}
+		if kelasID != "" {
+			subHistQ = subHistQ.Where("dkt.kelas_id = ?", kelasID)
+		}
+		subHistQ.Order("substitute_logs_diniyyah.date DESC").Scan(&substituteHistory)
+	}
+
+	if !isDiniyyahAttendanceType(typeStr) {
+		var formalStatusRows []struct {
+			ID         uint
+			Status     string
+			JamMulai   string
+			JamSelesai string
+			Count      int
+		}
+		rawStatusQ := h.db.Table("teacher_attendances ta").
+			Select("ta.user_id as id, ta.status, COALESCE(jf.jam_mulai, '-') as jam_mulai, COALESCE(jf.jam_selesai, '-') as jam_selesai, count(*) as count").
+			Joins("JOIN jadwal_formal jf ON jf.id = ta.jadwal_formal_id").
+			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
+			Where("ta.deleted_at IS NULL").
+			Where("ta.jadwal_formal_id IS NOT NULL").
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
+		if teacherID != "" {
+			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
+		}
+		if gender != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN users u ON u.id = ta.user_id").Where("u.gender = ?", gender)
+		}
+		if kelasID != "" {
+			rawStatusQ = rawStatusQ.Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jf.lesson_kelas_teacher_id").Where("lkt.kelas_id = ?", kelasID)
+		}
+		rawStatusQ.Group("ta.user_id, ta.status, COALESCE(jf.jam_mulai, '-'), COALESCE(jf.jam_selesai, '-')").Scan(&formalStatusRows)
+
+		formalStatusTotals := map[uint]map[string]int{}
+		for _, row := range formalStatusRows {
+			normCount := normalizeFormalTeacherStatusCount(row.Status, row.Count, row.JamMulai, row.JamSelesai)
+			if normCount <= 0 {
+				continue
+			}
+			if formalStatusTotals[row.ID] == nil {
+				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
+			}
+			if strings.EqualFold(row.Status, "Dinas Luar") {
+				formalStatusTotals[row.ID]["dinas"] += normCount
+				continue
+			}
+			formalStatusTotals[row.ID][strings.ToLower(row.Status)] += normCount
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Izin = 0
+			teacherSummary[i].Sakit = 0
+			teacherSummary[i].Alpha = 0
+			teacherSummary[i].Dinas = 0
+			if totals, ok := formalStatusTotals[teacherSummary[i].ID]; ok {
+				teacherSummary[i].Izin = totals["izin"]
+				teacherSummary[i].Sakit = totals["sakit"]
+				teacherSummary[i].Alpha = totals["alpha"]
+				teacherSummary[i].Dinas = totals["dinas"]
+			}
+		}
+	}
+
+	for _, oc := range originalSubStatusCounts {
+		status := strings.TrimSpace(strings.ToLower(oc.Status))
+		if status != "izin" && status != "sakit" && status != "alpha" && status != "dinas" && status != "dinas luar" {
+			continue
+		}
+		count := 1
+		if !isDiniyyahAttendanceType(typeStr) {
+			count = substituteSessionCount(oc.JamMulai, oc.JamSelesai)
+		}
+		teacherSummary = applyOriginalTeacherStatus(teacherSummary, oc.ID, oc.Name, oc.Avatar, status, count)
+	}
+
+	if isDiniyyahAttendanceType(typeStr) {
+		diniyyahSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			if sc.ID == 0 {
+				continue
+			}
+			diniyyahSubstituteTotals[sc.ID] += sc.Count * 2
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
+		}
+	} else {
+		formalSubstituteTotals := map[uint]int{}
+		for _, sc := range subCounts {
+			if sc.ID == 0 {
+				continue
+			}
+			formalSubstituteTotals[sc.ID] += sc.Count * 2
+		}
+		for i := range teacherSummary {
+			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
+		}
+	}
+
+	f := excelize.NewFile()
+	sheet := "Rekapan Guru"
+	f.SetSheetName("Sheet1", sheet)
+
+	titleStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Size: 14}, Alignment: &excelize.Alignment{Horizontal: "center"}})
+	headerStyle, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true, Color: "FFFFFF"}, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"2E7D32"}}, Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"}, Border: []excelize.Border{{Type: "left", Color: "D9D9D9", Style: 1}, {Type: "right", Color: "D9D9D9", Style: 1}, {Type: "top", Color: "D9D9D9", Style: 1}, {Type: "bottom", Color: "D9D9D9", Style: 1}}})
+	cellStyle, _ := f.NewStyle(&excelize.Style{Alignment: &excelize.Alignment{Vertical: "center"}})
+
+	f.SetCellValue(sheet, "A1", fmt.Sprintf("Rekapan Kehadiran Guru (%s)", strings.ToUpper(typeStr)))
+	f.SetCellStyle(sheet, "A1", "H1", titleStyle)
+	f.MergeCell(sheet, "A1", "H1")
+	f.SetCellValue(sheet, "A2", fmt.Sprintf("Periode: %s s/d %s", startDate, endDate))
+	f.MergeCell(sheet, "A2", "H2")
+	f.SetCellValue(sheet, "A3", fmt.Sprintf("Tanggal Export: %s WIB", time.Now().In(jakartaLocation()).Format("2006-01-02 15:04:05")))
+	f.MergeCell(sheet, "A3", "H3")
+	f.SetCellValue(sheet, "A5", "Total")
+	f.SetCellValue(sheet, "B5", totalTeacherSummary(teacherSummary))
+	f.SetCellValue(sheet, "D5", "Hadir")
+	f.SetCellValue(sheet, "E5", totalTeacherStatus(teacherSummary, "Hadir"))
+	f.SetCellValue(sheet, "G5", "Izin")
+	f.SetCellValue(sheet, "H5", totalTeacherStatus(teacherSummary, "Izin"))
+	f.SetCellValue(sheet, "A6", "Sakit")
+	f.SetCellValue(sheet, "B6", totalTeacherStatus(teacherSummary, "Sakit"))
+	f.SetCellValue(sheet, "D6", "Alpha")
+	f.SetCellValue(sheet, "E6", totalTeacherStatus(teacherSummary, "Alpha"))
+	f.SetCellValue(sheet, "G6", "Dinas")
+	f.SetCellValue(sheet, "H6", totalTeacherStatus(teacherSummary, "Dinas"))
+	f.SetCellValue(sheet, "A7", "Substitute")
+	f.SetCellValue(sheet, "B7", totalTeacherStatus(teacherSummary, "Substitute"))
+
+	headers := []string{"No", "Nama Guru", "Hadir", "Izin", "Sakit", "Alpha", "Dinas", "Substitute"}
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 9)
+		f.SetCellValue(sheet, cell, header)
+		f.SetCellStyle(sheet, cell, cell, headerStyle)
+	}
+	for i := 1; i <= 8; i++ {
+		cell, _ := excelize.CoordinatesToCellName(i, 9)
+		f.SetCellStyle(sheet, cell, cell, headerStyle)
+	}
+	for i, row := range teacherSummary {
+		f.SetCellValue(sheet, fmt.Sprintf("A%d", i+10), i+1)
+		f.SetCellValue(sheet, fmt.Sprintf("B%d", i+10), row.Name)
+		f.SetCellValue(sheet, fmt.Sprintf("C%d", i+10), row.Hadir)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", i+10), row.Izin)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", i+10), row.Sakit)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", i+10), row.Alpha)
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", i+10), row.Dinas)
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", i+10), row.Substitute)
+		for j := 1; j <= 8; j++ {
+			cell, _ := excelize.CoordinatesToCellName(j, i+10)
+			f.SetCellStyle(sheet, cell, cell, cellStyle)
+		}
+	}
+
+	f.SetColWidth(sheet, "A", "A", 8)
+	f.SetColWidth(sheet, "B", "B", 38)
+	f.SetColWidth(sheet, "C", "H", 12)
+
+	sheetHistory := "Log Substitute"
+	f.NewSheet(sheetHistory)
+	historyHeaders := []string{"Tanggal", "Pelajaran / Kelas", "Guru Asli", "Status (Asli)", "Pengganti"}
+	for i, header := range historyHeaders {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		f.SetCellValue(sheetHistory, cell, header)
+		f.SetCellStyle(sheetHistory, cell, cell, headerStyle)
+	}
+	for i, log := range substituteHistory {
+		row := i + 2
+		f.SetCellValue(sheetHistory, fmt.Sprintf("A%d", row), log.Date.Format("2006-01-02"))
+		f.SetCellValue(sheetHistory, fmt.Sprintf("B%d", row), fmt.Sprintf("%s / %s", truncStr(log.Lesson, 20), truncStr(log.Kelas, 15)))
+		f.SetCellValue(sheetHistory, fmt.Sprintf("C%d", row), truncStr(log.OriginalTeacher, 25))
+		f.SetCellValue(sheetHistory, fmt.Sprintf("D%d", row), truncStr(log.OriginalStatus, 15))
+		f.SetCellValue(sheetHistory, fmt.Sprintf("E%d", row), truncStr(log.SubstituteTeacher, 25))
+	}
+	f.SetColWidth(sheetHistory, "A", "A", 16)
+	f.SetColWidth(sheetHistory, "B", "B", 34)
+	f.SetColWidth(sheetHistory, "C", "C", 24)
+	f.SetColWidth(sheetHistory, "D", "D", 18)
+	f.SetColWidth(sheetHistory, "E", "E", 24)
+
+	filename := fmt.Sprintf("Rekapan_Absensi_Guru_%s_%s_%s_%s.xlsx", typeStr, startDate, endDate, time.Now().In(jakartaLocation()).Format("20060102_150405"))
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	if err := f.Write(c.Response().BodyWriter()); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate Excel"})
+	}
+	return nil
+}
+
+func totalTeacherStatus(entries []TeacherSummaryEntry, field string) int {
+	switch field {
+	case "Hadir":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Hadir
+		}
+		return total
+	case "Izin":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Izin
+		}
+		return total
+	case "Sakit":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Sakit
+		}
+		return total
+	case "Alpha":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Alpha
+		}
+		return total
+	case "Dinas":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Dinas
+		}
+		return total
+	case "Substitute":
+		total := 0
+		for _, entry := range entries {
+			total += entry.Substitute
+		}
+		return total
+	default:
+		return 0
+	}
+}
+
+func totalTeacherSummary(entries []TeacherSummaryEntry) int {
+	total := 0
+	for _, entry := range entries {
+		total += entry.Hadir + entry.Izin + entry.Sakit + entry.Alpha + entry.Dinas + entry.Substitute
+	}
+	return total
+}
+
 // ── ExportTeacherStatisticsPDF exports teacher statistics to a PDF file ──
 func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	typeStr := c.Query("type", "formal")
