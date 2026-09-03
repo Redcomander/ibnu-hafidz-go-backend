@@ -51,25 +51,19 @@ func substituteSessionCount(startTime, endTime string) int {
 	start := normalizeSubstituteTime(startTime)
 	end := normalizeSubstituteTime(endTime)
 	if start == "" || end == "" {
-		return 1
+		return 2
 	}
 
 	startMinutes, err := timeStringToMinutes(start)
 	if err != nil {
-		return 1
+		return 2
 	}
 	endMinutes, err := timeStringToMinutes(end)
 	if err != nil || endMinutes <= startMinutes {
-		return 1
+		return 2
 	}
 
-	if startMinutes < 10*60 && endMinutes >= 9*60+30 {
-		return 2
-	}
-	if startMinutes >= 10*60 && endMinutes >= 11*60+30 {
-		return 2
-	}
-	return 1
+	return 2
 }
 
 func normalizeSubstituteTime(value string) string {

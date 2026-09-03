@@ -31,7 +31,7 @@ func TestApplyOriginalTeacherStatusCountsOnlyAbsenceStatuses(t *testing.T) {
 	}
 }
 
-func TestSessionCountFromTimeRangeCountsAcrossMorningBreak(t *testing.T) {
+func TestSessionCountFromTimeRangeCountsEachSubstituteEntryAsTwoUnits(t *testing.T) {
 	cases := map[string]int{
 		"08:00-09:30": 2,
 		"08:15-09:30": 2,
@@ -39,8 +39,8 @@ func TestSessionCountFromTimeRangeCountsAcrossMorningBreak(t *testing.T) {
 		"08:00-11:30": 2,
 		"08:15-10:00": 2,
 		"09:30-10:15": 2,
-		"08:00-08:30": 1,
-		"":            1,
+		"08:00-08:30": 2,
+		"":            2,
 	}
 
 	for rangeText, want := range cases {
@@ -57,7 +57,7 @@ func TestSessionCountFromTimeRangeCountsAcrossMorningBreak(t *testing.T) {
 	}
 }
 
-func TestCountFormalSessionUnitsUsesSessionBasedTotals(t *testing.T) {
+func TestCountFormalSessionUnitsCountsEachSubstituteEntryAsTwo(t *testing.T) {
 	rows := []formalSessionCountRow{
 		{Status: "Izin", StartTime: "08:00", EndTime: "09:30"},
 		{Status: "Sakit", StartTime: "10:00", EndTime: "11:30"},
@@ -72,15 +72,15 @@ func TestCountFormalSessionUnitsUsesSessionBasedTotals(t *testing.T) {
 	if got["Sakit"] != 2 {
 		t.Fatalf("expected Sakit session total to be 2, got %d", got["Sakit"])
 	}
-	if got["Alpha"] != 1 {
-		t.Fatalf("expected Alpha session total to be 1, got %d", got["Alpha"])
+	if got["Alpha"] != 2 {
+		t.Fatalf("expected Alpha session total to be 2, got %d", got["Alpha"])
 	}
 	if got["Hadir"] != 0 {
 		t.Fatalf("expected Hadir to be excluded from session totals, got %d", got["Hadir"])
 	}
 }
 
-func TestFormalStatusAggregationDoesNotOverwriteMultiRowTeacherTotals(t *testing.T) {
+func TestFormalStatusAggregationUsesRawEntryCountTimesTwo(t *testing.T) {
 	rows := []formalSessionCountRow{
 		{Status: "Izin", StartTime: "08:00", EndTime: "09:30"},
 		{Status: "Sakit", StartTime: "10:00", EndTime: "11:30"},
