@@ -95,3 +95,16 @@ func TestFormalStatusAggregationUsesRawEntryCountTimesTwo(t *testing.T) {
 		t.Fatalf("expected aggregated Sakit total to be 2, got %d", got["Sakit"])
 	}
 }
+
+func TestSubstituteAggregationDoesNotCollapseDifferentRowsIntoSingleTimeSlotCount(t *testing.T) {
+	rows := []formalSessionCountRow{
+		{Status: "Substitute", StartTime: "08:00", EndTime: "09:30"},
+		{Status: "Substitute", StartTime: "08:00", EndTime: "09:30"},
+		{Status: "Substitute", StartTime: "08:00", EndTime: "09:30"},
+	}
+
+	got := countFormalSessionUnits(rows)
+	if got["Substitute"] != 6 {
+		t.Fatalf("expected substitute total to be 6 for 3 raw rows, got %d", got["Substitute"])
+	}
+}
