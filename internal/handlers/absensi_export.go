@@ -615,8 +615,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
-			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
-			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		subQ = applyFormalScheduleTypeFilter(subQ, "jf", typeStr)
 		if teacherID != "" {
 			subQ = subQ.Where("substitute_logs.substitute_teacher_id = ?", teacherID)
@@ -669,8 +669,8 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			Joins("JOIN users u ON u.id = substitute_logs.original_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
-			Where("substitute_logs.jadwal_formal_id IS NOT NULL").
-			Joins("JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
+			Where("substitute_logs.jadwal_diniyyah_id IS NULL").
+			Joins("LEFT JOIN jadwal_formal jf ON jf.id = substitute_logs.jadwal_formal_id")
 		origQ = applyFormalScheduleTypeFilter(origQ, "jf", typeStr)
 		if teacherID != "" {
 			origQ = origQ.Where("substitute_logs.original_teacher_id = ?", teacherID)
