@@ -1761,11 +1761,11 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 
 	if !isDiniyyahAttendanceType(typeStr) {
 		var formalStatusRows []struct {
-			ID       uint
-			Status   string
-			JamMulai string
+			ID         uint
+			Status     string
+			JamMulai   string
 			JamSelesai string
-			Count    int
+			Count      int
 		}
 		rawStatusQ := h.db.Table("teacher_attendances ta").
 			Select("ta.user_id as id, ta.status, COALESCE(jf.jam_mulai, '-') as jam_mulai, COALESCE(jf.jam_selesai, '-') as jam_selesai, count(*) as count").
