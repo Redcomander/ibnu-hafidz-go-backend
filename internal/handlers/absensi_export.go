@@ -590,11 +590,12 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		Avatar     string
 		JamMulai   string
 		JamSelesai string
+		Count      int
 	}
 	var subCounts []SubCount
 	if isDiniyyahAttendanceType(typeStr) {
 		subQ := h.db.Table("substitute_logs_diniyyah").
-			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai").
+			Select("substitute_logs_diniyyah.substitute_teacher_id as id, u.name, u.foto_guru as avatar, substitute_logs_diniyyah.jam_mulai as jam_mulai, substitute_logs_diniyyah.jam_selesai as jam_selesai, count(*) as count").
 			Joins("JOIN users u ON u.id = substitute_logs_diniyyah.substitute_teacher_id").
 			Where("substitute_logs_diniyyah.date >= ? AND substitute_logs_diniyyah.date < ?", startDate, endExclusive)
 		if kelasID != "" {
@@ -608,10 +609,10 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Scan(&subCounts)
+		subQ.Group("substitute_logs_diniyyah.substitute_teacher_id, u.name, u.foto_guru, substitute_logs_diniyyah.jam_mulai, substitute_logs_diniyyah.jam_selesai").Scan(&subCounts)
 	} else {
 		subQ := h.db.Table("substitute_logs").
-			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, COALESCE(substitute_logs.jam_mulai, jadwal_formal.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jadwal_formal.jam_selesai) as jam_selesai").
+			Select("substitute_logs.substitute_teacher_id as id, u.name, u.foto_guru as avatar, COALESCE(substitute_logs.jam_mulai, jadwal_formal.jam_mulai) as jam_mulai, COALESCE(substitute_logs.jam_selesai, jadwal_formal.jam_selesai) as jam_selesai, count(*) as count").
 			Joins("JOIN users u ON u.id = substitute_logs.substitute_teacher_id").
 			Where("substitute_logs.date >= ? AND substitute_logs.date < ?", startDate, endExclusive).
 			Where("substitute_logs.deleted_at IS NULL").
@@ -624,13 +625,13 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		if gender != "" {
 			subQ = subQ.Where("u.gender = ?", gender)
 		}
-		subQ.Scan(&subCounts)
+		subQ.Group("substitute_logs.substitute_teacher_id, u.name, u.foto_guru, COALESCE(substitute_logs.jam_mulai, jadwal_formal.jam_mulai), COALESCE(substitute_logs.jam_selesai, jadwal_formal.jam_selesai)").Scan(&subCounts)
 	}
 
 	for _, sc := range subCounts {
 		count := 1
-		if !isDiniyyahAttendanceType(typeStr) {
-			count = substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+		if sc.ID != 0 {
+			count = sc.Count
 		}
 		teacherSummary = applySubstituteTeacherCounts(teacherSummary, sc.ID, sc.Name, sc.Avatar, count)
 	}
@@ -826,7 +827,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			diniyyahSubstituteTotals[sc.ID] += 1
+			diniyyahSubstituteTotals[sc.ID] += sc.Count
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = diniyyahSubstituteTotals[teacherSummary[i].ID]
@@ -841,7 +842,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			if sc.ID == 0 {
 				continue
 			}
-			formalSubstituteTotals[sc.ID] += substituteSessionCount(sc.JamMulai, sc.JamSelesai)
+			formalSubstituteTotals[sc.ID] += sc.Count
 		}
 		for i := range teacherSummary {
 			teacherSummary[i].Substitute = formalSubstituteTotals[teacherSummary[i].ID]
@@ -871,9 +872,12 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 	pdf.SetFont("Arial", "B", 12)
 	pdf.CellFormat(0, 10, "Ringkasan Total", "", 1, "L", false, 0, "")
 	pdf.SetFont("Arial", "", 10)
-	pdf.CellFormat(0, 6, fmt.Sprintf("Hadir: %d | Izin: %d | Sakit: %d | Alpha: %d | Substitute: %d",
-		teacherCountsMap["Hadir"], teacherCountsMap["Izin"], teacherCountsMap["Sakit"],
-		teacherCountsMap["Alpha"], teacherCountsMap["Substitute"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Total\n%d", teacherCountsMap["Hadir"]+teacherCountsMap["Izin"]+teacherCountsMap["Sakit"]+teacherCountsMap["Alpha"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Hadir\n%d", teacherCountsMap["Hadir"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Izin\n%d", teacherCountsMap["Izin"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Sakit\n%d", teacherCountsMap["Sakit"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Alpha\n%d", teacherCountsMap["Alpha"]), "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 7, fmt.Sprintf("Substitute\n%d", teacherCountsMap["Substitute"]), "", 1, "L", false, 0, "")
 	pdf.Ln(5)
 
 	// Summary Table
