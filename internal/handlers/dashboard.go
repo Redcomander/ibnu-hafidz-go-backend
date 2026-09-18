@@ -52,8 +52,8 @@ func getTeacherAttendanceSummaryWithSubstitutes(db *gorm.DB, monthStart, monthEn
 	switch attendanceType {
 	case "diniyyah":
 		baseQuery = baseQuery.Where("jadwal_diniyyah_id IS NOT NULL")
-		substituteQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd)
-		statusQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd)
+		substituteQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd).Where("deleted_at IS NULL")
+		statusQuery = db.Table("substitute_logs_diniyyah").Where("date >= ? AND date < ?", monthStart, monthEnd).Where("deleted_at IS NULL")
 		if teacherID != nil {
 			baseQuery = baseQuery.Where("user_id = ?", *teacherID)
 			substituteQuery = substituteQuery.Where("substitute_teacher_id = ?", *teacherID)
@@ -103,10 +103,12 @@ func countLatestSubstituteLogs(db *gorm.DB, monthStart, monthEnd string, attenda
 	case "diniyyah":
 		latestIDs = latestIDs.
 			Where("jadwal_diniyyah_id IS NOT NULL").
+			Where("deleted_at IS NULL").
 			Group("date, jadwal_diniyyah_id")
 	default:
 		latestIDs = latestIDs.
 			Where("jadwal_formal_id IS NOT NULL").
+			Where("deleted_at IS NULL").
 			Group("date, jadwal_formal_id")
 	}
 
@@ -126,6 +128,7 @@ func countScheduleSubstitutes(db *gorm.DB, monthStart, monthEnd string, attendan
 	switch attendanceType {
 	case "diniyyah":
 		query := db.Model(&models.DiniyyahSchedule{}).
+			Where("deleted_at IS NULL").
 			Where("substitute_teacher_id IS NOT NULL AND substitute_date >= ? AND substitute_date < ?", monthStart, monthEnd)
 		if teacherID != nil {
 			query = query.Where("substitute_teacher_id = ?", *teacherID)
@@ -133,6 +136,7 @@ func countScheduleSubstitutes(db *gorm.DB, monthStart, monthEnd string, attendan
 		query.Count(&count)
 	default:
 		query := db.Model(&models.Schedule{}).
+			Where("deleted_at IS NULL").
 			Where("substitute_teacher_id IS NOT NULL AND substitute_date >= ? AND substitute_date < ?", monthStart, monthEnd)
 		if teacherID != nil {
 			query = query.Where("substitute_teacher_id = ?", *teacherID)
@@ -367,7 +371,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		h.db.Preload("Assignment.Teacher").
 			Preload("Assignment.Lesson").
 			Preload("Assignment.Kelas").
-			Where("hari = ?", hariIni).
+			Where("hari = ? AND deleted_at IS NULL", hariIni).
 			Order("jam_mulai asc").
 			Limit(5).
 			Find(&schedules)
@@ -489,7 +493,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.Lesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN lesson_kelas_teachers ON lesson_kelas_teachers.id = jadwal_formal.lesson_kelas_teacher_id").
-		Where("jadwal_formal.hari = ? AND lesson_kelas_teachers.user_id = ?", hariIni, user.ID).
+		Where("jadwal_formal.hari = ? AND lesson_kelas_teachers.user_id = ? AND jadwal_formal.deleted_at IS NULL", hariIni, user.ID).
 		Order("jadwal_formal.jam_mulai asc").
 		Find(&personalSchedules)
 
@@ -498,7 +502,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.DiniyyahLesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
-		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ?", hariIni, user.ID).
+		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL", hariIni, user.ID).
 		Order("jadwal_diniyyahs.jam_mulai asc").
 		Find(&personalDiniyyahSchedules)
 
