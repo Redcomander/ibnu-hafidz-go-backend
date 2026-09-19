@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-pdf/fpdf"
 	"github.com/gofiber/fiber/v2"
+	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -212,6 +213,48 @@ func (h *AbsensiHandler) getGroupedStudentSummaryRows(typeStr, startDate, endExc
 
 // ── ExportStatisticsExcel exports attendance statistics to an .xlsx file ──
 
+func sanitizeExportFileNamePart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "Semua"
+	}
+	value = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return ' '
+	}, value)
+	value = strings.Join(strings.Fields(value), " ")
+	return value
+}
+
+func buildAttendanceExportFilename(typeStr, startDate, endDate, kelasID, gender, jenjang, status, timeWindow string, kelasName string, extension string) string {
+	label := "Semua Kelas"
+	if strings.TrimSpace(kelasName) != "" {
+		label = sanitizeExportFileNamePart(kelasName)
+	} else if strings.TrimSpace(kelasID) != "" {
+		label = fmt.Sprintf("Kelas %s", sanitizeExportFileNamePart(kelasID))
+	} else if strings.TrimSpace(jenjang) != "" {
+		label = fmt.Sprintf("Jenjang %s", strings.ToUpper(sanitizeExportFileNamePart(jenjang)))
+	} else if strings.TrimSpace(gender) != "" {
+		label = fmt.Sprintf("Gender %s", strings.ToUpper(sanitizeExportFileNamePart(gender)))
+	}
+
+	var dateLabel string
+	if strings.TrimSpace(startDate) == "" && strings.TrimSpace(endDate) == "" {
+		dateLabel = "Semua Periode"
+	} else if strings.TrimSpace(startDate) == "" {
+		dateLabel = endDate
+	} else if strings.TrimSpace(endDate) == "" {
+		dateLabel = startDate
+	} else {
+		dateLabel = fmt.Sprintf("%s s/d %s", startDate, endDate)
+	}
+	dateLabel = sanitizeExportFileNamePart(dateLabel)
+	timestamp := time.Now().Format("20060102_150405")
+	return fmt.Sprintf("Rekapan %s (%s) (%s).%s", label, dateLabel, timestamp, extension)
+}
+
 func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	typeStr := c.Query("type", "formal")
 	startDate := c.Query("start_date")
@@ -221,6 +264,15 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	jenjang := c.Query("jenjang")
 	status := c.Query("status")
 	timeWindow := c.Query("time_window")
+	kelasName := ""
+	if strings.TrimSpace(kelasID) != "" {
+		var kelas models.Kelas
+		if err := h.db.Select("id, nama, tingkat").First(&kelas, kelasID).Error; err == nil {
+			if strings.TrimSpace(kelas.Nama) != "" || strings.TrimSpace(kelas.Tingkat) != "" {
+				kelasName = strings.TrimSpace(kelas.Nama + " " + kelas.Tingkat)
+			}
+		}
+	}
 
 	if startDate == "" {
 		now := time.Now()
@@ -327,8 +379,9 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	f.SetCellValue(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("Total keseluruhan: %d siswa", totalRecords))
 	f.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("I%d", footerRow))
 
+	filename := buildAttendanceExportFilename(typeStr, startDate, endDate, kelasID, gender, jenjang, status, timeWindow, kelasName, "xlsx")
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=absensi_%s_%s_%s.xlsx", typeStr, startDate, endDate))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	if err := f.Write(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate Excel"})
 	}
@@ -346,6 +399,15 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	jenjang := c.Query("jenjang")
 	status := c.Query("status")
 	timeWindow := c.Query("time_window")
+	kelasName := ""
+	if strings.TrimSpace(kelasID) != "" {
+		var kelas models.Kelas
+		if err := h.db.Select("id, nama, tingkat").First(&kelas, kelasID).Error; err == nil {
+			if strings.TrimSpace(kelas.Nama) != "" || strings.TrimSpace(kelas.Tingkat) != "" {
+				kelasName = strings.TrimSpace(kelas.Nama + " " + kelas.Tingkat)
+			}
+		}
+	}
 
 	if startDate == "" {
 		now := time.Now()
@@ -438,8 +500,9 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	}
 	pdf.CellFormat(0, 5, fmt.Sprintf("Digenerate pada: %s | Total: %d siswa", time.Now().Format("02/01/2006 15:04"), totalStudents), "", 1, "R", false, 0, "")
 
+	filename := buildAttendanceExportFilename(typeStr, startDate, endDate, kelasID, gender, jenjang, status, timeWindow, kelasName, "pdf")
 	c.Set("Content-Type", "application/pdf")
-	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=absensi_%s_%s_%s.pdf", typeStr, startDate, endDate))
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	if err := pdf.Output(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate PDF"})
 	}
