@@ -381,6 +381,8 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 
 	filename := buildAttendanceExportFilename(typeStr, startDate, endDate, kelasID, gender, jenjang, status, timeWindow, kelasName, "xlsx")
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Set("Pragma", "no-cache")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	if err := f.Write(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate Excel"})
@@ -502,6 +504,8 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 
 	filename := buildAttendanceExportFilename(typeStr, startDate, endDate, kelasID, gender, jenjang, status, timeWindow, kelasName, "pdf")
 	c.Set("Content-Type", "application/pdf")
+	c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Set("Pragma", "no-cache")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	if err := pdf.Output(c.Response().BodyWriter()); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate PDF"})
