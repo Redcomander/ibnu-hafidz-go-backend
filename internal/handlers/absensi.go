@@ -307,8 +307,11 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 
 	if typeStr == "diniyyah" {
 		var jadwal models.DiniyyahSchedule
-		if err := h.db.Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
+		if err := h.db.Where("deleted_at IS NULL").Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
+		}
+		if jadwal.Assignment.Kelas == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule data is not available"})
 		}
 		students = jadwal.Assignment.Kelas.Students
 		assignedTeacherID = jadwal.Assignment.UserID
@@ -316,8 +319,11 @@ func (h *AbsensiHandler) GetAttendance(c *fiber.Ctx) error {
 		substituteDate = jadwal.SubstituteDate
 	} else {
 		var jadwal models.Schedule
-		if err := h.db.Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
+		if err := h.db.Where("deleted_at IS NULL").Preload("Assignment.Kelas.Students").Preload("Assignment.Teacher").Preload("SubstituteTeacher").First(&jadwal, jadwalID).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
+		}
+		if jadwal.Assignment.Kelas == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule data is not available"})
 		}
 		students = jadwal.Assignment.Kelas.Students
 		assignedTeacherID = jadwal.Assignment.UserID

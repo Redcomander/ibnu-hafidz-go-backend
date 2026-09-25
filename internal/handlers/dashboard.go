@@ -492,8 +492,8 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	h.db.Preload("Assignment").
 		Preload("Assignment.Lesson").
 		Preload("Assignment.Kelas").
-		Joins("JOIN lesson_kelas_teachers ON lesson_kelas_teachers.id = jadwal_formal.lesson_kelas_teacher_id").
-		Where("jadwal_formal.hari = ? AND lesson_kelas_teachers.user_id = ? AND jadwal_formal.deleted_at IS NULL", hariIni, user.ID).
+		Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
+		Where("jadwal_formal.hari = ? AND lkt.user_id = ? AND jadwal_formal.deleted_at IS NULL AND lkt.deleted_at IS NULL", hariIni, user.ID).
 		Order("jadwal_formal.jam_mulai asc").
 		Find(&personalSchedules)
 
@@ -502,7 +502,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.DiniyyahLesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
-		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL", hariIni, user.ID).
+		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL AND dkt.deleted_at IS NULL", hariIni, user.ID).
 		Order("jadwal_diniyyahs.jam_mulai asc").
 		Find(&personalDiniyyahSchedules)
 
