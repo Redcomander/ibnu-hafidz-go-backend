@@ -323,6 +323,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	today := time.Now()
 	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
 	todayEnd := todayStart.AddDate(0, 0, 1)
+	todayDateStr := todayStart.Format("2006-01-02")
 	days := []string{"Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	hariIni := days[today.Weekday()]
 
@@ -495,7 +496,13 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.Lesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
-		Where("LOWER(TRIM(jadwal_formal.hari)) = ? AND lkt.user_id = ? AND jadwal_formal.deleted_at IS NULL AND lkt.deleted_at IS NULL", strings.ToLower(hariIni), user.ID).
+		Where(
+			"LOWER(TRIM(jadwal_formal.hari)) = ? AND jadwal_formal.deleted_at IS NULL AND lkt.deleted_at IS NULL AND (lkt.user_id = ? OR (jadwal_formal.substitute_teacher_id = ? AND DATE(jadwal_formal.substitute_date) = ?))",
+			strings.ToLower(hariIni),
+			user.ID,
+			user.ID,
+			todayDateStr,
+		).
 		Order("jadwal_formal.jam_mulai asc").
 		Find(&personalSchedules)
 
@@ -504,7 +511,13 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.DiniyyahLesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
-		Where("LOWER(TRIM(jadwal_diniyyahs.hari)) = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL AND dkt.deleted_at IS NULL", strings.ToLower(hariIni), user.ID).
+		Where(
+			"LOWER(TRIM(jadwal_diniyyahs.hari)) = ? AND jadwal_diniyyahs.deleted_at IS NULL AND dkt.deleted_at IS NULL AND (dkt.user_id = ? OR (jadwal_diniyyahs.substitute_teacher_id = ? AND DATE(jadwal_diniyyahs.substitute_date) = ?))",
+			strings.ToLower(hariIni),
+			user.ID,
+			user.ID,
+			todayDateStr,
+		).
 		Order("jadwal_diniyyahs.jam_mulai asc").
 		Find(&personalDiniyyahSchedules)
 
