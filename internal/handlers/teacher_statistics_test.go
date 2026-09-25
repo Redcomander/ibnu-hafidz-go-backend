@@ -170,6 +170,113 @@ func TestGetTeacherStatisticsCountsSubstituteAndIzinFromLogOnly(t *testing.T) {
 	}
 }
 
+func TestDashboardStatsMatchesTitleCaseTodayDayName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, password TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE roles (id INTEGER PRIMARY KEY, name TEXT)`).Error; err != nil {
+		t.Fatalf("create roles: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE role_user (user_id INTEGER, role_id INTEGER)`).Error; err != nil {
+		t.Fatalf("create role_user: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE lesson_kelas_teachers (id INTEGER PRIMARY KEY, lesson_id INTEGER, kelas_id INTEGER, user_id INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create lesson_kelas_teachers: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE lessons (id INTEGER PRIMARY KEY, nama TEXT)`).Error; err != nil {
+		t.Fatalf("create lessons: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE kelas (id INTEGER PRIMARY KEY, nama TEXT, tingkat TEXT, gender TEXT)`).Error; err != nil {
+		t.Fatalf("create kelas: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE jadwal_formal (id INTEGER PRIMARY KEY, type TEXT, lesson_kelas_teacher_id INTEGER, hari TEXT, jam_mulai TEXT, jam_selesai TEXT, substitute_teacher_id INTEGER, substitute_date DATE, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create jadwal_formal: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE teacher_attendances (id INTEGER PRIMARY KEY, jadwal_formal_id INTEGER, jadwal_diniyyah_id INTEGER, user_id INTEGER, date DATE, status TEXT, notes TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create teacher_attendances: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE substitute_logs (id INTEGER PRIMARY KEY, jadwal_formal_id INTEGER, jadwal_diniyyah_id INTEGER, original_teacher_id INTEGER, substitute_teacher_id INTEGER, date DATE, jam_mulai TEXT, jam_selesai TEXT, status TEXT, reason TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create substitute_logs: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE substitute_logs_diniyyah (id INTEGER PRIMARY KEY, jadwal_diniyyah_id INTEGER, original_teacher_id INTEGER, substitute_teacher_id INTEGER, date DATE, status TEXT, reason TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create substitute_logs_diniyyah: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE absensis (id INTEGER PRIMARY KEY, jadwal_formal_id INTEGER, tanggal DATE, status TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create absensis: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE diniyyah_kelas_teachers (id INTEGER PRIMARY KEY, kelas_id INTEGER, user_id INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create diniyyah_kelas_teachers: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE jadwal_diniyyahs (id INTEGER PRIMARY KEY, diniyyah_kelas_teacher_id INTEGER, hari TEXT, jam_mulai TEXT, jam_selesai TEXT, substitute_teacher_id INTEGER, substitute_date DATE, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create jadwal_diniyyahs: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE halaqoh_teacher_attendances (id INTEGER PRIMARY KEY, user_id INTEGER, date DATE, status TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create halaqoh_teacher_attendances: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE halaqoh_substitute_logs (id INTEGER PRIMARY KEY, substitute_teacher_id INTEGER, original_teacher_id INTEGER, date DATE, is_active BOOLEAN, reason TEXT, session TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create halaqoh_substitute_logs: %v", err)
+	}
+
+	if err := db.Exec(`INSERT INTO users (id, name, email, password) VALUES (10, 'Guru Uji', 'guru@test.com', 'x')`).Error; err != nil {
+		t.Fatalf("seed teacher user: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO lessons (id, nama) VALUES (1, 'Bahasa')`).Error; err != nil {
+		t.Fatalf("seed lesson: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO kelas (id, nama, tingkat) VALUES (1, 'Kelas 1', 'X')`).Error; err != nil {
+		t.Fatalf("seed class: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO lesson_kelas_teachers (id, lesson_id, kelas_id, user_id) VALUES (1, 1, 1, 10)`).Error; err != nil {
+		t.Fatalf("seed assignment: %v", err)
+	}
+
+	todayName := []string{"Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}[time.Now().Weekday()]
+	if err := db.Exec(`INSERT INTO jadwal_formal (id, lesson_kelas_teacher_id, hari, jam_mulai, jam_selesai) VALUES (2, 1, ?, '10:00:00', '11:00:00')`, todayName).Error; err != nil {
+		t.Fatalf("seed active schedule: %v", err)
+	}
+
+	handler := NewDashboardHandler(db)
+	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		user := &models.User{ID: 10, Name: "Guru Uji"}
+		user.Roles = []models.Role{{Name: "teacher"}}
+		c.Locals("user", user)
+		return c.Next()
+	})
+	app.Get("/dashboard", handler.Stats)
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard?month=1&year=2026", nil)
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	teacher, ok := payload["teacher"].(map[string]any)
+	if !ok {
+		t.Fatalf("teacher payload missing: %+v", payload)
+	}
+	personalSchedules, ok := teacher["personal_schedule"].([]any)
+	if !ok {
+		t.Fatalf("personal_schedule payload missing or wrong type: %+v", teacher)
+	}
+	if len(personalSchedules) != 1 {
+		t.Fatalf("expected 1 active personal schedule for today, got %d: %+v", len(personalSchedules), teacher)
+	}
+}
+
 func TestDashboardStatsExcludesSoftDeletedSchedules(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

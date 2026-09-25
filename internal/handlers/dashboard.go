@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -317,11 +318,12 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 	isAdmin := user.HasRole("admin") || user.HasRole("super_admin")
 	isTeacher := user.HasRole("teacher") || user.HasRole("guru") || user.HasRole("musyrif")
 
-	// Get today's day name in Indonesian (lowercase for DB match)
+	// Get today's day name in Indonesian. Schedule rows are stored with a title-case value
+	// such as "Jumat", while some legacy queries compare against lowercase names.
 	today := time.Now()
 	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
 	todayEnd := todayStart.AddDate(0, 0, 1)
-	days := []string{"ahad", "senin", "selasa", "rabu", "kamis", "jumat", "sabtu"}
+	days := []string{"Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	hariIni := days[today.Weekday()]
 
 	// Accept optional month/year query params for period filtering
@@ -371,7 +373,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		h.db.Preload("Assignment.Teacher").
 			Preload("Assignment.Lesson").
 			Preload("Assignment.Kelas").
-			Where("hari = ? AND deleted_at IS NULL", hariIni).
+			Where("LOWER(TRIM(hari)) = ? AND deleted_at IS NULL", strings.ToLower(hariIni)).
 			Order("jam_mulai asc").
 			Limit(5).
 			Find(&schedules)
@@ -493,7 +495,7 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.Lesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN lesson_kelas_teachers lkt ON lkt.id = jadwal_formal.lesson_kelas_teacher_id").
-		Where("jadwal_formal.hari = ? AND lkt.user_id = ? AND jadwal_formal.deleted_at IS NULL AND lkt.deleted_at IS NULL", hariIni, user.ID).
+		Where("LOWER(TRIM(jadwal_formal.hari)) = ? AND lkt.user_id = ? AND jadwal_formal.deleted_at IS NULL AND lkt.deleted_at IS NULL", strings.ToLower(hariIni), user.ID).
 		Order("jadwal_formal.jam_mulai asc").
 		Find(&personalSchedules)
 
@@ -502,11 +504,9 @@ func (h *DashboardHandler) Stats(c *fiber.Ctx) error {
 		Preload("Assignment.DiniyyahLesson").
 		Preload("Assignment.Kelas").
 		Joins("JOIN diniyyah_kelas_teachers dkt ON dkt.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id").
-		Where("jadwal_diniyyahs.hari = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL AND dkt.deleted_at IS NULL", hariIni, user.ID).
+		Where("LOWER(TRIM(jadwal_diniyyahs.hari)) = ? AND dkt.user_id = ? AND jadwal_diniyyahs.deleted_at IS NULL AND dkt.deleted_at IS NULL", strings.ToLower(hariIni), user.ID).
 		Order("jadwal_diniyyahs.jam_mulai asc").
 		Find(&personalDiniyyahSchedules)
-
-		// 2. Personal Attendance Stats Breakdown
 
 	// 2a. Formal Stats
 	personalFormal := getTeacherAttendanceSummaryWithSubstitutes(h.db, monthStart, monthEnd, "formal", &user.ID)
