@@ -170,6 +170,18 @@ func TestGetTeacherStatisticsCountsSubstituteAndIzinFromLogOnly(t *testing.T) {
 	}
 }
 
+func TestNormalizePublicMediaPathForUploadSource(t *testing.T) {
+	item := models.Gallery{Source: "upload", Path: "gallery/original/abc.jpg"}
+	if got := normalizePublicMediaPath(item); got != "/uploads/gallery/original/abc.jpg" {
+		t.Fatalf("expected upload path to be prefixed with /uploads/, got %q", got)
+	}
+
+	item = models.Gallery{Source: "upload", Path: "uploads/gallery/original/abc.jpg"}
+	if got := normalizePublicMediaPath(item); got != "/uploads/gallery/original/abc.jpg" {
+		t.Fatalf("expected existing uploads prefix to be preserved, got %q", got)
+	}
+}
+
 func TestDashboardStatsIncludesActiveScheduleWhenAssignmentSoftDeleted(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

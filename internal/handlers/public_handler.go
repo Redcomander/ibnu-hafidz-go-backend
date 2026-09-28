@@ -240,7 +240,8 @@ func (h *PublicHandler) GetGalleryPhoto(c *fiber.Ctx) error {
 
 	query := h.db.Model(&models.Gallery{}).
 		Preload("Album").
-		Where("type = ?", "photo")
+		Where("type = ?", "photo").
+		Where("galleries.deleted_at IS NULL")
 
 	if search != "" {
 		query = query.Where("title LIKE ?", "%"+search+"%")
@@ -255,6 +256,9 @@ func (h *PublicHandler) GetGalleryPhoto(c *fiber.Ctx) error {
 	var items []models.Gallery
 	offset := (page - 1) * perPage
 	query.Order("galleries.created_at DESC").Limit(perPage).Offset(offset).Find(&items)
+	for i := range items {
+		items[i].Path = normalizePublicMediaPath(items[i])
+	}
 
 	var albums []models.Album
 	h.db.Model(&models.Album{}).Order("title ASC").Find(&albums)
@@ -286,7 +290,8 @@ func (h *PublicHandler) GetGalleryVideo(c *fiber.Ctx) error {
 
 	query := h.db.Model(&models.Gallery{}).
 		Preload("Album").
-		Where("type = ?", "video")
+		Where("type = ?", "video").
+		Where("galleries.deleted_at IS NULL")
 
 	if search != "" {
 		query = query.Where("title LIKE ?", "%"+search+"%")
@@ -329,7 +334,12 @@ func normalizePublicMediaPath(item models.Gallery) string {
 		if strings.HasPrefix(item.Path, "http") || strings.HasPrefix(item.Path, "/") {
 			return item.Path
 		}
-		return "/uploads/" + item.Path
+		trimmed := strings.TrimPrefix(item.Path, "./")
+		trimmed = strings.TrimPrefix(trimmed, "/")
+		if strings.HasPrefix(trimmed, "uploads/") {
+			return "/" + trimmed
+		}
+		return "/uploads/" + trimmed
 	}
 
 	if item.Source == "url" && strings.HasPrefix(item.Path, "url:") {
