@@ -16,6 +16,113 @@ type StudentHandler struct {
 	db *gorm.DB
 }
 
+func normalizeStudentRelationStatusValues(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '|' || r == '&' || r == ' ' || r == '\n' || r == '\t'
+	})
+
+	seen := make(map[string]struct{}, len(parts))
+	orderedValues := make([]string, 0, len(parts))
+	for _, part := range parts {
+		normalized := strings.ToLower(strings.TrimSpace(part))
+		if normalized == "" {
+			continue
+		}
+		switch normalized {
+		case "ada", "exists", "yes", "punya", "has":
+			normalized = "ada"
+		case "kosong", "tidak_ada", "tidak-ada", "null", "none", "tidak_punya", "missing", "no", "kosongnya":
+			normalized = "kosong"
+		default:
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		orderedValues = append(orderedValues, normalized)
+	}
+
+	if len(orderedValues) <= 1 {
+		return orderedValues
+	}
+
+	canonicalOrder := map[string]int{"ada": 0, "kosong": 1}
+	result := append([]string(nil), orderedValues...)
+	for i := 0; i < len(result); i++ {
+		for j := i + 1; j < len(result); j++ {
+			if canonicalOrder[result[j]] < canonicalOrder[result[i]] {
+				result[i], result[j] = result[j], result[i]
+			}
+		}
+	}
+
+	return result
+}
+
+func hasStudentRelationStatus(raw string, wanted string) bool {
+	for _, status := range normalizeStudentRelationStatusValues(raw) {
+		if status == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func applyStudentRelationStatusFilter(query *gorm.DB, field string, relationStatus string, matchExists bool) *gorm.DB {
+	statuses := normalizeStudentRelationStatusValues(relationStatus)
+	if len(statuses) == 0 {
+		return query
+	}
+
+	if len(statuses) == 1 {
+		if statuses[0] == "ada" {
+			if matchExists {
+				return query.Where("EXISTS (?)", field)
+			}
+			return query.Where(field)
+		}
+		if statuses[0] == "kosong" {
+			if matchExists {
+				return query.Where("NOT EXISTS (?)", field)
+			}
+			return query.Where("? IS NULL", gorm.Expr(field))
+		}
+	}
+
+	// Checkbox combinations: match any of the selected statuses. This keeps the
+	// API flexible for filters like "ada,kosong" without breaking old single-select states.
+	clauses := make([]string, 0, len(statuses))
+	args := make([]interface{}, 0, len(statuses))
+	for _, status := range statuses {
+		if status == "ada" {
+			if matchExists {
+				clauses = append(clauses, "EXISTS (?)")
+				args = append(args, field)
+			} else {
+				clauses = append(clauses, "? IS NOT NULL")
+				args = append(args, gorm.Expr(field))
+			}
+		} else if status == "kosong" {
+			if matchExists {
+				clauses = append(clauses, "NOT EXISTS (?)")
+				args = append(args, field)
+			} else {
+				clauses = append(clauses, "? IS NULL")
+				args = append(args, gorm.Expr(field))
+			}
+		}
+	}
+	if len(clauses) == 0 {
+		return query
+	}
+	return query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+}
+
 func NewStudentHandler(db *gorm.DB) *StudentHandler {
 	return &StudentHandler{db: db}
 }
@@ -34,10 +141,19 @@ func (h *StudentHandler) List(c *fiber.Ctx) error {
 		query = query.Where("status_periode = ?", status)
 	}
 	if relationStatus := c.Query("kelas_status"); relationStatus != "" {
-		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
-			query = query.Where("kelas_id IS NOT NULL")
-		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
-			query = query.Where("kelas_id IS NULL")
+		statuses := normalizeStudentRelationStatusValues(relationStatus)
+		if len(statuses) > 0 {
+			clauses := make([]string, 0, len(statuses))
+			for _, status := range statuses {
+				if status == "ada" {
+					clauses = append(clauses, "kelas_id IS NOT NULL")
+				} else if status == "kosong" {
+					clauses = append(clauses, "kelas_id IS NULL")
+				}
+			}
+			if len(clauses) > 0 {
+				query = query.Where("(" + strings.Join(clauses, " OR ") + ")")
+			}
 		}
 	}
 	if relationStatus := c.Query("laundry_status"); relationStatus != "" {
@@ -45,10 +161,22 @@ func (h *StudentHandler) List(c *fiber.Ctx) error {
 			Select("1").
 			Where("laundry_accounts.student_id = students.id").
 			Where("laundry_accounts.deleted_at IS NULL")
-		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
-			query = query.Where("EXISTS (?)", sub)
-		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
-			query = query.Where("NOT EXISTS (?)", sub)
+		statuses := normalizeStudentRelationStatusValues(relationStatus)
+		if len(statuses) > 0 {
+			clauses := make([]string, 0, len(statuses))
+			args := make([]interface{}, 0, len(statuses))
+			for _, status := range statuses {
+				if status == "ada" {
+					clauses = append(clauses, "EXISTS (?)")
+					args = append(args, sub)
+				} else if status == "kosong" {
+					clauses = append(clauses, "NOT EXISTS (?)")
+					args = append(args, sub)
+				}
+			}
+			if len(clauses) > 0 {
+				query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+			}
 		}
 	}
 	if relationStatus := c.Query("halaqoh_status"); relationStatus != "" {
@@ -56,10 +184,22 @@ func (h *StudentHandler) List(c *fiber.Ctx) error {
 			Select("1").
 			Where("halaqoh_assignments.student_id = students.id").
 			Where("halaqoh_assignments.active = ?", true)
-		if relationStatus == "ada" || relationStatus == "yes" || relationStatus == "exists" {
-			query = query.Where("EXISTS (?)", sub)
-		} else if relationStatus == "kosong" || relationStatus == "tidak_ada" || relationStatus == "null" || relationStatus == "none" {
-			query = query.Where("NOT EXISTS (?)", sub)
+		statuses := normalizeStudentRelationStatusValues(relationStatus)
+		if len(statuses) > 0 {
+			clauses := make([]string, 0, len(statuses))
+			args := make([]interface{}, 0, len(statuses))
+			for _, status := range statuses {
+				if status == "ada" {
+					clauses = append(clauses, "EXISTS (?)")
+					args = append(args, sub)
+				} else if status == "kosong" {
+					clauses = append(clauses, "NOT EXISTS (?)")
+					args = append(args, sub)
+				}
+			}
+			if len(clauses) > 0 {
+				query = query.Where("("+strings.Join(clauses, " OR ")+")", args...)
+			}
 		}
 	}
 
