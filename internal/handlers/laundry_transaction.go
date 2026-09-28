@@ -57,17 +57,20 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
-		query = query.Joins("JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
+		query = query.
+			Joins("LEFT JOIN laundry_accounts ON laundry_accounts.id = laundry_transactions.laundry_account_id").
+			Joins("LEFT JOIN students ON students.id = laundry_accounts.student_id").
+			Joins("LEFT JOIN users ON users.id = laundry_accounts.user_id").
 			Where(
-				"laundry_accounts.nomor_laundry LIKE ? OR laundry_transactions.catatan LIKE ?",
-				"%"+search+"%", "%"+search+"%",
+				"laundry_accounts.nomor_laundry LIKE ? OR laundry_transactions.catatan LIKE ? OR students.nama_lengkap LIKE ? OR users.name LIKE ?",
+				"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%",
 			)
 	}
 
 	query.Count(&total)
 
 	offset := (page - 1) * perPage
-	query.Order("created_at desc").Limit(perPage).Offset(offset).Find(&transactions)
+	query.Order("laundry_transactions.created_at desc").Limit(perPage).Offset(offset).Find(&transactions)
 
 	return c.JSON(fiber.Map{
 		"data":        transactions,
