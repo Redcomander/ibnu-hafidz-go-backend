@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
+	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -224,5 +226,63 @@ func TestScheduleListTrashedAndLifecycle(t *testing.T) {
 	}
 	if childAbsensiCount != 0 {
 		t.Fatalf("expected absensis to be removed when schedule is force-deleted, got count=%d", childAbsensiCount)
+	}
+}
+
+func TestScheduleListIgnoresSoftDeletedAssignments(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	setupSQL := []string{
+		`CREATE TABLE lessons (id INTEGER PRIMARY KEY, nama TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE kelas (id INTEGER PRIMARY KEY, nama TEXT, tingkat TEXT, gender TEXT, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE lesson_kelas_teachers (id INTEGER PRIMARY KEY, lesson_id INTEGER, kelas_id INTEGER, user_id INTEGER, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE jadwal_formal (id INTEGER PRIMARY KEY, lesson_kelas_teacher_id INTEGER, hari TEXT, jam_mulai TEXT, jam_selesai TEXT, type TEXT, substitute_teacher_id INTEGER, substitute_date DATE, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE absensis (id INTEGER PRIMARY KEY, jadwal_formal_id INTEGER, tanggal DATE, status TEXT, materi TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE teacher_attendances (id INTEGER PRIMARY KEY, jadwal_formal_id INTEGER, user_id INTEGER, date DATE, status TEXT, deleted_at DATETIME)`,
+		`INSERT INTO users (id, name) VALUES (10, 'Guru A')`,
+		`INSERT INTO lessons (id, nama) VALUES (1, 'Matematika')`,
+		`INSERT INTO kelas (id, nama, tingkat) VALUES (1, '10A', '10')`,
+		`INSERT INTO kelas (id, nama, tingkat) VALUES (2, '12C', '12')`,
+		`INSERT INTO lesson_kelas_teachers (id, lesson_id, kelas_id, user_id, deleted_at) VALUES (1, 1, 1, 10, NULL)`,
+		`INSERT INTO lesson_kelas_teachers (id, lesson_id, kelas_id, user_id, deleted_at) VALUES (2, 1, 2, 10, datetime('now'))`,
+		`INSERT INTO jadwal_formal (id, lesson_kelas_teacher_id, hari, jam_mulai, jam_selesai, type) VALUES (1, 1, 'Selasa', '08:00:00', '09:00:00', 'normal')`,
+		`INSERT INTO jadwal_formal (id, lesson_kelas_teacher_id, hari, jam_mulai, jam_selesai, type) VALUES (2, 2, 'Selasa', '09:30:00', '10:30:00', 'normal')`,
+	}
+	for _, q := range setupSQL {
+		if err := db.Exec(q).Error; err != nil {
+			t.Fatalf("setup query failed: %s :: %v", q, err)
+		}
+	}
+
+	handler := NewScheduleHandler(db)
+	app := fiber.New()
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals("user", &models.User{ID: 10, Roles: []models.Role{{Name: "teacher"}}})
+		return c.Next()
+	})
+	app.Get("/schedules", handler.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/schedules?type=formal&date=2026-09-29", nil)
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform list request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", res.StatusCode)
+	}
+
+	var schedules []map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&schedules); err != nil {
+		t.Fatalf("decode schedules response: %v", err)
+	}
+	if len(schedules) != 1 {
+		t.Fatalf("expected only active assignment schedules to remain, got %d schedules: %#v", len(schedules), schedules)
+	}
+	if got := schedules[0]["id"]; got != float64(1) {
+		t.Fatalf("expected schedule id 1 to remain, got %#v", got)
 	}
 }

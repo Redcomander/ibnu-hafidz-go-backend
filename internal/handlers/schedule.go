@@ -82,8 +82,10 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 			Preload("SubstituteTeacher")
 
 		if !canViewAll || classID != "" || teacherID != "" || gender != "" || search != "" {
-			query = query.Joins("JOIN diniyyah_kelas_teachers dkt ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = dkt.id")
+			query = query.Joins("JOIN diniyyah_kelas_teachers dkt ON jadwal_diniyyahs.diniyyah_kelas_teacher_id = dkt.id AND dkt.deleted_at IS NULL")
 		}
+		query = query.Where("jadwal_diniyyahs.deleted_at IS NULL").
+			Where("EXISTS (SELECT 1 FROM diniyyah_kelas_teachers dkt2 WHERE dkt2.id = jadwal_diniyyahs.diniyyah_kelas_teacher_id AND dkt2.deleted_at IS NULL)")
 		if !canViewAll {
 			query = query.Where("dkt.user_id = ? OR (jadwal_diniyyahs.substitute_teacher_id = ? AND DATE(jadwal_diniyyahs.substitute_date) = ?)", user.ID, user.ID, dateStr)
 		}
@@ -187,8 +189,10 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 	}
 
 	if !canViewAll || classID != "" || teacherID != "" || gender != "" || search != "" {
-		query = query.Joins("JOIN lesson_kelas_teachers lkt ON jadwal_formal.lesson_kelas_teacher_id = lkt.id")
+		query = query.Joins("JOIN lesson_kelas_teachers lkt ON jadwal_formal.lesson_kelas_teacher_id = lkt.id AND lkt.deleted_at IS NULL")
 	}
+	query = query.Where("jadwal_formal.deleted_at IS NULL").
+		Where("EXISTS (SELECT 1 FROM lesson_kelas_teachers lkt2 WHERE lkt2.id = jadwal_formal.lesson_kelas_teacher_id AND lkt2.deleted_at IS NULL)")
 	if !canViewAll {
 		query = query.Where("lkt.user_id = ? OR (jadwal_formal.substitute_teacher_id = ? AND DATE(jadwal_formal.substitute_date) = ?)", user.ID, user.ID, dateStr)
 	}
