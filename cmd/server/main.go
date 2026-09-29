@@ -465,6 +465,8 @@ func main() {
 	schedules.Post("/", middleware.Permission("jadwal_formal.create"), scheduleHandler.Create)
 	schedules.Put("/:id", middleware.Permission("jadwal_formal.edit"), scheduleHandler.Update)
 	schedules.Delete("/:id", middleware.Permission("jadwal_formal.delete"), scheduleHandler.Delete)
+	schedules.Post("/bulk-restore", middleware.PermissionAny("jadwal_formal.edit", "jadwal_diniyyah.edit"), scheduleHandler.BulkRestore)
+	schedules.Post("/bulk-force-delete", middleware.PermissionAny("jadwal_formal.delete", "jadwal_diniyyah.delete"), scheduleHandler.BulkForceDelete)
 	schedules.Put("/:id/restore", middleware.PermissionAny("jadwal_formal.edit", "jadwal_diniyyah.edit"), scheduleHandler.Restore)
 	schedules.Delete("/:id/force", middleware.PermissionAny("jadwal_formal.delete", "jadwal_diniyyah.delete"), scheduleHandler.ForceDelete)
 
