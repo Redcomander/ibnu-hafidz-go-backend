@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
@@ -217,6 +219,62 @@ func (h *LessonTeacherHandler) AssignToLesson(c *fiber.Ctx) error {
 
 	h.db.Preload("Kelas").Preload("Teacher").First(&assignment, assignment.ID)
 	return c.Status(fiber.StatusCreated).JSON(assignment)
+}
+
+// UpdateTeacher changes only the assigned teacher for an existing lesson/class relation.
+func (h *LessonTeacherHandler) UpdateTeacher(c *fiber.Ctx) error {
+	id := c.Params("assignment_id")
+	lessonType := strings.TrimSpace(strings.ToLower(c.Query("type", "formal")))
+
+	type Input struct {
+		TeacherID uint   `json:"teacher_id"`
+		Type      string `json:"type"`
+	}
+
+	var input Input
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+	if input.Type != "" {
+		lessonType = strings.TrimSpace(strings.ToLower(input.Type))
+	}
+	if input.TeacherID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "teacher_id is required"})
+	}
+
+	if lessonType == "diniyyah" {
+		var assignment models.DiniyyahLessonTeacher
+		if err := h.db.First(&assignment, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Assignment not found"})
+			}
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update teacher"})
+		}
+		assignment.UserID = input.TeacherID
+		if err := h.db.Save(&assignment).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update teacher"})
+		}
+		if err := h.db.Preload("DiniyyahLesson").Preload("Teacher").First(&assignment, assignment.ID).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to load updated assignment"})
+		}
+		return c.JSON(assignment)
+	}
+
+	var assignment models.LessonTeacher
+	if err := h.db.First(&assignment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Assignment not found"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update teacher"})
+	}
+	assignment.UserID = input.TeacherID
+	if err := h.db.Save(&assignment).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update teacher"})
+	}
+	if err := h.db.Preload("Lesson").Preload("Teacher").First(&assignment, assignment.ID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to load updated assignment"})
+	}
+	return c.JSON(assignment)
 }
 
 // Unassign removes a link

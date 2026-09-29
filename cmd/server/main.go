@@ -433,6 +433,7 @@ func main() {
 	ltHandlerLesson := handlers.NewLessonTeacherHandler(db)
 	lessons.Get("/:id/assignments", middleware.Permission("lessons.view"), ltHandlerLesson.ListByLesson)
 	lessons.Post(":id/assignments", middleware.PermissionAny("curriculum.edit", "kelas.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandlerLesson.AssignToLesson)
+	lessons.Put("/assignments/:assignment_id", middleware.PermissionAny("curriculum.edit", "kelas.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandlerLesson.UpdateTeacher)
 	lessons.Delete("/assignments/:assignment_id", middleware.PermissionAny("curriculum.edit", "kelas.edit", "jadwal_formal.edit", "jadwal_diniyyah.edit"), ltHandlerLesson.Unassign)
 
 	// Dashboard
@@ -458,11 +459,14 @@ func main() {
 	schedules := protected.Group("/schedules")
 	// List (General Auth, frontend handles type logic)
 	schedules.Get("/", scheduleHandler.List)
+	schedules.Get("/trashed", middleware.PermissionAny("jadwal_formal.view", "jadwal_diniyyah.view"), scheduleHandler.ListTrashed)
 	// Create/Edit/Delete (Assuming 'jadwal_formal' permissions apply broadly or admin has them)
 	// Ideally should be split, but for now:
 	schedules.Post("/", middleware.Permission("jadwal_formal.create"), scheduleHandler.Create)
 	schedules.Put("/:id", middleware.Permission("jadwal_formal.edit"), scheduleHandler.Update)
 	schedules.Delete("/:id", middleware.Permission("jadwal_formal.delete"), scheduleHandler.Delete)
+	schedules.Put("/:id/restore", middleware.PermissionAny("jadwal_formal.edit", "jadwal_diniyyah.edit"), scheduleHandler.Restore)
+	schedules.Delete("/:id/force", middleware.PermissionAny("jadwal_formal.delete", "jadwal_diniyyah.delete"), scheduleHandler.ForceDelete)
 
 	// Attendance (Absensi)
 	absensiHandler := handlers.NewAbsensiHandler(db)

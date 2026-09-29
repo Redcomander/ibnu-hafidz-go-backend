@@ -361,6 +361,84 @@ func (h *ScheduleHandler) Delete(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Schedule deleted successfully"})
 }
 
+// ListTrashed returns soft-deleted schedules for the given type.
+func (h *ScheduleHandler) ListTrashed(c *fiber.Ctx) error {
+	scheduleType := c.Query("type", "formal")
+
+	if scheduleType == "diniyyah" {
+		var schedules []models.DiniyyahSchedule
+		if err := h.db.Unscoped().Preload("Assignment.Kelas").Preload("Assignment.Teacher").Preload("Assignment.DiniyyahLesson").
+			Where("deleted_at IS NOT NULL").
+			Order("deleted_at desc").
+			Find(&schedules).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch trashed schedules"})
+		}
+		return c.JSON(schedules)
+	}
+
+	var schedules []models.Schedule
+	if err := h.db.Unscoped().Preload("Assignment.Kelas").Preload("Assignment.Teacher").Preload("Assignment.Lesson").
+		Where("deleted_at IS NOT NULL").
+		Order("deleted_at desc").
+		Find(&schedules).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch trashed schedules"})
+	}
+
+	return c.JSON(schedules)
+}
+
+// Restore returns a soft-deleted schedule back to active state.
+func (h *ScheduleHandler) Restore(c *fiber.Ctx) error {
+	id := c.Params("id")
+	scheduleType := c.Query("type", "formal")
+
+	if scheduleType == "diniyyah" {
+		var schedule models.DiniyyahSchedule
+		if err := h.db.Unscoped().First(&schedule, id).Error; err != nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
+		}
+		if !schedule.DeletedAt.Valid {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schedule is not deleted"})
+		}
+		if err := h.db.Unscoped().Model(&schedule).Update("deleted_at", nil).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to restore schedule"})
+		}
+		return c.JSON(fiber.Map{"message": "Schedule restored successfully"})
+	}
+
+	var schedule models.Schedule
+	if err := h.db.Unscoped().First(&schedule, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
+	}
+	if !schedule.DeletedAt.Valid {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Schedule is not deleted"})
+	}
+	if err := h.db.Unscoped().Model(&schedule).Update("deleted_at", nil).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to restore schedule"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Schedule restored successfully"})
+}
+
+// ForceDelete permanently removes a soft-deleted schedule.
+func (h *ScheduleHandler) ForceDelete(c *fiber.Ctx) error {
+	id := c.Params("id")
+	scheduleType := c.Query("type", "formal")
+
+	if scheduleType == "diniyyah" {
+		if err := h.db.Unscoped().Delete(&models.DiniyyahSchedule{}, id).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule"})
+		}
+		return c.JSON(fiber.Map{"message": "Schedule permanently deleted"})
+	}
+
+	if err := h.db.Unscoped().Delete(&models.Schedule{}, id).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule"})
+	}
+
+	return c.JSON(fiber.Map{"message": "Schedule permanently deleted"})
+}
+
 // Update modifies an existing schedule
 func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
