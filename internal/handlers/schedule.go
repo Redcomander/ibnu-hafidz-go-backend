@@ -426,22 +426,98 @@ func (h *ScheduleHandler) Restore(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Schedule restored successfully"})
 }
 
-// ForceDelete permanently removes a soft-deleted schedule.
+// ForceDelete permanently removes a soft-deleted schedule and its dependent records.
 func (h *ScheduleHandler) ForceDelete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	scheduleType := c.Query("type", "formal")
 
-	if scheduleType == "diniyyah" {
-		if err := h.db.Unscoped().Delete(&models.DiniyyahSchedule{}, id).Error; err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule"})
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to begin transaction"})
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			panic(r)
 		}
-		return c.JSON(fiber.Map{"message": "Schedule permanently deleted"})
-	}
+	}()
 
-	if err := h.db.Unscoped().Delete(&models.Schedule{}, id).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule"})
-	}
+	cleanupErr := func() error {
+		if scheduleType == "diniyyah" {
+			var teacherAttendanceIDs []uint
+			if err := tx.Unscoped().Model(&models.TeacherAttendance{}).Where("jadwal_diniyyah_id = ?", id).Pluck("id", &teacherAttendanceIDs).Error; err != nil {
+				return err
+			}
+			if len(teacherAttendanceIDs) > 0 && tx.Migrator().HasTable(&models.TeacherAttendanceSnapshot{}) {
+				if err := tx.Unscoped().Where("teacher_attendance_id IN ?", teacherAttendanceIDs).Delete(&models.TeacherAttendanceSnapshot{}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Unscoped().Where("jadwal_diniyyah_id = ?", id).Delete(&models.TeacherAttendance{}).Error; err != nil {
+				return err
+			}
 
+			var substituteLogIDs []uint
+			if err := tx.Unscoped().Model(&models.SubstituteDiniyyahLog{}).Where("jadwal_diniyyah_id = ?", id).Pluck("id", &substituteLogIDs).Error; err != nil {
+				return err
+			}
+			if len(substituteLogIDs) > 0 && tx.Migrator().HasTable(&models.SubstituteDiniyyahLogSnapshot{}) {
+				if err := tx.Unscoped().Where("substitute_diniyyah_log_id IN ?", substituteLogIDs).Delete(&models.SubstituteDiniyyahLogSnapshot{}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Unscoped().Where("jadwal_diniyyah_id = ?", id).Delete(&models.SubstituteDiniyyahLog{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Where("jadwal_diniyyah_id = ?", id).Delete(&models.AbsensiDiniyyah{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Unscoped().Delete(&models.DiniyyahSchedule{}, id).Error; err != nil {
+				return err
+			}
+			return nil
+		}
+
+		var teacherAttendanceIDs []uint
+		if err := tx.Unscoped().Model(&models.TeacherAttendance{}).Where("jadwal_formal_id = ?", id).Pluck("id", &teacherAttendanceIDs).Error; err != nil {
+			return err
+		}
+		if len(teacherAttendanceIDs) > 0 && tx.Migrator().HasTable(&models.TeacherAttendanceSnapshot{}) {
+			if err := tx.Unscoped().Where("teacher_attendance_id IN ?", teacherAttendanceIDs).Delete(&models.TeacherAttendanceSnapshot{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Unscoped().Where("jadwal_formal_id = ?", id).Delete(&models.TeacherAttendance{}).Error; err != nil {
+			return err
+		}
+
+		var substituteLogIDs []uint
+		if err := tx.Unscoped().Model(&models.SubstituteLog{}).Where("jadwal_formal_id = ?", id).Pluck("id", &substituteLogIDs).Error; err != nil {
+			return err
+		}
+		if len(substituteLogIDs) > 0 && tx.Migrator().HasTable(&models.SubstituteLogSnapshot{}) {
+			if err := tx.Unscoped().Where("substitute_log_id IN ?", substituteLogIDs).Delete(&models.SubstituteLogSnapshot{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Unscoped().Where("jadwal_formal_id = ?", id).Delete(&models.SubstituteLog{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Where("jadwal_formal_id = ?", id).Delete(&models.Absensi{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Delete(&models.Schedule{}, id).Error; err != nil {
+			return err
+		}
+		return nil
+	}()
+	if cleanupErr != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule", "details": cleanupErr.Error()})
+	}
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to permanently delete schedule", "details": err.Error()})
+	}
 	return c.JSON(fiber.Map{"message": "Schedule permanently deleted"})
 }
 
