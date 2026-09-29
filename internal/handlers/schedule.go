@@ -367,21 +367,27 @@ func (h *ScheduleHandler) ListTrashed(c *fiber.Ctx) error {
 
 	if scheduleType == "diniyyah" {
 		var schedules []models.DiniyyahSchedule
-		if err := h.db.Unscoped().Preload("Assignment.Kelas").Preload("Assignment.Teacher").Preload("Assignment.DiniyyahLesson").
-			Where("deleted_at IS NOT NULL").
-			Order("deleted_at desc").
-			Find(&schedules).Error; err != nil {
+		if err := h.db.Unscoped().Where("deleted_at IS NOT NULL").Order("deleted_at desc").Find(&schedules).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch trashed schedules"})
+		}
+		for i := range schedules {
+			assignment := models.DiniyyahLessonTeacher{}
+			if err := h.db.Unscoped().Preload("Kelas").Preload("Teacher").Preload("DiniyyahLesson").First(&assignment, schedules[i].DiniyyahLessonTeacherID).Error; err == nil {
+				schedules[i].Assignment = assignment
+			}
 		}
 		return c.JSON(schedules)
 	}
 
 	var schedules []models.Schedule
-	if err := h.db.Unscoped().Preload("Assignment.Kelas").Preload("Assignment.Teacher").Preload("Assignment.Lesson").
-		Where("deleted_at IS NOT NULL").
-		Order("deleted_at desc").
-		Find(&schedules).Error; err != nil {
+	if err := h.db.Unscoped().Where("deleted_at IS NOT NULL").Order("deleted_at desc").Find(&schedules).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to fetch trashed schedules"})
+	}
+	for i := range schedules {
+		assignment := models.LessonTeacher{}
+		if err := h.db.Unscoped().Preload("Kelas").Preload("Teacher").Preload("Lesson").First(&assignment, schedules[i].LessonTeacherID).Error; err == nil {
+			schedules[i].Assignment = assignment
+		}
 	}
 
 	return c.JSON(schedules)

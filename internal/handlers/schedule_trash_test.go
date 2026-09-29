@@ -11,22 +11,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestScheduleRestoreAndForceDelete(t *testing.T) {
+func TestScheduleListTrashedAndLifecycle(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite in-memory db: %v", err)
-	}
-
-	if err := db.Exec(`CREATE TABLE lesson_kelas_teachers (
-        id INTEGER PRIMARY KEY,
-        lesson_id INTEGER,
-        kelas_id INTEGER,
-        user_id INTEGER,
-        created_at DATETIME,
-        updated_at DATETIME,
-        deleted_at DATETIME
-    )`).Error; err != nil {
-		t.Fatalf("create lesson_kelas_teachers: %v", err)
 	}
 
 	if err := db.Exec(`CREATE TABLE lessons (
@@ -61,6 +49,18 @@ func TestScheduleRestoreAndForceDelete(t *testing.T) {
 		t.Fatalf("create kelas: %v", err)
 	}
 
+	if err := db.Exec(`CREATE TABLE lesson_kelas_teachers (
+        id INTEGER PRIMARY KEY,
+        lesson_id INTEGER,
+        kelas_id INTEGER,
+        user_id INTEGER,
+        created_at DATETIME,
+        updated_at DATETIME,
+        deleted_at DATETIME
+    )`).Error; err != nil {
+		t.Fatalf("create lesson_kelas_teachers: %v", err)
+	}
+
 	if err := db.Exec(`CREATE TABLE jadwal_formal (
         id INTEGER PRIMARY KEY,
         lesson_kelas_teacher_id INTEGER,
@@ -75,6 +75,15 @@ func TestScheduleRestoreAndForceDelete(t *testing.T) {
 		t.Fatalf("create jadwal_formal: %v", err)
 	}
 
+	if err := db.Exec(`INSERT INTO lessons (id, nama) VALUES (1, 'Matematika')`).Error; err != nil {
+		t.Fatalf("seed lesson: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO users (id, name) VALUES (9, 'Guru A')`).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO kelas (id, nama, tingkat) VALUES (3, 'A', '1')`).Error; err != nil {
+		t.Fatalf("seed class: %v", err)
+	}
 	if err := db.Exec(`INSERT INTO lesson_kelas_teachers (id, lesson_id, kelas_id, user_id) VALUES (71, 1, 3, 9)`).Error; err != nil {
 		t.Fatalf("seed assignment: %v", err)
 	}
@@ -87,8 +96,18 @@ func TestScheduleRestoreAndForceDelete(t *testing.T) {
 
 	handler := NewScheduleHandler(db)
 	app := fiber.New()
+	app.Get("/schedules/trashed", handler.ListTrashed)
 	app.Put("/schedules/:id/restore", handler.Restore)
 	app.Delete("/schedules/:id/force", handler.ForceDelete)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/schedules/trashed?type=formal", nil)
+	listRes, err := app.Test(listReq)
+	if err != nil {
+		t.Fatalf("perform list request: %v", err)
+	}
+	if listRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listRes.StatusCode)
+	}
 
 	restoreReq := httptest.NewRequest(http.MethodPut, "/schedules/12/restore?type=formal", nil)
 	restoreRes, err := app.Test(restoreReq)
