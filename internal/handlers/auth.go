@@ -274,6 +274,44 @@ func normalizeOptionalString(value string) *string {
 	return &trimmed
 }
 
+func normalizeStoredUploadPath(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+
+	trimmed = strings.ReplaceAll(filepath.ToSlash(trimmed), "\\", "/")
+	trimmed = strings.TrimPrefix(trimmed, "./")
+	trimmed = strings.TrimPrefix(trimmed, "/")
+
+	switch {
+	case strings.HasPrefix(trimmed, "uploads/"):
+		return "/" + trimmed
+	case strings.HasPrefix(trimmed, "avatars/"):
+		return "/uploads/" + trimmed
+	case strings.HasPrefix(trimmed, "gallery/"):
+		return "/uploads/" + trimmed
+	default:
+		return "/uploads/" + trimmed
+	}
+}
+
+func resolveStoredUploadDiskPath(basePath, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+
+	trimmed = strings.ReplaceAll(filepath.ToSlash(trimmed), "\\", "/")
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	trimmed = strings.TrimPrefix(trimmed, "uploads/")
+	trimmed = strings.TrimPrefix(trimmed, "avatars/")
+	trimmed = strings.TrimPrefix(trimmed, "gallery/")
+	trimmed = strings.TrimPrefix(trimmed, "./")
+
+	return filepath.Join(basePath, filepath.FromSlash(trimmed))
+}
+
 // UploadProfileAvatar uploads and updates authenticated user's avatar.
 func (h *AuthHandler) UploadProfileAvatar(c *fiber.Ctx) error {
 	userID, _ := c.Locals("userID").(uint)
@@ -354,7 +392,8 @@ func (h *AuthHandler) UploadProfileAvatar(c *fiber.Ctx) error {
 
 	filename := fmt.Sprintf("user_%d_%d%s", userID, time.Now().UnixNano(), ext)
 	relPath := filepath.ToSlash(filepath.Join("avatars", filename))
-	absPath := filepath.Join(uploadPath, relPath)
+	storedPath := normalizeStoredUploadPath(relPath)
+	absPath := filepath.Join(uploadPath, filepath.FromSlash(strings.TrimPrefix(storedPath, "/uploads/")))
 
 	if err := c.SaveFile(file, absPath); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
@@ -364,13 +403,13 @@ func (h *AuthHandler) UploadProfileAvatar(c *fiber.Ctx) error {
 	}
 
 	if user.FotoGuru != nil && *user.FotoGuru != "" {
-		oldPath := filepath.Join(uploadPath, filepath.FromSlash(*user.FotoGuru))
+		oldPath := resolveStoredUploadDiskPath(uploadPath, *user.FotoGuru)
 		if oldPath != absPath {
 			_ = os.Remove(oldPath)
 		}
 	}
 
-	user.FotoGuru = &relPath
+	user.FotoGuru = &storedPath
 	if err := h.db.Save(&user).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
