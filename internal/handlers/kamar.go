@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"gorm.io/gorm"
@@ -12,6 +14,94 @@ type KamarHandler struct {
 
 func NewKamarHandler(db *gorm.DB) *KamarHandler {
 	return &KamarHandler{db: db}
+}
+
+func isKamarAdminUser(user *models.User) bool {
+	if user == nil {
+		return false
+	}
+	for _, role := range user.Roles {
+		roleName := strings.ToLower(strings.TrimSpace(role.Name))
+		if roleName == "super_admin" || roleName == "admin" || roleName == "administrator" {
+			return true
+		}
+	}
+	return false
+}
+
+func userCanManageKamar(user *models.User, kamar *models.Kamar) bool {
+	if user == nil || kamar == nil {
+		return false
+	}
+
+	if isKamarAdminUser(user) {
+		return true
+	}
+
+	if user.ID != 0 && kamar.WaliKamarID == user.ID {
+		return true
+	}
+
+	for _, wali := range kamar.SecondaryWalies {
+		if wali != nil && wali.ID == user.ID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (h *KamarHandler) currentUser(c *fiber.Ctx) *models.User {
+	if user, ok := c.Locals("user").(*models.User); ok && user != nil {
+		return user
+	}
+	return nil
+}
+
+func (h *KamarHandler) enforceKamarAccess(c *fiber.Ctx, kamar *models.Kamar) error {
+	user := h.currentUser(c)
+	if user == nil {
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+			Error:   "forbidden",
+			Message: "User context is missing",
+		})
+	}
+	if !userCanManageKamar(user, kamar) {
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+			Error:   "forbidden",
+			Message: "You are not assigned as the wali kamar or admin for this room",
+		})
+	}
+	return nil
+}
+
+func (h *KamarHandler) enforceKamarDeleteAccess(c *fiber.Ctx) error {
+	user := h.currentUser(c)
+	if user == nil {
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+			Error:   "forbidden",
+			Message: "User context is missing",
+		})
+	}
+	if !isKamarAdminUser(user) {
+		return c.Status(fiber.StatusForbidden).JSON(models.ErrorResponse{
+			Error:   "forbidden",
+			Message: "Only admins can delete a room",
+		})
+	}
+	return nil
+}
+
+func (h *KamarHandler) scopeKamarQueryForUser(c *fiber.Ctx, query *gorm.DB) *gorm.DB {
+	user := h.currentUser(c)
+	if user == nil || isKamarAdminUser(user) {
+		return query
+	}
+
+	return query.
+		Joins("LEFT JOIN kamar_user ON kamar_user.kamar_id = kamars.id").
+		Where("kamars.wali_kamar_id = ? OR kamar_user.user_id = ?", user.ID, user.ID).
+		Distinct("kamars.id")
 }
 
 // List returns all kamar with pagination and search
@@ -26,6 +116,7 @@ func (h *KamarHandler) List(c *fiber.Ctx) error {
 	order := c.Query("order", "desc")
 	// Preload WaliKamar and SecondaryWalies
 	query := h.db.Model(&models.Kamar{}).Preload("WaliKamar").Preload("SecondaryWalies")
+	query = h.scopeKamarQueryForUser(c, query)
 
 	if search != "" {
 		query = query.Where("nama_kamar LIKE ? OR keterangan LIKE ?", "%"+search+"%", "%"+search+"%")
@@ -55,6 +146,10 @@ func (h *KamarHandler) Get(c *fiber.Ctx) error {
 			Error:   "not_found",
 			Message: "Kamar not found",
 		})
+	}
+
+	if err := h.enforceKamarAccess(c, &kamar); err != nil {
+		return err
 	}
 
 	return c.JSON(kamar)
@@ -127,11 +222,15 @@ func (h *KamarHandler) AddStudent(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
 		})
+	}
+
+	if err := h.enforceKamarAccess(c, &kamar); err != nil {
+		return err
 	}
 
 	type AddStudentRequest struct {
@@ -146,11 +245,32 @@ func (h *KamarHandler) AddStudent(c *fiber.Ctx) error {
 		})
 	}
 
+	if req.StudentID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
+			Error:   "validation_error",
+			Message: "Student is required",
+		})
+	}
+
 	var student models.Student
 	if err := h.db.First(&student, req.StudentID).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
+		})
+	}
+
+	var existingCount int64
+	if err := h.db.Table("kamar_siswa").Where("kamar_id = ? AND student_id = ?", kamar.ID, student.ID).Count(&existingCount).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Failed to validate room membership",
+		})
+	}
+	if existingCount > 0 {
+		return c.Status(fiber.StatusConflict).JSON(models.ErrorResponse{
+			Error:   "conflict",
+			Message: "Student is already assigned to this room",
 		})
 	}
 
@@ -170,11 +290,15 @@ func (h *KamarHandler) RemoveStudent(c *fiber.Ctx) error {
 	studentID := c.Params("student_id")
 	var kamar models.Kamar
 
-	if err := h.db.First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
 		})
+	}
+
+	if err := h.enforceKamarAccess(c, &kamar); err != nil {
+		return err
 	}
 
 	var student models.Student
@@ -207,6 +331,10 @@ func (h *KamarHandler) Update(c *fiber.Ctx) error {
 		})
 	}
 
+	if err := h.enforceKamarAccess(c, &kamar); err != nil {
+		return err
+	}
+
 	type UpdateKamarRequest struct {
 		NamaKamar        string `json:"nama_kamar"`
 		Kapasitas        int    `json:"kapasitas"`
@@ -236,30 +364,34 @@ func (h *KamarHandler) Update(c *fiber.Ctx) error {
 		kamar.WaliKamarID = req.WaliKamarID
 	}
 
-	// Update Secondary Walies if provided (can be empty slice to clear)
-	// We check if the field was present in JSON by pointer or convention,
-	// but here we just assume if the client sends the key, it updates.
-	// For simplicity in this handler structure, we'll update association if request is parsed.
-	// Ideally we'd valid partial updates more strictly.
-	// Assuming prompt wants "can assign multiple user", implied full update on save.
-
 	if req.SecondaryWaliIDs != nil {
+		filtered := make([]uint, 0, len(req.SecondaryWaliIDs))
+		seen := make(map[uint]struct{})
+		for _, id := range req.SecondaryWaliIDs {
+			if id == 0 || id == req.WaliKamarID {
+				continue
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			filtered = append(filtered, id)
+		}
+
 		var secondaryWalies []*models.User
-		if len(req.SecondaryWaliIDs) > 0 {
-			if err := h.db.Find(&secondaryWalies, req.SecondaryWaliIDs).Error; err != nil {
+		if len(filtered) > 0 {
+			if err := h.db.Find(&secondaryWalies, filtered).Error; err != nil {
 				return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{
 					Error:   "validation_error",
 					Message: "Invalid secondary wali IDs",
 				})
 			}
 		}
-		// Replace associations
 		h.db.Model(&kamar).Association("SecondaryWalies").Replace(secondaryWalies)
 	}
 
 	h.db.Save(&kamar)
 
-	// Reload for response
 	h.db.Preload("WaliKamar").Preload("SecondaryWalies").First(&kamar, kamar.ID)
 
 	return c.JSON(kamar)
@@ -270,11 +402,15 @@ func (h *KamarHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
 		})
+	}
+
+	if err := h.enforceKamarDeleteAccess(c); err != nil {
+		return err
 	}
 
 	h.db.Delete(&kamar)

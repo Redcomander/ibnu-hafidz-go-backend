@@ -399,6 +399,12 @@ func main() {
 	kamars.Post("/:id/students", middleware.Permission("kamar.edit"), kamarHandler.AddStudent)
 	kamars.Delete("/:id/students/:student_id", middleware.Permission("kamar.edit"), kamarHandler.RemoveStudent)
 
+	kamarAttendanceHandler := handlers.NewKamarAttendanceHandler(db)
+	kamars.Get("/:id/attendance/sessions", middleware.Permission("kamar.view"), kamarAttendanceHandler.ListSessions)
+	kamars.Post("/:id/attendance/sessions", middleware.Permission("kamar.edit"), kamarAttendanceHandler.CreateSession)
+	kamars.Get("/:id/attendance/sessions/:session_id", middleware.Permission("kamar.view"), kamarAttendanceHandler.GetSession)
+	kamars.Post("/:id/attendance/sessions/:session_id/records", middleware.Permission("kamar.edit"), kamarAttendanceHandler.SubmitAttendance)
+
 	// Kelas (Classes)
 	kelasHandler := handlers.NewKelasHandler(db)
 	kelas := protected.Group("/kelas")
