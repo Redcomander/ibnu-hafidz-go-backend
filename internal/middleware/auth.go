@@ -30,6 +30,70 @@ func extractTokenFromRequest(c *fiber.Ctx) string {
 	return ""
 }
 
+func requestClientIP(c *fiber.Ctx) string {
+	for _, header := range []string{"CF-Connecting-IP", "X-Forwarded-For", "X-Real-IP", "True-Client-IP"} {
+		if value := strings.TrimSpace(c.Get(header)); value != "" {
+			if idx := strings.Index(value, ","); idx >= 0 {
+				value = strings.TrimSpace(value[:idx])
+			}
+			if value != "" {
+				return value
+			}
+		}
+	}
+	return strings.TrimSpace(c.IP())
+}
+
+func requestCountryCode(c *fiber.Ctx) string {
+	for _, header := range []string{"CF-IPCountry", "X-Country-Code", "X-Vercel-IP-Country"} {
+		if value := strings.TrimSpace(c.Get(header)); value != "" {
+			return strings.ToUpper(value)
+		}
+	}
+	return ""
+}
+
+func deviceNameFromUserAgent(userAgent string) string {
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	if ua == "" {
+		return "Perangkat tidak diketahui"
+	}
+
+	browser := "Browser"
+	switch {
+	case strings.Contains(ua, "edg/") || strings.Contains(ua, "edge/"):
+		browser = "Edge"
+	case strings.Contains(ua, "opr/"):
+		browser = "Opera"
+	case strings.Contains(ua, "firefox/"):
+		browser = "Firefox"
+	case strings.Contains(ua, "chrome/") && !strings.Contains(ua, "crios"):
+		browser = "Chrome"
+	case strings.Contains(ua, "safari/"):
+		browser = "Safari"
+	case strings.Contains(ua, "mobile"):
+		browser = "Mobile Browser"
+	}
+
+	osName := "Perangkat"
+	switch {
+	case strings.Contains(ua, "windows nt"):
+		osName = "Windows"
+	case strings.Contains(ua, "android"):
+		osName = "Android"
+	case strings.Contains(ua, "iphone"):
+		osName = "iPhone"
+	case strings.Contains(ua, "ipad"):
+		osName = "iPad"
+	case strings.Contains(ua, "mac os"):
+		osName = "macOS"
+	case strings.Contains(ua, "linux"):
+		osName = "Linux"
+	}
+
+	return browser + " di " + osName
+}
+
 // Auth validates JWT access token from Authorization header or query token.
 // Some browser-based downloads (excel/pdf exports) cannot send the Authorization header
 // via a plain anchor navigation, so a signed query token is accepted there as well.
@@ -231,9 +295,8 @@ func InjectDB(db *gorm.DB) fiber.Handler {
 // ActivityLog stores authenticated request metadata for audit/activity page.
 func ActivityLog() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Skip noisy endpoints
 		path := c.Path()
-		if path == "/api/notifications/stream" || path == "/api/activity-logs" || strings.HasPrefix(path, "/health") {
+		if path == "/health" || strings.HasPrefix(path, "/health") {
 			return c.Next()
 		}
 
@@ -243,20 +306,33 @@ func ActivityLog() fiber.Handler {
 		if !ok {
 			return err
 		}
-		userID, ok := c.Locals("userID").(uint)
-		if !ok || userID == 0 {
-			return err
+
+		ip := requestClientIP(c)
+		ua := c.Get("User-Agent")
+		country := requestCountryCode(c)
+		deviceName := deviceNameFromUserAgent(ua)
+		userID, _ := c.Locals("userID").(uint)
+		statusCode := c.Response().StatusCode()
+
+		log := models.UserActivityLog{
+			UserID:      userID,
+			Method:      c.Method(),
+			Path:        path,
+			StatusCode:  statusCode,
+			IPAddress:   &ip,
+			UserAgent:   &ua,
+			DeviceName:  &deviceName,
+			CountryCode: &country,
 		}
 
-		ip := c.IP()
-		ua := c.Get("User-Agent")
-		log := models.UserActivityLog{
-			UserID:     userID,
-			Method:     c.Method(),
-			Path:       path,
-			StatusCode: c.Response().StatusCode(),
-			IPAddress:  &ip,
-			UserAgent:  &ua,
+		if country == "" {
+			log.CountryCode = nil
+		}
+		if ua == "" {
+			log.UserAgent = nil
+		}
+		if ip == "" {
+			log.IPAddress = nil
 		}
 
 		_ = db.Create(&log).Error

@@ -242,6 +242,8 @@ func main() {
 	})
 
 	// Global middleware
+	app.Use(middleware.InjectDB(db))
+	app.Use(middleware.ActivityLog())
 	app.Use(logger.New())
 	// Security headers
 	app.Use(func(c *fiber.Ctx) error {
@@ -326,7 +328,7 @@ func main() {
 	public.Post("/arrivals/:token/submit", arrivalHandler.SubmitPublic)
 
 	// Protected routes
-	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg))
 
 	// Profile (self service)
 	profile := protected.Group("/profile")
@@ -805,7 +807,7 @@ func main() {
 	// OCR answer keys — persistent storage for kunci jawaban (survives OCR service resets)
 	ocrAnswerKeyHandler := handlers.NewOcrAnswerKeyHandler(db)
 	// User-facing routes (JWT auth) for Vue frontend
-	ocrAnswerKeys := api.Group("/ocr-answer-keys", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+	ocrAnswerKeys := api.Group("/ocr-answer-keys", middleware.InjectDB(db), middleware.Auth(cfg))
 	ocrAnswerKeys.Get("/", ocrAnswerKeyHandler.List)
 	ocrAnswerKeys.Get("/:id", ocrAnswerKeyHandler.Get)
 	ocrAnswerKeys.Post("/", ocrAnswerKeyHandler.Create)
@@ -821,7 +823,7 @@ func main() {
 
 	// OCR result links persistence (stored in Go DB, not proxied to OCR microservice)
 	ocrResultLinkHandler := handlers.NewOCRResultLinkHandler(db)
-	ocrResultLinks := api.Group("/ocr-result-links", middleware.InjectDB(db), middleware.Auth(cfg), middleware.ActivityLog())
+	ocrResultLinks := api.Group("/ocr-result-links", middleware.InjectDB(db), middleware.Auth(cfg))
 	ocrResultLinks.Get("/", ocrResultLinkHandler.List)
 	ocrResultLinks.Post("/", ocrResultLinkHandler.Create)
 	ocrResultLinks.Put("/:id", ocrResultLinkHandler.Update)
