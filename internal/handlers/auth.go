@@ -177,6 +177,83 @@ func (h *AuthHandler) Me(c *fiber.Ctx) error {
 	return c.JSON(user)
 }
 
+func buildLoginDeviceLabel(userAgent string) string {
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	if ua == "" {
+		return "Perangkat tidak diketahui"
+	}
+
+	browser := "Browser"
+	switch {
+	case strings.Contains(ua, "edg/") || strings.Contains(ua, "edge/"):
+		browser = "Edge"
+	case strings.Contains(ua, "opr/"):
+		browser = "Opera"
+	case strings.Contains(ua, "firefox/"):
+		browser = "Firefox"
+	case strings.Contains(ua, "chrome/") && !strings.Contains(ua, "crios"):
+		browser = "Chrome"
+	case strings.Contains(ua, "safari/"):
+		browser = "Safari"
+	}
+
+	osName := "Perangkat"
+	switch {
+	case strings.Contains(ua, "windows nt"):
+		osName = "Windows"
+	case strings.Contains(ua, "android"):
+		osName = "Android"
+	case strings.Contains(ua, "iphone"):
+		osName = "iPhone"
+	case strings.Contains(ua, "ipad"):
+		osName = "iPad"
+	case strings.Contains(ua, "mac os"):
+		osName = "macOS"
+	case strings.Contains(ua, "linux"):
+		osName = "Linux"
+	}
+
+	return fmt.Sprintf("%s di %s", browser, osName)
+}
+
+// GetDeviceLoginHistory returns recent successful login events for the current user.
+func (h *AuthHandler) GetDeviceLoginHistory(c *fiber.Ctx) error {
+	userID, _ := c.Locals("userID").(uint)
+	if userID == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
+			Error:   "unauthorized",
+			Message: "User not authenticated",
+		})
+	}
+
+	var logs []models.UserActivityLog
+	if err := h.db.Where("user_id = ? AND method = ? AND path = ?", userID, "POST", "/api/auth/login").Order("created_at desc").Limit(10).Find(&logs).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
+			Error:   "server_error",
+			Message: "Gagal mengambil riwayat login perangkat",
+		})
+	}
+
+	history := make([]fiber.Map, 0, len(logs))
+	for i, log := range logs {
+		agent := ""
+		if log.UserAgent != nil {
+			agent = *log.UserAgent
+		}
+
+		history = append(history, fiber.Map{
+			"id":          log.ID,
+			"created_at":  log.CreatedAt,
+			"ip_address":  log.IPAddress,
+			"user_agent":  agent,
+			"device_name": buildLoginDeviceLabel(agent),
+			"is_current":  i == 0,
+		})
+	}
+
+	return c.JSON(fiber.Map{"data": history})
+}
+
 // UpdateProfile updates authenticated user's own profile.
 func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 	userID, _ := c.Locals("userID").(uint)

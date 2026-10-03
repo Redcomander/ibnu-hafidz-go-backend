@@ -331,6 +331,7 @@ func main() {
 	// Profile (self service)
 	profile := protected.Group("/profile")
 	profile.Get("/", authHandler.Me)
+	profile.Get("/device-login-history", authHandler.GetDeviceLoginHistory)
 	profile.Post("/avatar", authHandler.UploadProfileAvatar)
 	profile.Put("/", authHandler.UpdateProfile)
 	profile.Delete("/", authHandler.DeleteProfile)

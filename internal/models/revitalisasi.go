@@ -8,17 +8,18 @@ import (
 
 // RevitalisasiTukang stores worker master data for the SMA revitalization project.
 type RevitalisasiTukang struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	Jenis     string         `gorm:"size:20;not null;default:sma;index" json:"jenis"`
-	Name      string         `gorm:"size:150;not null" json:"name"`
-	Divisi    string         `gorm:"size:150" json:"divisi"`
-	Area      string         `gorm:"size:150" json:"area"`
-	Phone     string         `gorm:"size:50" json:"phone"`
-	Note      string         `gorm:"type:text" json:"note"`
-	IsActive  bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	Jenis      string         `gorm:"size:20;not null;default:sma;index" json:"jenis"`
+	Name       string         `gorm:"size:150;not null" json:"name"`
+	Divisi     string         `gorm:"size:150" json:"divisi"`
+	Area       string         `gorm:"size:150" json:"area"`
+	GajiHarian float64        `gorm:"type:decimal(15,2);default:0" json:"gaji_harian"`
+	Phone      string         `gorm:"size:50" json:"phone"`
+	Note       string         `gorm:"type:text" json:"note"`
+	IsActive   bool           `gorm:"default:true" json:"is_active"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Absen []RevitalisasiAbsenTukang `gorm:"foreignKey:TukangID" json:"absen,omitempty"`
 }

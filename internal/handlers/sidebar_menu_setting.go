@@ -21,6 +21,7 @@ var sidebarMenuDefinitions = []sidebarMenuDefinition{
 	{Key: "students", Label: "Santri"},
 	{Key: "student_arrival", Label: "Absen Kedatangan"},
 	{Key: "teachers", Label: "Pengajar"},
+	{Key: "request_logs", Label: "Log Request Sistem"},
 	{Key: "kelas", Label: "Kelas"},
 	{Key: "lessons", Label: "Pelajaran Formal"},
 	{Key: "jadwal_formal", Label: "Jadwal Formal"},
