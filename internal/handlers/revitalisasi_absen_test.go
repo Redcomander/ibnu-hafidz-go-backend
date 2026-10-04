@@ -177,6 +177,109 @@ func stringPtr(value string) *string {
 	return &value
 }
 
+func TestGeneratePayrollReportRows(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.AutoMigrate(&models.RevitalisasiTukang{}, &models.RevitalisasiAbsenTukang{}); err != nil {
+		t.Fatalf("auto migrate models: %v", err)
+	}
+
+	handler := NewRevitalisasiHandler(db, t.TempDir())
+	if err := db.Create(&models.RevitalisasiTukang{
+		ID:         1,
+		Jenis:      "sma",
+		Name:       "Tukang A",
+		Divisi:     "Bangunan",
+		Area:       "Ruang Utama",
+		GajiHarian: 150000,
+		Kasbon:     50000,
+		CaraPotong: "langsung",
+		IsActive:   true,
+	}).Error; err != nil {
+		t.Fatalf("seed tukang: %v", err)
+	}
+
+	for _, item := range []struct {
+		date   string
+		status string
+	}{
+		{date: "2025-08-04", status: "hadir"},
+		{date: "2025-08-05", status: "hadir"},
+		{date: "2025-08-06", status: "izin"},
+	} {
+		if err := db.Create(&models.RevitalisasiAbsenTukang{
+			Jenis:    "sma",
+			Tanggal:  mustDate(t, item.date),
+			TukangID: 1,
+			Status:   normalizeStatus(item.status),
+		}).Error; err != nil {
+			t.Fatalf("seed attendance for %s: %v", item.date, err)
+		}
+	}
+
+	rows, err := handler.generatePayrollReportRows("sma", "2025-08-01", "2025-08-31")
+	if err != nil {
+		t.Fatalf("generate payroll rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].HariHadir != 2 {
+		t.Fatalf("expected 2 hadir days, got %d", rows[0].HariHadir)
+	}
+	if rows[0].TotalGaji != 300000 {
+		t.Fatalf("expected total gaji 300000, got %v", rows[0].TotalGaji)
+	}
+	if rows[0].Kasbon != 50000 {
+		t.Fatalf("expected kasbon 50000, got %v", rows[0].Kasbon)
+	}
+	if rows[0].TotalSetelahKasbon != 250000 {
+		t.Fatalf("expected total after kasbon 250000, got %v", rows[0].TotalSetelahKasbon)
+	}
+}
+
+func TestRevitalisasiKasbonLedgerBalance(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.AutoMigrate(&models.RevitalisasiTukang{}, &models.RevitalisasiKasbon{}); err != nil {
+		t.Fatalf("auto migrate kasbon models: %v", err)
+	}
+
+	handler := NewRevitalisasiHandler(db, t.TempDir())
+	if err := db.Create(&models.RevitalisasiTukang{ID: 1, Jenis: "sma", Name: "Tukang A", GajiHarian: 150000, Kasbon: 0, IsActive: true}).Error; err != nil {
+		t.Fatalf("seed tukang: %v", err)
+	}
+
+	if err := handler.syncTukangKasbonBalance(1); err != nil {
+		t.Fatalf("sync initial kasbon: %v", err)
+	}
+
+	if err := db.Create(&models.RevitalisasiKasbon{Jenis: "penambahan", TukangID: 1, Tanggal: mustDate(t, "2025-08-01"), Jumlah: 50000, Metode: "langsung", Keterangan: "Pinjaman awal"}).Error; err != nil {
+		t.Fatalf("create add kasbon: %v", err)
+	}
+	if err := db.Create(&models.RevitalisasiKasbon{Jenis: "pelunasan", TukangID: 1, Tanggal: mustDate(t, "2025-08-05"), Jumlah: 20000, Metode: "angsuran", Keterangan: "Bayar cicilan"}).Error; err != nil {
+		t.Fatalf("create pay kasbon: %v", err)
+	}
+
+	if err := handler.syncTukangKasbonBalance(1); err != nil {
+		t.Fatalf("sync adjusted kasbon: %v", err)
+	}
+
+	var tukang models.RevitalisasiTukang
+	if err := db.First(&tukang, 1).Error; err != nil {
+		t.Fatalf("load tukang: %v", err)
+	}
+	if tukang.Kasbon != 30000 {
+		t.Fatalf("expected kasbon balance 30000, got %v", tukang.Kasbon)
+	}
+}
+
 func mustJPEGBytes(t *testing.T, img image.Image) []byte {
 	t.Helper()
 	var buf bytes.Buffer

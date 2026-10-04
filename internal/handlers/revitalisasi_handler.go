@@ -10,14 +10,17 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/HugoSmits86/nativewebp"
+	"github.com/go-pdf/fpdf"
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"github.com/nfnt/resize"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -77,6 +80,312 @@ func safeDateString(value string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("date is required")
 	}
 	return time.Parse("2006-01-02", value)
+}
+
+type revitalisasiPayrollReportRow struct {
+	ID                 uint    `json:"id"`
+	Name               string  `json:"name"`
+	Divisi             string  `json:"divisi"`
+	Area               string  `json:"area"`
+	HariHadir          int64   `json:"hari_hadir"`
+	GajiHarian         float64 `json:"gaji_harian"`
+	Kasbon             float64 `json:"kasbon"`
+	CaraPotong         string  `json:"cara_potong"`
+	TotalGaji          float64 `json:"total_gaji"`
+	TotalSetelahKasbon float64 `json:"total_setelah_kasbon"`
+}
+
+func defaultRevitalisasiReportDates() (string, string) {
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	end := now
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
+}
+
+func normalizeKasbonJenis(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "pelunasan", "bayar", "pembayaran", "payment", "pengurangan":
+		return "pelunasan"
+	case "penambahan", "tambah", "tambahan", "pinjaman", "kasbon":
+		return "penambahan"
+	default:
+		return "penambahan"
+	}
+}
+
+func normalizeKasbonMetode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "angsuran", "cicilan", "installment":
+		return "angsuran"
+	case "langsung", "cash", "tunai":
+		return "langsung"
+	default:
+		return "langsung"
+	}
+}
+
+func (h *RevitalisasiHandler) syncTukangKasbonBalance(tukangID uint) error {
+	var total float64
+	if err := h.db.Model(&models.RevitalisasiKasbon{}).
+		Where("tukang_id = ?", tukangID).
+		Select("COALESCE(SUM(CASE WHEN jenis = 'pelunasan' THEN -jumlah ELSE jumlah END), 0)").
+		Scan(&total).Error; err != nil {
+		return err
+	}
+
+	return h.db.Model(&models.RevitalisasiTukang{}).Where("id = ?", tukangID).Update("kasbon", total).Error
+}
+
+func (h *RevitalisasiHandler) generatePayrollReportRows(jenis, startDate, endDate string) ([]revitalisasiPayrollReportRow, error) {
+	if strings.TrimSpace(jenis) == "" {
+		jenis = "sma"
+	}
+	if strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
+		startDate, endDate = defaultRevitalisasiReportDates()
+	}
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date_from: %w", err)
+	}
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date_to: %w", err)
+	}
+	if end.Before(start) {
+		start, end = end, start
+	}
+
+	var tukang []models.RevitalisasiTukang
+	if err := h.db.Where("jenis = ?", jenis).Order("name asc").Find(&tukang).Error; err != nil {
+		return nil, err
+	}
+
+	rows := make([]revitalisasiPayrollReportRow, 0, len(tukang))
+	for _, item := range tukang {
+		var hadirCount int64
+		if err := h.db.Model(&models.RevitalisasiAbsenTukang{}).
+			Where("jenis = ? AND tukang_id = ? AND tanggal >= ? AND tanggal <= ? AND status = ?", jenis, item.ID, start, end, normalizeStatus("hadir")).
+			Count(&hadirCount).Error; err != nil {
+			return nil, err
+		}
+
+		totalGaji := float64(hadirCount) * item.GajiHarian
+		totalSetelahKasbon := totalGaji - item.Kasbon
+		if totalSetelahKasbon < 0 {
+			totalSetelahKasbon = 0
+		}
+		rows = append(rows, revitalisasiPayrollReportRow{
+			ID:                 item.ID,
+			Name:               item.Name,
+			Divisi:             item.Divisi,
+			Area:               item.Area,
+			HariHadir:          hadirCount,
+			GajiHarian:         item.GajiHarian,
+			Kasbon:             item.Kasbon,
+			CaraPotong:         strings.TrimSpace(item.CaraPotong),
+			TotalGaji:          totalGaji,
+			TotalSetelahKasbon: totalSetelahKasbon,
+		})
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Name == rows[j].Name {
+			return rows[i].ID < rows[j].ID
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	return rows, nil
+}
+
+func (h *RevitalisasiHandler) getPayrollReport(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
+	startDate := strings.TrimSpace(c.Query("date_from"))
+	endDate := strings.TrimSpace(c.Query("date_to"))
+	rows, err := h.generatePayrollReportRows(jenis, startDate, endDate)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: err.Error()})
+	}
+
+	totalGaji := 0.0
+	totalKasbon := 0.0
+	totalSetelahKasbon := 0.0
+	for _, row := range rows {
+		totalGaji += row.TotalGaji
+		totalKasbon += row.Kasbon
+		totalSetelahKasbon += row.TotalSetelahKasbon
+	}
+
+	return c.JSON(fiber.Map{
+		"data": rows,
+		"summary": fiber.Map{
+			"jenis":                jenis,
+			"date_from":            startDate,
+			"date_to":              endDate,
+			"total_gaji":           totalGaji,
+			"total_kasbon":         totalKasbon,
+			"total_setelah_kasbon": totalSetelahKasbon,
+		},
+	})
+}
+
+func (h *RevitalisasiHandler) exportPayrollReportExcel(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
+	startDate := strings.TrimSpace(c.Query("date_from"))
+	endDate := strings.TrimSpace(c.Query("date_to"))
+	rows, err := h.generatePayrollReportRows(jenis, startDate, endDate)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: err.Error()})
+	}
+
+	file := excelize.NewFile()
+	sheet := "Payroll"
+	file.SetSheetName("Sheet1", sheet)
+
+	styleHeader, _ := file.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Size: 11, Color: "FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"0F766E"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+		Border:    []excelize.Border{{Type: "left", Color: "D1D5DB", Style: 1}, {Type: "right", Color: "D1D5DB", Style: 1}, {Type: "top", Color: "D1D5DB", Style: 1}, {Type: "bottom", Color: "D1D5DB", Style: 1}},
+	})
+
+	periodText := fmt.Sprintf("Periode: %s s/d %s", startDate, endDate)
+	file.SetCellValue(sheet, "A1", fmt.Sprintf("Laporan Gaji Revitalisasi %s", strings.ToUpper(jenis)))
+	file.SetCellValue(sheet, "A2", periodText)
+	file.MergeCell(sheet, "A1", "K1")
+	file.MergeCell(sheet, "A2", "K2")
+
+	headers := []string{"No", "Nama Tukang", "Divisi", "Area", "Hari Hadir", "Gaji Harian", "Total Gaji", "Kasbon", "Cara Potong", "Total Setelah Kasbon"}
+	for i, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(1+i, 4)
+		file.SetCellValue(sheet, cell, header)
+		file.SetCellStyle(sheet, cell, cell, styleHeader)
+	}
+
+	for _, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} {
+		file.SetColWidth(sheet, col, col, 18)
+	}
+
+	totalGaji := 0.0
+	totalKasbon := 0.0
+	totalSetelahKasbon := 0.0
+	for idx, row := range rows {
+		line := idx + 1
+		file.SetCellValue(sheet, fmt.Sprintf("A%d", 4+line), line)
+		file.SetCellValue(sheet, fmt.Sprintf("B%d", 4+line), row.Name)
+		file.SetCellValue(sheet, fmt.Sprintf("C%d", 4+line), row.Divisi)
+		file.SetCellValue(sheet, fmt.Sprintf("D%d", 4+line), row.Area)
+		file.SetCellValue(sheet, fmt.Sprintf("E%d", 4+line), row.HariHadir)
+		file.SetCellValue(sheet, fmt.Sprintf("F%d", 4+line), row.GajiHarian)
+		file.SetCellValue(sheet, fmt.Sprintf("G%d", 4+line), row.TotalGaji)
+		file.SetCellValue(sheet, fmt.Sprintf("H%d", 4+line), row.Kasbon)
+		file.SetCellValue(sheet, fmt.Sprintf("I%d", 4+line), row.CaraPotong)
+		file.SetCellValue(sheet, fmt.Sprintf("J%d", 4+line), row.TotalSetelahKasbon)
+		totalGaji += row.TotalGaji
+		totalKasbon += row.Kasbon
+		totalSetelahKasbon += row.TotalSetelahKasbon
+	}
+
+	footerRow := 5 + len(rows)
+	file.SetCellValue(sheet, fmt.Sprintf("A%d", footerRow), "TOTAL")
+	file.SetCellValue(sheet, fmt.Sprintf("G%d", footerRow), totalGaji)
+	file.SetCellValue(sheet, fmt.Sprintf("H%d", footerRow), totalKasbon)
+	file.SetCellValue(sheet, fmt.Sprintf("J%d", footerRow), totalSetelahKasbon)
+	file.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("F%d", footerRow))
+
+	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.xlsx", strings.ToUpper(jenis), time.Now().Format("20060102_150405"))
+	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	if err := file.Write(c.Response().BodyWriter()); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed_to_generate_excel"})
+	}
+	return nil
+}
+
+func (h *RevitalisasiHandler) exportPayrollReportPDF(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
+	startDate := strings.TrimSpace(c.Query("date_from"))
+	endDate := strings.TrimSpace(c.Query("date_to"))
+	rows, err := h.generatePayrollReportRows(jenis, startDate, endDate)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: err.Error()})
+	}
+
+	pdf := fpdf.New("L", "mm", "A4", "")
+	pdf.SetAutoPageBreak(true, 15)
+	pdf.AddPage()
+	pdf.SetFont("Helvetica", "B", 16)
+	pdf.CellFormat(0, 10, fmt.Sprintf("Laporan Gaji Revitalisasi %s", strings.ToUpper(jenis)), "", 1, "C", false, 0, "")
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.CellFormat(0, 7, fmt.Sprintf("Periode: %s s/d %s", startDate, endDate), "", 1, "C", false, 0, "")
+	pdf.Ln(4)
+
+	colWidths := []float64{10, 42, 30, 30, 18, 24, 24, 22, 20, 32}
+	headers := []string{"No", "Nama", "Divisi", "Area", "Hadir", "Gaji", "Total", "Kasbon", "Potong", "Setelah Kasbon"}
+	pdf.SetFont("Helvetica", "B", 8)
+	pdf.SetFillColor(15, 118, 110)
+	pdf.SetTextColor(255, 255, 255)
+	for i, label := range headers {
+		pdf.CellFormat(colWidths[i], 8, label, "1", 0, "C", true, 0, "")
+	}
+	pdf.Ln(-1)
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetFont("Helvetica", "", 7)
+
+	totalGaji := 0.0
+	totalKasbon := 0.0
+	totalSetelahKasbon := 0.0
+	for idx, row := range rows {
+		fill := idx%2 == 1
+		vals := []string{
+			fmt.Sprintf("%d", idx+1),
+			row.Name,
+			row.Divisi,
+			row.Area,
+			fmt.Sprintf("%d", row.HariHadir),
+			fmt.Sprintf("Rp %s", formatRupiahForReport(row.GajiHarian)),
+			fmt.Sprintf("Rp %s", formatRupiahForReport(row.TotalGaji)),
+			fmt.Sprintf("Rp %s", formatRupiahForReport(row.Kasbon)),
+			capitalizePayrollLabel(row.CaraPotong),
+			fmt.Sprintf("Rp %s", formatRupiahForReport(row.TotalSetelahKasbon)),
+		}
+		for i, val := range vals {
+			pdf.CellFormat(colWidths[i], 7, val, "1", 0, "C", fill, 0, "")
+		}
+		pdf.Ln(-1)
+		totalGaji += row.TotalGaji
+		totalKasbon += row.Kasbon
+		totalSetelahKasbon += row.TotalSetelahKasbon
+	}
+	pdf.Ln(4)
+	pdf.SetFont("Helvetica", "B", 8)
+	pdf.CellFormat(0, 7, fmt.Sprintf("TOTAL GAJI: Rp %s | TOTAL KASBON: Rp %s | TOTAL SETELAH KASBON: Rp %s", formatRupiahForReport(totalGaji), formatRupiahForReport(totalKasbon), formatRupiahForReport(totalSetelahKasbon)), "", 1, "L", false, 0, "")
+	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.pdf", strings.ToUpper(jenis), time.Now().Format("20060102_150405"))
+	c.Set("Content-Type", "application/pdf")
+	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	if err := pdf.Output(c.Response().BodyWriter()); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed_to_generate_pdf"})
+	}
+	return nil
+}
+
+func formatRupiahForReport(value float64) string {
+	if value == 0 {
+		return "0"
+	}
+	return strconv.FormatFloat(value, 'f', 0, 64)
+}
+
+func capitalizePayrollLabel(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "Langsung"
+	}
+	if len(trimmed) == 1 {
+		return strings.ToUpper(trimmed)
+	}
+	return strings.ToUpper(trimmed[:1]) + strings.ToLower(trimmed[1:])
 }
 
 func (h *RevitalisasiHandler) ensureUploadDir(subdir string) string {
@@ -360,6 +669,161 @@ func (h *RevitalisasiHandler) processImage(module string, file *multipart.FileHe
 }
 
 // ============ Tukang ============
+
+func (h *RevitalisasiHandler) ListKasbon(c *fiber.Ctx) error {
+	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
+	tukangIDQuery := strings.TrimSpace(c.Query("tukang_id"))
+
+	query := h.db.Where("jenis = ?", jenis).Order("tanggal asc, id asc").Preload("Tukang")
+	if tukangIDQuery != "" {
+		parsed, err := strconv.ParseUint(tukangIDQuery, 10, 32)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "tukang_id harus berupa angka valid"})
+		}
+		query = query.Where("tukang_id = ?", uint(parsed))
+	}
+
+	var entries []models.RevitalisasiKasbon
+	if err := query.Find(&entries).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+
+	runningBalance := 0.0
+	for i := range entries {
+		if entries[i].Jenis == "pelunasan" {
+			runningBalance -= entries[i].Jumlah
+		} else {
+			runningBalance += entries[i].Jumlah
+		}
+		entries[i].Saldo = runningBalance
+	}
+
+	return c.JSON(fiber.Map{
+		"data": entries,
+		"summary": fiber.Map{
+			"jenis":        jenis,
+			"total_kasbon": runningBalance,
+		},
+	})
+}
+
+func (h *RevitalisasiHandler) CreateKasbon(c *fiber.Ctx) error {
+	payload := struct {
+		Jenis      string  `json:"jenis"`
+		Tanggal    string  `json:"tanggal"`
+		TukangID   uint    `json:"tukang_id"`
+		Jumlah     float64 `json:"jumlah"`
+		Metode     string  `json:"metode"`
+		Keterangan string  `json:"keterangan"`
+	}{}
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "payload tidak valid"})
+	}
+	if payload.TukangID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "tukang_id wajib diisi"})
+	}
+	if payload.Jumlah <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "jumlah kasbon harus lebih dari 0"})
+	}
+	parsedDate, err := safeDateString(payload.Tanggal)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: err.Error()})
+	}
+
+	entry := models.RevitalisasiKasbon{
+		Jenis:      normalizeKasbonJenis(payload.Jenis),
+		Tanggal:    parsedDate,
+		TukangID:   payload.TukangID,
+		Jumlah:     payload.Jumlah,
+		Metode:     normalizeKasbonMetode(payload.Metode),
+		Keterangan: strings.TrimSpace(payload.Keterangan),
+	}
+	if err := h.db.Create(&entry).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	if err := h.syncTukangKasbonBalance(payload.TukangID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	if err := h.db.First(&entry, entry.ID).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(entry)
+}
+
+func (h *RevitalisasiHandler) UpdateKasbon(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "id kasbon tidak valid"})
+	}
+
+	var existing models.RevitalisasiKasbon
+	if err := h.db.First(&existing, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "kasbon tidak ditemukan"})
+	}
+
+	payload := struct {
+		Jenis      string  `json:"jenis"`
+		Tanggal    string  `json:"tanggal"`
+		TukangID   uint    `json:"tukang_id"`
+		Jumlah     float64 `json:"jumlah"`
+		Metode     string  `json:"metode"`
+		Keterangan string  `json:"keterangan"`
+	}{}
+	if err := c.BodyParser(&payload); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "payload tidak valid"})
+	}
+	if payload.TukangID != 0 {
+		existing.TukangID = payload.TukangID
+	}
+	if payload.Jumlah > 0 {
+		existing.Jumlah = payload.Jumlah
+	}
+	if strings.TrimSpace(payload.Jenis) != "" {
+		existing.Jenis = normalizeKasbonJenis(payload.Jenis)
+	}
+	if strings.TrimSpace(payload.Metode) != "" {
+		existing.Metode = normalizeKasbonMetode(payload.Metode)
+	}
+	if strings.TrimSpace(payload.Keterangan) != "" || payload.Keterangan == "" {
+		existing.Keterangan = strings.TrimSpace(payload.Keterangan)
+	}
+	if strings.TrimSpace(payload.Tanggal) != "" {
+		parsedDate, err := safeDateString(payload.Tanggal)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: err.Error()})
+		}
+		existing.Tanggal = parsedDate
+	}
+	if existing.Jumlah <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "jumlah kasbon harus lebih dari 0"})
+	}
+	if err := h.db.Save(&existing).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	if err := h.syncTukangKasbonBalance(existing.TukangID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	return c.JSON(existing)
+}
+
+func (h *RevitalisasiHandler) DeleteKasbon(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "id kasbon tidak valid"})
+	}
+
+	var entry models.RevitalisasiKasbon
+	if err := h.db.First(&entry, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "kasbon tidak ditemukan"})
+	}
+	if err := h.db.Delete(&entry).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	if err := h.syncTukangKasbonBalance(entry.TukangID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "database_error", Message: err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true, "message": "Kasbon berhasil dihapus"})
+}
 
 func (h *RevitalisasiHandler) ListTukang(c *fiber.Ctx) error {
 	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))

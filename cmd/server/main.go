@@ -145,6 +145,7 @@ func main() {
 	if err := db.AutoMigrate(
 		&models.RevitalisasiTukang{},
 		&models.RevitalisasiAbsenTukang{},
+		&models.RevitalisasiKasbon{},
 		&models.RevitalisasiNotaMaterial{},
 		&models.RevitalisasiNotaMasuk{},
 		&models.RevitalisasiMaterialDatang{},
@@ -729,9 +730,16 @@ func main() {
 	revitalisasiHandler := handlers.NewRevitalisasiHandler(db, uploadPath)
 	revitalisasi := protected.Group("/revitalisasi")
 	revitalisasi.Get("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListTukang)
+	revitalisasi.Get("/laporan-gaji", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.getPayrollReport)
+	revitalisasi.Get("/export/gaji/excel", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.exportPayrollReportExcel)
+	revitalisasi.Get("/export/gaji/pdf", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.exportPayrollReportPDF)
 	revitalisasi.Post("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateTukang)
 	revitalisasi.Put("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateTukang)
 	revitalisasi.Delete("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteTukang)
+	revitalisasi.Get("/kasbon", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListKasbon)
+	revitalisasi.Post("/kasbon", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateKasbon)
+	revitalisasi.Put("/kasbon/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateKasbon)
+	revitalisasi.Delete("/kasbon/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteKasbon)
 	revitalisasi.Get("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListAbsenTukang)
 	revitalisasi.Post("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateAbsenTukang)
 	revitalisasi.Put("/absen-tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateAbsenTukang)
@@ -760,9 +768,16 @@ func main() {
 	// Revitalisasi SMP
 	revitalisasiSmp := protected.Group("/revitalisasi-smp")
 	revitalisasiSmp.Get("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListTukang)
+	revitalisasiSmp.Get("/laporan-gaji", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.getPayrollReport)
+	revitalisasiSmp.Get("/export/gaji/excel", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.exportPayrollReportExcel)
+	revitalisasiSmp.Get("/export/gaji/pdf", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.exportPayrollReportPDF)
 	revitalisasiSmp.Post("/tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateTukang)
 	revitalisasiSmp.Put("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateTukang)
 	revitalisasiSmp.Delete("/tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteTukang)
+	revitalisasiSmp.Get("/kasbon", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListKasbon)
+	revitalisasiSmp.Post("/kasbon", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateKasbon)
+	revitalisasiSmp.Put("/kasbon/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateKasbon)
+	revitalisasiSmp.Delete("/kasbon/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.DeleteKasbon)
 	revitalisasiSmp.Get("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.ListAbsenTukang)
 	revitalisasiSmp.Post("/absen-tukang", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.CreateAbsenTukang)
 	revitalisasiSmp.Put("/absen-tukang/:id", middleware.PermissionAny("dashboard.view", "settings.edit"), revitalisasiHandler.UpdateAbsenTukang)

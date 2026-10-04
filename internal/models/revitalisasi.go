@@ -14,6 +14,8 @@ type RevitalisasiTukang struct {
 	Divisi     string         `gorm:"size:150" json:"divisi"`
 	Area       string         `gorm:"size:150" json:"area"`
 	GajiHarian float64        `gorm:"type:decimal(15,2);default:0" json:"gaji_harian"`
+	Kasbon     float64        `gorm:"type:decimal(15,2);default:0" json:"kasbon"`
+	CaraPotong string         `gorm:"size:30;default:langsung" json:"cara_potong"`
 	Phone      string         `gorm:"size:50" json:"phone"`
 	Note       string         `gorm:"type:text" json:"note"`
 	IsActive   bool           `gorm:"default:true" json:"is_active"`
@@ -42,6 +44,24 @@ type RevitalisasiAbsenTukang struct {
 }
 
 func (RevitalisasiAbsenTukang) TableName() string { return "revitalisasi_absen_tukang" }
+
+// RevitalisasiKasbon stores the kasbon ledger history for each worker.
+type RevitalisasiKasbon struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	Jenis      string    `gorm:"size:20;not null;default:penambahan;index" json:"jenis"`
+	Tanggal    time.Time `gorm:"type:date;not null;index" json:"tanggal"`
+	TukangID   uint      `gorm:"not null;index" json:"tukang_id"`
+	Jumlah     float64   `gorm:"type:decimal(15,2);default:0" json:"jumlah"`
+	Metode     string    `gorm:"size:20;default:langsung" json:"metode"`
+	Keterangan string    `gorm:"type:text" json:"keterangan"`
+	Saldo      float64   `gorm:"type:decimal(15,2);default:0" json:"saldo"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+
+	Tukang *RevitalisasiTukang `gorm:"foreignKey:TukangID" json:"tukang,omitempty"`
+}
+
+func (RevitalisasiKasbon) TableName() string { return "revitalisasi_kasbon" }
 
 // RevitalisasiNotaMaterial tracks supplier notes and incoming material receipts.
 type RevitalisasiNotaMaterial struct {
