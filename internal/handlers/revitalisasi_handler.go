@@ -198,7 +198,7 @@ func (h *RevitalisasiHandler) generatePayrollReportRows(jenis, startDate, endDat
 	return rows, nil
 }
 
-func (h *RevitalisasiHandler) getPayrollReport(c *fiber.Ctx) error {
+func (h *RevitalisasiHandler) GetPayrollReport(c *fiber.Ctx) error {
 	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	startDate := strings.TrimSpace(c.Query("date_from"))
 	endDate := strings.TrimSpace(c.Query("date_to"))
@@ -229,7 +229,7 @@ func (h *RevitalisasiHandler) getPayrollReport(c *fiber.Ctx) error {
 	})
 }
 
-func (h *RevitalisasiHandler) exportPayrollReportExcel(c *fiber.Ctx) error {
+func (h *RevitalisasiHandler) ExportPayrollReportExcel(c *fiber.Ctx) error {
 	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	startDate := strings.TrimSpace(c.Query("date_from"))
 	endDate := strings.TrimSpace(c.Query("date_to"))
@@ -302,7 +302,7 @@ func (h *RevitalisasiHandler) exportPayrollReportExcel(c *fiber.Ctx) error {
 	return nil
 }
 
-func (h *RevitalisasiHandler) exportPayrollReportPDF(c *fiber.Ctx) error {
+func (h *RevitalisasiHandler) ExportPayrollReportPDF(c *fiber.Ctx) error {
 	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	startDate := strings.TrimSpace(c.Query("date_from"))
 	endDate := strings.TrimSpace(c.Query("date_to"))
