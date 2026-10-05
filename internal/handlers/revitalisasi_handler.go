@@ -91,6 +91,7 @@ type revitalisasiPayrollReportRow struct {
 	GajiHarian         float64 `json:"gaji_harian"`
 	Kasbon             float64 `json:"kasbon"`
 	CaraPotong         string  `json:"cara_potong"`
+	PotonganSaatIni    float64 `json:"potongan_saat_ini"`
 	TotalGaji          float64 `json:"total_gaji"`
 	TotalSetelahKasbon float64 `json:"total_setelah_kasbon"`
 }
@@ -122,6 +123,13 @@ func normalizeKasbonMetode(raw string) string {
 	default:
 		return "langsung"
 	}
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (h *RevitalisasiHandler) syncTukangKasbonBalance(tukangID uint) error {
@@ -171,7 +179,24 @@ func (h *RevitalisasiHandler) generatePayrollReportRows(jenis, startDate, endDat
 		}
 
 		totalGaji := float64(hadirCount) * item.GajiHarian
-		totalSetelahKasbon := totalGaji - item.Kasbon
+		potonganSaatIni := item.Kasbon
+		if strings.EqualFold(strings.TrimSpace(item.CaraPotong), "angsuran") {
+			if hadirCount > 0 {
+				potonganSaatIni = item.Kasbon / float64(hadirCount)
+				if potonganSaatIni > item.GajiHarian {
+					potonganSaatIni = item.GajiHarian
+				}
+			} else {
+				potonganSaatIni = 0
+			}
+		}
+		if potonganSaatIni < 0 {
+			potonganSaatIni = 0
+		}
+		if item.Kasbon < 0 {
+			potonganSaatIni = 0
+		}
+		totalSetelahKasbon := totalGaji - minFloat(potonganSaatIni, totalGaji)
 		if totalSetelahKasbon < 0 {
 			totalSetelahKasbon = 0
 		}
@@ -184,6 +209,7 @@ func (h *RevitalisasiHandler) generatePayrollReportRows(jenis, startDate, endDat
 			GajiHarian:         item.GajiHarian,
 			Kasbon:             item.Kasbon,
 			CaraPotong:         strings.TrimSpace(item.CaraPotong),
+			PotonganSaatIni:    potonganSaatIni,
 			TotalGaji:          totalGaji,
 			TotalSetelahKasbon: totalSetelahKasbon,
 		})
@@ -909,6 +935,32 @@ func (h *RevitalisasiHandler) DeleteTukang(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
 	}
 	return c.JSON(fiber.Map{"message": "Tukang berhasil dihapus"})
+}
+
+func (h *RevitalisasiHandler) ForceDeleteTukang(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.ErrorResponse{Error: "validation_error", Message: "id tukang tidak valid"})
+	}
+
+	var item models.RevitalisasiTukang
+	if err := h.db.First(&item, id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tukang tidak ditemukan"})
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Unscoped().Where("tukang_id = ?", item.ID).Delete(&models.RevitalisasiKasbon{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Unscoped().Where("tukang_id = ?", item.ID).Delete(&models.RevitalisasiAbsenTukang{}).Error; err != nil {
+			return err
+		}
+		return tx.Unscoped().Delete(&item).Error
+	}); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "Tukang berhasil dihapus permanen"})
 }
 
 // ============ Absen Tukang ============

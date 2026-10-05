@@ -280,6 +280,123 @@ func TestRevitalisasiKasbonLedgerBalance(t *testing.T) {
 	}
 }
 
+func TestGeneratePayrollReportRowsAngsuranCutsDailyInstallment(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.AutoMigrate(&models.RevitalisasiTukang{}, &models.RevitalisasiAbsenTukang{}); err != nil {
+		t.Fatalf("auto migrate payroll models: %v", err)
+	}
+
+	handler := NewRevitalisasiHandler(db, t.TempDir())
+	if err := db.Create(&models.RevitalisasiTukang{
+		ID:         1,
+		Jenis:      "sma",
+		Name:       "Tukang B",
+		Divisi:     "Bangunan",
+		Area:       "Area A",
+		GajiHarian: 150000,
+		Kasbon:     50000,
+		CaraPotong: "angsuran",
+		IsActive:   true,
+	}).Error; err != nil {
+		t.Fatalf("seed tukang: %v", err)
+	}
+
+	for _, item := range []struct {
+		date   string
+		status string
+	}{
+		{date: "2025-08-04", status: "hadir"},
+		{date: "2025-08-05", status: "hadir"},
+	} {
+		if err := db.Create(&models.RevitalisasiAbsenTukang{
+			Jenis:    "sma",
+			Tanggal:  mustDate(t, item.date),
+			TukangID: 1,
+			Status:   normalizeStatus(item.status),
+		}).Error; err != nil {
+			t.Fatalf("seed attendance for %s: %v", item.date, err)
+		}
+	}
+
+	rows, err := handler.generatePayrollReportRows("sma", "2025-08-01", "2025-08-31")
+	if err != nil {
+		t.Fatalf("generate payroll rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].TotalSetelahKasbon != 275000 {
+		t.Fatalf("expected angsuran deduction to cut 25000 from salary total, got %v", rows[0].TotalSetelahKasbon)
+	}
+}
+
+func TestForceDeleteTukangRemovesRelatedRecords(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.AutoMigrate(&models.RevitalisasiTukang{}, &models.RevitalisasiKasbon{}, &models.RevitalisasiAbsenTukang{}); err != nil {
+		t.Fatalf("auto migrate related models: %v", err)
+	}
+
+	handler := NewRevitalisasiHandler(db, t.TempDir())
+	if err := db.Create(&models.RevitalisasiTukang{
+		ID:         1,
+		Jenis:      "sma",
+		Name:       "Tukang C",
+		GajiHarian: 100000,
+		Kasbon:     20000,
+		IsActive:   true,
+	}).Error; err != nil {
+		t.Fatalf("seed tukang: %v", err)
+	}
+	if err := db.Create(&models.RevitalisasiKasbon{Jenis: "penambahan", TukangID: 1, Tanggal: mustDate(t, "2025-08-01"), Jumlah: 20000, Metode: "langsung"}).Error; err != nil {
+		t.Fatalf("seed kasbon: %v", err)
+	}
+	if err := db.Create(&models.RevitalisasiAbsenTukang{Jenis: "sma", Tanggal: mustDate(t, "2025-08-04"), TukangID: 1, Status: "hadir"}).Error; err != nil {
+		t.Fatalf("seed attendance: %v", err)
+	}
+
+	app := fiber.New()
+	app.Delete("/tukang/:id/force", handler.ForceDeleteTukang)
+	res, err := app.Test(httptest.NewRequest(http.MethodDelete, "/tukang/1/force", nil))
+	if err != nil {
+		t.Fatalf("perform force delete request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected force delete status 200, got %d", res.StatusCode)
+	}
+
+	var tukangCount int64
+	if err := db.Unscoped().Model(&models.RevitalisasiTukang{}).Count(&tukangCount).Error; err != nil {
+		t.Fatalf("count tukang: %v", err)
+	}
+	if tukangCount != 0 {
+		t.Fatalf("expected tukang to be permanently removed, got count=%d", tukangCount)
+	}
+
+	var absenCount int64
+	if err := db.Unscoped().Model(&models.RevitalisasiAbsenTukang{}).Count(&absenCount).Error; err != nil {
+		t.Fatalf("count absen: %v", err)
+	}
+	if absenCount != 0 {
+		t.Fatalf("expected absen to be removed, got count=%d", absenCount)
+	}
+
+	var kasbonCount int64
+	if err := db.Unscoped().Model(&models.RevitalisasiKasbon{}).Count(&kasbonCount).Error; err != nil {
+		t.Fatalf("count kasbon: %v", err)
+	}
+	if kasbonCount != 0 {
+		t.Fatalf("expected kasbon to be removed, got count=%d", kasbonCount)
+	}
+}
+
 func mustJPEGBytes(t *testing.T, img image.Image) []byte {
 	t.Helper()
 	var buf bytes.Buffer
