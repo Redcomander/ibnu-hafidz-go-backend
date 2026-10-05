@@ -96,6 +96,7 @@ func TestAnonymousPublicAnd404RequestsAreLogged(t *testing.T) {
 
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
 	app.Use(middleware.InjectDB(db))
+	app.Use(middleware.InjectConfig(&config.Config{JWTSecret: "test-secret"}))
 	app.Use(middleware.ActivityLog())
 	app.Get("/public/home", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
@@ -123,6 +124,47 @@ func TestAnonymousPublicAnd404RequestsAreLogged(t *testing.T) {
 
 	assert.Equal(t, 200, seen["/public/home"])
 	assert.Equal(t, 404, seen["/missing-page"])
+}
+
+func TestAuthorizedPublicRequestKeepsUserIdentityInActivityLog(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserActivityLog{}))
+
+	hash, err := utils.HashPassword("secret123")
+	require.NoError(t, err)
+
+	user := models.User{
+		Name:     "Requester",
+		Username: "requester",
+		Email:    "requester@example.com",
+		Password: hash,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	cfg := &config.Config{JWTSecret: "test-secret", JWTRefreshSecret: "test-refresh-secret", Environment: "development"}
+	token, err := utils.GenerateAccessToken(user.ID, user.Email, cfg.JWTSecret)
+	require.NoError(t, err)
+
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	app.Use(middleware.InjectDB(db))
+	app.Use(middleware.InjectConfig(cfg))
+	app.Use(middleware.ActivityLog())
+	app.Get("/public/home", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"ok": true})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/public/home", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var logs []models.UserActivityLog
+	require.NoError(t, db.Order("created_at desc").Find(&logs).Error)
+	require.Len(t, logs, 1)
+	assert.EqualValues(t, user.ID, logs[0].UserID)
+	assert.Equal(t, "/public/home", logs[0].Path)
 }
 
 func TestLoginStoresDeviceAndCountryInActivityLog(t *testing.T) {

@@ -315,10 +315,29 @@ func InjectDB(db *gorm.DB) fiber.Handler {
 	}
 }
 
+func InjectConfig(cfg *config.Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if cfg != nil {
+			c.Locals("jwtSecret", cfg.JWTSecret)
+			c.Locals("jwtRefreshSecret", cfg.JWTRefreshSecret)
+		}
+		return c.Next()
+	}
+}
+
 // ActivityLog stores authenticated request metadata for audit/activity page.
 func resolveRequestUserID(c *fiber.Ctx, db *gorm.DB) uint {
 	if userID, ok := c.Locals("userID").(uint); ok && userID != 0 {
 		return userID
+	}
+
+	if jwtSecret, ok := c.Locals("jwtSecret").(string); ok && jwtSecret != "" {
+		if tokenString := extractTokenFromRequest(c); tokenString != "" {
+			claims, err := utils.ValidateToken(tokenString, jwtSecret)
+			if err == nil && claims != nil && claims.UserID != 0 {
+				return claims.UserID
+			}
+		}
 	}
 
 	if c.Method() != fiber.MethodPost || c.Path() != "/api/auth/login" {

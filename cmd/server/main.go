@@ -244,6 +244,7 @@ func main() {
 
 	// Global middleware
 	app.Use(middleware.InjectDB(db))
+	app.Use(middleware.InjectConfig(cfg))
 	app.Use(middleware.ActivityLog())
 	app.Use(logger.New())
 	// Security headers
