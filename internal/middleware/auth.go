@@ -47,9 +47,30 @@ func requestClientIP(c *fiber.Ctx) string {
 }
 
 func requestCountryCode(c *fiber.Ctx) string {
-	for _, header := range []string{"CF-IPCountry", "X-Country-Code", "X-Vercel-IP-Country"} {
+	for _, header := range []string{
+		"CF-IPCountry",
+		"X-Country-Code",
+		"X-Country",
+		"X-Geo-Country",
+		"X-GeoCountry",
+		"X-Country-ISO",
+		"X-IPCountry",
+		"X-Appengine-Country",
+		"CloudFront-Viewer-Country",
+		"X-Client-Geo-Country",
+		"X-Vercel-IP-Country",
+	} {
 		if value := strings.TrimSpace(c.Get(header)); value != "" {
-			return strings.ToUpper(value)
+			country := strings.TrimSpace(strings.ToUpper(value))
+			if idx := strings.Index(country, ","); idx >= 0 {
+				country = strings.TrimSpace(country[:idx])
+			}
+			switch country {
+			case "", "UNKNOWN", "N/A", "NA", "XX", "-":
+				continue
+			default:
+				return country
+			}
 		}
 	}
 	return ""
@@ -346,6 +367,13 @@ func ActivityLog() fiber.Handler {
 		deviceName := deviceNameFromUserAgent(ua)
 		userID := resolveRequestUserID(c, db)
 		statusCode := c.Response().StatusCode()
+		if err != nil {
+			if fiberErr, ok := err.(*fiber.Error); ok {
+				statusCode = fiberErr.Code
+			} else {
+				statusCode = fiber.StatusInternalServerError
+			}
+		}
 
 		log := models.UserActivityLog{
 			UserID:      userID,
