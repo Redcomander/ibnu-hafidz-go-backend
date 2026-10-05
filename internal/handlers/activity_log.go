@@ -32,11 +32,15 @@ func (h *ActivityLogHandler) List(c *fiber.Ctx) error {
 	if method := c.Query("method"); method != "" {
 		query = query.Where("method = ?", method)
 	}
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		like := "%" + search + "%"
+		query = query.Where("user_activity_logs.path LIKE ? OR user_activity_logs.method LIKE ?", like, like)
+	}
 
 	query.Count(&total)
 
-	paginatedQuery, page, perPage := PaginateQuery(c, query, []string{"path", "method"})
-	paginatedQuery.Preload("User").Find(&logs)
+	paginatedQuery, page, perPage := PaginateQuery(c, query, []string{"created_at", "path", "method"})
+	paginatedQuery.Order("created_at DESC").Preload("User").Find(&logs)
 
 	return c.JSON(BuildPaginatedResponse(logs, total, page, perPage))
 }

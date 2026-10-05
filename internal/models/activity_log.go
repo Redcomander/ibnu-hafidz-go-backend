@@ -10,6 +10,7 @@ type UserActivityLog struct {
 	Method      string    `gorm:"column:method;size:16;index" json:"method"`
 	Path        string    `gorm:"column:path;size:255;index" json:"path"`
 	StatusCode  int       `gorm:"column:status_code;index" json:"status_code"`
+	DurationMs  *int64    `gorm:"column:duration_ms;index" json:"duration_ms,omitempty"`
 	IPAddress   *string   `gorm:"column:ip_address;size:100" json:"ip_address,omitempty"`
 	UserAgent   *string   `gorm:"column:user_agent;type:text" json:"user_agent,omitempty"`
 	DeviceName  *string   `gorm:"column:device_name;size:255" json:"device_name,omitempty"`

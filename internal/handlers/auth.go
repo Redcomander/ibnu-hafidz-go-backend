@@ -65,6 +65,32 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
+	ip := strings.TrimSpace(c.Get("CF-Connecting-IP"))
+	if ip == "" {
+		ip = strings.TrimSpace(c.Get("X-Forwarded-For"))
+		if idx := strings.Index(ip, ","); idx >= 0 {
+			ip = strings.TrimSpace(ip[:idx])
+		}
+	}
+	if ip == "" {
+		ip = strings.TrimSpace(c.Get("X-Real-IP"))
+	}
+	if ip == "" {
+		ip = strings.TrimSpace(c.Get("True-Client-IP"))
+	}
+	if ip == "" {
+		ip = strings.TrimSpace(c.IP())
+	}
+
+	country := strings.TrimSpace(c.Get("CF-IPCountry"))
+	if country == "" {
+		country = strings.TrimSpace(c.Get("X-Country-Code"))
+	}
+	if country == "" {
+		country = strings.TrimSpace(c.Get("X-Vercel-IP-Country"))
+	}
+	country = strings.ToUpper(country)
+
 	// Generate access token
 	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email, h.cfg.JWTSecret)
 	if err != nil {
@@ -241,13 +267,19 @@ func (h *AuthHandler) GetDeviceLoginHistory(c *fiber.Ctx) error {
 			agent = *log.UserAgent
 		}
 
+		countryCode := ""
+		if log.CountryCode != nil {
+			countryCode = *log.CountryCode
+		}
+
 		history = append(history, fiber.Map{
-			"id":          log.ID,
-			"created_at":  log.CreatedAt,
-			"ip_address":  log.IPAddress,
-			"user_agent":  agent,
-			"device_name": buildLoginDeviceLabel(agent),
-			"is_current":  i == 0,
+			"id":           log.ID,
+			"created_at":   log.CreatedAt,
+			"ip_address":   log.IPAddress,
+			"user_agent":   agent,
+			"device_name":  log.DeviceName,
+			"country_code": countryCode,
+			"is_current":   i == 0,
 		})
 	}
 

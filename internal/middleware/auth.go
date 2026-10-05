@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/config"
@@ -293,6 +295,35 @@ func InjectDB(db *gorm.DB) fiber.Handler {
 }
 
 // ActivityLog stores authenticated request metadata for audit/activity page.
+func resolveRequestUserID(c *fiber.Ctx, db *gorm.DB) uint {
+	if userID, ok := c.Locals("userID").(uint); ok && userID != 0 {
+		return userID
+	}
+
+	if c.Method() != fiber.MethodPost || c.Path() != "/api/auth/login" {
+		return 0
+	}
+
+	body := c.Body()
+	if len(body) == 0 {
+		return 0
+	}
+
+	var payload struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Username) == "" {
+		return 0
+	}
+
+	var user models.User
+	if err := db.Where("username = ?", payload.Username).First(&user).Error; err != nil {
+		return 0
+	}
+
+	return user.ID
+}
+
 func ActivityLog() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		path := c.Path()
@@ -300,7 +331,9 @@ func ActivityLog() fiber.Handler {
 			return c.Next()
 		}
 
+		start := time.Now()
 		err := c.Next()
+		durationMs := time.Since(start).Milliseconds()
 
 		db, ok := c.Locals("db").(*gorm.DB)
 		if !ok {
@@ -311,7 +344,7 @@ func ActivityLog() fiber.Handler {
 		ua := c.Get("User-Agent")
 		country := requestCountryCode(c)
 		deviceName := deviceNameFromUserAgent(ua)
-		userID, _ := c.Locals("userID").(uint)
+		userID := resolveRequestUserID(c, db)
 		statusCode := c.Response().StatusCode()
 
 		log := models.UserActivityLog{
@@ -319,6 +352,7 @@ func ActivityLog() fiber.Handler {
 			Method:      c.Method(),
 			Path:        path,
 			StatusCode:  statusCode,
+			DurationMs:  &durationMs,
 			IPAddress:   &ip,
 			UserAgent:   &ua,
 			DeviceName:  &deviceName,
