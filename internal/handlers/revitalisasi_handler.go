@@ -255,6 +255,22 @@ func (h *RevitalisasiHandler) GetPayrollReport(c *fiber.Ctx) error {
 	})
 }
 
+func payrollExportStamp(startDate string, endDate string) string {
+	stamp := time.Now().Format("20060102_150405")
+	start := strings.TrimSpace(startDate)
+	end := strings.TrimSpace(endDate)
+	if start == "" && end == "" {
+		return stamp
+	}
+	if start == "" {
+		start = "all"
+	}
+	if end == "" {
+		end = "all"
+	}
+	return fmt.Sprintf("%s_to_%s_%s", start, end, stamp)
+}
+
 func (h *RevitalisasiHandler) ExportPayrollReportExcel(c *fiber.Ctx) error {
 	jenis := resolveRevitalisasiJenis(c.Path(), c.Query("jenis"))
 	startDate := strings.TrimSpace(c.Query("date_from"))
@@ -319,7 +335,7 @@ func (h *RevitalisasiHandler) ExportPayrollReportExcel(c *fiber.Ctx) error {
 	file.SetCellValue(sheet, fmt.Sprintf("J%d", footerRow), totalSetelahKasbon)
 	file.MergeCell(sheet, fmt.Sprintf("A%d", footerRow), fmt.Sprintf("F%d", footerRow))
 
-	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.xlsx", strings.ToUpper(jenis), time.Now().Format("20060102_150405"))
+	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.xlsx", strings.ToUpper(jenis), payrollExportStamp(startDate, endDate))
 	c.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	if err := file.Write(c.Response().BodyWriter()); err != nil {
@@ -387,7 +403,7 @@ func (h *RevitalisasiHandler) ExportPayrollReportPDF(c *fiber.Ctx) error {
 	pdf.Ln(4)
 	pdf.SetFont("Helvetica", "B", 8)
 	pdf.CellFormat(0, 7, fmt.Sprintf("TOTAL GAJI: Rp %s | TOTAL KASBON: Rp %s | TOTAL SETELAH KASBON: Rp %s", formatRupiahForReport(totalGaji), formatRupiahForReport(totalKasbon), formatRupiahForReport(totalSetelahKasbon)), "", 1, "L", false, 0, "")
-	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.pdf", strings.ToUpper(jenis), time.Now().Format("20060102_150405"))
+	filename := fmt.Sprintf("Laporan_Gaji_Revitalisasi_%s_%s.pdf", strings.ToUpper(jenis), payrollExportStamp(startDate, endDate))
 	c.Set("Content-Type", "application/pdf")
 	c.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
 	if err := pdf.Output(c.Response().BodyWriter()); err != nil {
@@ -913,6 +929,11 @@ func (h *RevitalisasiHandler) UpdateTukang(c *fiber.Ctx) error {
 	item.Name = strings.TrimSpace(payload.Name)
 	item.Divisi = strings.TrimSpace(payload.Divisi)
 	item.Area = strings.TrimSpace(payload.Area)
+	item.GajiHarian = payload.GajiHarian
+	item.Kasbon = payload.Kasbon
+	if payload.CaraPotong != "" {
+		item.CaraPotong = strings.TrimSpace(payload.CaraPotong)
+	}
 	item.Phone = strings.TrimSpace(payload.Phone)
 	item.Note = strings.TrimSpace(payload.Note)
 	item.IsActive = payload.IsActive

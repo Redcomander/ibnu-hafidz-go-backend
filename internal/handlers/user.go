@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"strings"
+	"log"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -270,9 +271,10 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
+		log.Printf("create user failed: %v", err) // add import "log"
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
-			Message: "Failed to create user",
+			Message: "Failed to create user: " + err.Error(), // temporary, remove after debugging
 		})
 	}
 

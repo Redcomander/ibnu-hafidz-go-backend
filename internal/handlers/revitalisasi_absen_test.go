@@ -177,6 +177,76 @@ func stringPtr(value string) *string {
 	return &value
 }
 
+func TestUpdateTukangPersistsPayrollFields(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite in-memory db: %v", err)
+	}
+
+	if err := db.AutoMigrate(&models.RevitalisasiTukang{}); err != nil {
+		t.Fatalf("auto migrate models: %v", err)
+	}
+
+	item := models.RevitalisasiTukang{
+		Jenis:      "sma",
+		Name:       "Tukang A",
+		Divisi:     "Bangunan",
+		Area:       "Ruang Utama",
+		GajiHarian: 120000,
+		Kasbon:     20000,
+		CaraPotong: "langsung",
+		IsActive:   true,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("seed tukang: %v", err)
+	}
+
+	handler := NewRevitalisasiHandler(db, t.TempDir())
+	app := fiber.New()
+	app.Put("/tukang/:id", handler.UpdateTukang)
+
+	payload := map[string]any{
+		"name":        "Tukang A Updated",
+		"gaji_harian": 250000,
+		"kasbon":      45000,
+		"cara_potong": "angsuran",
+		"is_active":   false,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/tukang/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("perform request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		var response map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&response)
+		t.Fatalf("expected 200 on update, got %d with payload: %#v", res.StatusCode, response)
+	}
+
+	var updated models.RevitalisasiTukang
+	if err := db.First(&updated, item.ID).Error; err != nil {
+		t.Fatalf("load updated record: %v", err)
+	}
+	if updated.GajiHarian != 250000 {
+		t.Fatalf("expected gaji_harian 250000, got %v", updated.GajiHarian)
+	}
+	if updated.Kasbon != 45000 {
+		t.Fatalf("expected kasbon 45000, got %v", updated.Kasbon)
+	}
+	if updated.CaraPotong != "angsuran" {
+		t.Fatalf("expected cara_potong angsuran, got %q", updated.CaraPotong)
+	}
+	if updated.IsActive {
+		t.Fatalf("expected is_active false after update")
+	}
+}
+
 func TestGeneratePayrollReportRows(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
