@@ -31,6 +31,7 @@ var sidebarMenuDefinitions = []sidebarMenuDefinition{
 	{Key: "jurnal_mengajar", Label: "Jurnal Mengajar"},
 	{Key: "diniyyah_lesson", Label: "Pelajaran Diniyyah"},
 	{Key: "jadwal_diniyyah", Label: "Jadwal Diniyyah"},
+	{Key: "jadwal_builder_diniyyah", Label: "Jadwal Builder Diniyyah"},
 	{Key: "absensi_diniyyah_history", Label: "Riwayat Absensi Diniyyah"},
 	{Key: "halaqoh", Label: "Halaqoh"},
 	{Key: "halaqoh_history", Label: "Riwayat Absensi Halaqoh"},
