@@ -88,7 +88,7 @@ func (h *AbsensiEkstraSessionHandler) Get(c *fiber.Ctx) error {
 		Preload("Records.Student").
 		Preload("Records.SubmittedBy").
 		Preload("Group").
-		First(&session, sessionID).Error; err != nil {
+		First(&session, primaryKey(sessionID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Session not found",
@@ -130,7 +130,7 @@ func (h *AbsensiEkstraSessionHandler) Create(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(uint)
 
 	var group models.AbsensiEkstraGroup
-	if err := h.db.First(&group, groupID).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(groupID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -219,7 +219,7 @@ func (h *AbsensiEkstraSessionHandler) SubmitAttendance(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(uint)
 
 	var session models.AbsensiEkstraSession
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	if err := h.db.First(&session, primaryKey(sessionID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Session not found",
@@ -280,7 +280,7 @@ func (h *AbsensiEkstraSessionHandler) Close(c *fiber.Ctx) error {
 	sessionID := c.Params("session_id")
 
 	var session models.AbsensiEkstraSession
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	if err := h.db.First(&session, primaryKey(sessionID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Session not found",
@@ -298,7 +298,7 @@ func (h *AbsensiEkstraSessionHandler) Delete(c *fiber.Ctx) error {
 	sessionID := c.Params("session_id")
 
 	var session models.AbsensiEkstraSession
-	if err := h.db.First(&session, sessionID).Error; err != nil {
+	if err := h.db.First(&session, primaryKey(sessionID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Session not found",
@@ -410,7 +410,7 @@ func (h *AbsensiEkstraSessionHandler) ExportPDF(c *fiber.Ctx) error {
 	endDate := c.Query("end_date", time.Now().Format("2006-01-02"))
 
 	var group models.AbsensiEkstraGroup
-	if err := h.db.First(&group, groupID).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(groupID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",

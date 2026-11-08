@@ -140,7 +140,7 @@ func (h *LaundryVendorHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var vendor models.LaundryVendor
 
-	if err := h.db.First(&vendor, id).Error; err != nil {
+	if err := h.db.First(&vendor, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Vendor not found"})
 	}
 
@@ -188,7 +188,7 @@ func (h *LaundryVendorHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var vendor models.LaundryVendor
 
-	if err := h.db.First(&vendor, id).Error; err != nil {
+	if err := h.db.First(&vendor, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Vendor not found"})
 	}
 
@@ -538,7 +538,7 @@ func (h *LaundryVendorHandler) Statistics(c *fiber.Ctx) error {
 
 	if vendorID != "" && vendorID != "all" {
 		var vendor models.LaundryVendor
-		if err := h.db.First(&vendor, vendorID).Error; err != nil {
+		if err := h.db.First(&vendor, primaryKey(vendorID)).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Vendor not found"})
 		}
 

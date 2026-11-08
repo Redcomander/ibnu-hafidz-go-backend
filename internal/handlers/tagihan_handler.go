@@ -142,7 +142,7 @@ func (h *TagihanHandler) DeleteSource(c *fiber.Ctx) error {
 
 func (h *TagihanHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.Tagihan{}, id)
+	result := h.db.Delete(&models.Tagihan{}, primaryKey(id))
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tagihan not found"})
 	}
@@ -209,7 +209,7 @@ func (h *TagihanHandler) ExportExcel(c *fiber.Ctx) error {
 func (h *TagihanHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Tagihan
-	if err := h.db.Preload("Handler", func(tx *gorm.DB) *gorm.DB { return tx.Select("id", "name", "email") }).First(&item, id).Error; err != nil {
+	if err := h.db.Preload("Handler", func(tx *gorm.DB) *gorm.DB { return tx.Select("id", "name", "email") }).First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tagihan not found"})
 	}
 	return c.JSON(item)
@@ -218,7 +218,7 @@ func (h *TagihanHandler) Get(c *fiber.Ctx) error {
 func (h *TagihanHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Tagihan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tagihan not found"})
 	}
 
@@ -313,7 +313,7 @@ func coerceTotalTagihan(value any, fallback int64) int64 {
 func (h *TagihanHandler) UpdateStatus(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Tagihan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tagihan not found"})
 	}
 
@@ -342,7 +342,7 @@ func (h *TagihanHandler) UpdateStatus(c *fiber.Ctx) error {
 func (h *TagihanHandler) WhatsAppLink(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Tagihan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tagihan not found"})
 	}
 
@@ -435,7 +435,7 @@ func renderTagihanTemplateMessage(template string, item models.Tagihan) string {
 
 func fetchTemplateByID(db *gorm.DB, templateID uint64) (models.TemplatePesan, error) {
 	var tmpl models.TemplatePesan
-	if err := db.First(&tmpl, templateID).Error; err != nil {
+	if err := db.First(&tmpl, primaryKey(templateID)).Error; err != nil {
 		return models.TemplatePesan{}, err
 	}
 	return tmpl, nil

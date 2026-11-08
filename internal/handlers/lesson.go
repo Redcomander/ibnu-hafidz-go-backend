@@ -100,7 +100,7 @@ func (h *LessonHandler) Get(c *fiber.Ctx) error {
 
 	if lessonType == "diniyyah" {
 		var lesson models.DiniyyahLesson
-		if err := h.db.First(&lesson, id).Error; err != nil {
+		if err := h.db.First(&lesson, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Diniyyah lesson not found"})
 		}
 		return c.JSON(fiber.Map{
@@ -109,7 +109,7 @@ func (h *LessonHandler) Get(c *fiber.Ctx) error {
 	}
 
 	var lesson models.Lesson
-	if err := h.db.First(&lesson, id).Error; err != nil {
+	if err := h.db.First(&lesson, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Formal lesson not found"})
 	}
 	return c.JSON(lesson)
@@ -131,7 +131,7 @@ func (h *LessonHandler) Update(c *fiber.Ctx) error {
 
 	if input.Type == "diniyyah" {
 		var lesson models.DiniyyahLesson
-		if err := h.db.First(&lesson, id).Error; err != nil {
+		if err := h.db.First(&lesson, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Lesson not found"})
 		}
 		lesson.Name = input.Name
@@ -143,7 +143,7 @@ func (h *LessonHandler) Update(c *fiber.Ctx) error {
 
 	// Formal
 	var lesson models.Lesson
-	if err := h.db.First(&lesson, id).Error; err != nil {
+	if err := h.db.First(&lesson, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Lesson not found"})
 	}
 	lesson.Name = input.Name
@@ -162,11 +162,11 @@ func (h *LessonHandler) Delete(c *fiber.Ctx) error {
 	lessonType := c.Query("type", "formal")
 
 	if lessonType == "diniyyah" {
-		if err := h.db.Delete(&models.DiniyyahLesson{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.DiniyyahLesson{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete diniyyah lesson"})
 		}
 	} else {
-		if err := h.db.Delete(&models.Lesson{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.Lesson{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete formal lesson"})
 		}
 	}

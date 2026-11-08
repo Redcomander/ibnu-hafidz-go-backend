@@ -97,11 +97,12 @@ type Article struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 
 	// Relationships
-	Category *Category     `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
-	Author   *User         `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
-	Tags     []Tag         `gorm:"many2many:article_tag;" json:"tags,omitempty"`
-	Views    []ArticleView `gorm:"foreignKey:ArticleID" json:"-"`
-	Comments []Comment     `gorm:"foreignKey:ArticleID" json:"comments,omitempty"`
+	Category     *Category      `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	Author       *User          `gorm:"foreignKey:AuthorID" json:"-"`
+	PublicAuthor *ArticleAuthor `gorm:"-" json:"author,omitempty"`
+	Tags         []Tag          `gorm:"many2many:article_tag;" json:"tags,omitempty"`
+	Views        []ArticleView  `gorm:"foreignKey:ArticleID" json:"-"`
+	Comments     []Comment      `gorm:"foreignKey:ArticleID" json:"comments,omitempty"`
 }
 
 func (Article) TableName() string { return "articles" }

@@ -291,7 +291,7 @@ func (h *LaundryAccountHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var account models.LaundryAccount
 
-	if err := h.db.First(&account, id).Error; err != nil {
+	if err := h.db.First(&account, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found"})
 	}
 
@@ -344,7 +344,7 @@ func (h *LaundryAccountHandler) ToggleBlock(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var account models.LaundryAccount
 
-	if err := h.db.Preload("Student").Preload("User").First(&account, id).Error; err != nil {
+	if err := h.db.Preload("Student").Preload("User").First(&account, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found"})
 	}
 
@@ -466,7 +466,7 @@ func (h *LaundryAccountHandler) BulkCreate(c *fiber.Ctx) error {
 func (h *LaundryAccountHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var account models.LaundryAccount
-	if err := h.db.Preload("Student").Preload("User").First(&account, id).Error; err != nil {
+	if err := h.db.Preload("Student").Preload("User").First(&account, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found"})
 	}
 
@@ -539,7 +539,7 @@ func (h *LaundryAccountHandler) Restore(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var account models.LaundryAccount
 
-	if err := h.db.Unscoped().Preload("Student").Preload("User").First(&account, id).Error; err != nil {
+	if err := h.db.Unscoped().Preload("Student").Preload("User").First(&account, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found in trash"})
 	}
 
@@ -581,7 +581,7 @@ func (h *LaundryAccountHandler) ForceDelete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var account models.LaundryAccount
 
-	if err := h.db.Unscoped().Preload("Student").Preload("User").First(&account, id).Error; err != nil {
+	if err := h.db.Unscoped().Preload("Student").Preload("User").First(&account, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found"})
 	}
 

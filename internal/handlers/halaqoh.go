@@ -615,7 +615,7 @@ func (h *HalaqohHandler) DeleteAssignment(c *fiber.Ctx) error {
 	}
 
 	var assignment models.HalaqohAssignment
-	if err := h.db.First(&assignment, id).Error; err != nil {
+	if err := h.db.First(&assignment, primaryKey(id)).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 
@@ -841,7 +841,7 @@ func (h *HalaqohHandler) AssignSubstitute(c *fiber.Ctx) error {
 	}
 
 	var assignment models.HalaqohAssignment
-	if err := h.db.First(&assignment, id).Error; err != nil {
+	if err := h.db.First(&assignment, primaryKey(id)).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 
@@ -1120,7 +1120,7 @@ func (h *HalaqohHandler) GetAttendance(c *fiber.Ctx) error {
 	}
 
 	var assignment models.HalaqohAssignment
-	if err := h.db.Preload("Teacher").Preload("Student").First(&assignment, assignmentID).Error; err != nil {
+	if err := h.db.Preload("Teacher").Preload("Student").First(&assignment, primaryKey(assignmentID)).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 	if !h.canAccessAssignment(user, &assignment, dateStr) {
@@ -1335,7 +1335,7 @@ func (h *HalaqohHandler) GetTeacherAttendance(c *fiber.Ctx) error {
 	}
 
 	var assignment models.HalaqohAssignment
-	if err := h.db.Preload("Teacher").First(&assignment, assignmentID).Error; err != nil {
+	if err := h.db.Preload("Teacher").First(&assignment, primaryKey(assignmentID)).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 	if !h.canAccessTeacherAttendance(user, &assignment, dateStr) {
@@ -1446,7 +1446,7 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	}
 
 	var assignment models.HalaqohAssignment
-	if err := h.db.First(&assignment, assignmentID).Error; err != nil {
+	if err := h.db.First(&assignment, primaryKey(assignmentID)).Error; err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Assignment not found"})
 	}
 

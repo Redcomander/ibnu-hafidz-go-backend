@@ -308,7 +308,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	auth.Post("/login", authHandler.Login)
 	auth.Post("/refresh", authHandler.Refresh)
-	auth.Post("/logout", middleware.Auth(cfg), authHandler.Logout)
+	auth.Post("/logout", authHandler.Logout)
 	auth.Get("/me", middleware.Auth(cfg), authHandler.Me)
 
 	// Public content routes

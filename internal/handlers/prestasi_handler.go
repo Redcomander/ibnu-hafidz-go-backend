@@ -104,7 +104,7 @@ func (h *PrestasiHandler) CreatePrestasi(c *fiber.Ctx) error {
 	}
 	if sid := c.FormValue("student_id"); sid != "" {
 		var student models.Student
-		if h.db.First(&student, sid).RowsAffected > 0 {
+		if h.db.First(&student, primaryKey(sid)).RowsAffected > 0 {
 			prestasi.StudentID = &student.ID
 		}
 	}
@@ -134,7 +134,7 @@ func (h *PrestasiHandler) CreatePrestasi(c *fiber.Ctx) error {
 func (h *PrestasiHandler) UpdatePrestasi(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var prestasi models.Prestasi
-	if err := h.db.First(&prestasi, id).Error; err != nil {
+	if err := h.db.First(&prestasi, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Prestasi not found"})
 	}
 
@@ -167,7 +167,7 @@ func (h *PrestasiHandler) UpdatePrestasi(c *fiber.Ctx) error {
 	sid := c.FormValue("student_id")
 	if sid != "" {
 		var student models.Student
-		if h.db.First(&student, sid).RowsAffected > 0 {
+		if h.db.First(&student, primaryKey(sid)).RowsAffected > 0 {
 			prestasi.StudentID = &student.ID
 		}
 	} else {
@@ -199,7 +199,7 @@ func (h *PrestasiHandler) UpdatePrestasi(c *fiber.Ctx) error {
 func (h *PrestasiHandler) DeletePrestasi(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var prestasi models.Prestasi
-	if err := h.db.First(&prestasi, id).Error; err != nil {
+	if err := h.db.First(&prestasi, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Prestasi not found"})
 	}
 

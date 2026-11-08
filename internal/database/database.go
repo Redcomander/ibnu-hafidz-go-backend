@@ -47,6 +47,7 @@ func Migrate(db *gorm.DB) error {
 	log.Println("Running database migrations...")
 	if err := db.AutoMigrate(
 		&models.User{},
+		&models.RefreshSession{},
 		&models.Role{},
 		&models.Permission{},
 		&models.Student{},

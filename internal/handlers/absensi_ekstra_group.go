@@ -107,7 +107,7 @@ func (h *AbsensiEkstraGroupHandler) Get(c *fiber.Ctx) error {
 	if err := h.db.
 		Preload("CreatedBy").
 		Preload("Supervisors").
-		First(&group, id).Error; err != nil {
+		First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -228,7 +228,7 @@ func (h *AbsensiEkstraGroupHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -273,7 +273,7 @@ func (h *AbsensiEkstraGroupHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -301,7 +301,7 @@ func (h *AbsensiEkstraGroupHandler) GetStudents(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -358,7 +358,7 @@ func (h *AbsensiEkstraGroupHandler) AddStudents(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -430,7 +430,7 @@ func (h *AbsensiEkstraGroupHandler) GetSupervisors(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",
@@ -475,7 +475,7 @@ func (h *AbsensiEkstraGroupHandler) AddSupervisor(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var group models.AbsensiEkstraGroup
 
-	if err := h.db.First(&group, id).Error; err != nil {
+	if err := h.db.First(&group, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Group not found",

@@ -267,7 +267,7 @@ func (h *AbsensiHandler) ExportStatisticsExcel(c *fiber.Ctx) error {
 	kelasName := ""
 	if strings.TrimSpace(kelasID) != "" {
 		var kelas models.Kelas
-		if err := h.db.Select("id, nama, tingkat").First(&kelas, kelasID).Error; err == nil {
+		if err := h.db.Select("id, nama, tingkat").First(&kelas, primaryKey(kelasID)).Error; err == nil {
 			if strings.TrimSpace(kelas.Nama) != "" || strings.TrimSpace(kelas.Tingkat) != "" {
 				kelasName = strings.TrimSpace(kelas.Nama + " " + kelas.Tingkat)
 			}
@@ -404,7 +404,7 @@ func (h *AbsensiHandler) ExportStatisticsPDF(c *fiber.Ctx) error {
 	kelasName := ""
 	if strings.TrimSpace(kelasID) != "" {
 		var kelas models.Kelas
-		if err := h.db.Select("id, nama, tingkat").First(&kelas, kelasID).Error; err == nil {
+		if err := h.db.Select("id, nama, tingkat").First(&kelas, primaryKey(kelasID)).Error; err == nil {
 			if strings.TrimSpace(kelas.Nama) != "" || strings.TrimSpace(kelas.Tingkat) != "" {
 				kelasName = strings.TrimSpace(kelas.Nama + " " + kelas.Tingkat)
 			}

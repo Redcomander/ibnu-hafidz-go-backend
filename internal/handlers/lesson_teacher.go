@@ -244,7 +244,7 @@ func (h *LessonTeacherHandler) UpdateTeacher(c *fiber.Ctx) error {
 
 	if lessonType == "diniyyah" {
 		var assignment models.DiniyyahLessonTeacher
-		if err := h.db.First(&assignment, id).Error; err != nil {
+		if err := h.db.First(&assignment, primaryKey(id)).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Assignment not found"})
 			}
@@ -261,7 +261,7 @@ func (h *LessonTeacherHandler) UpdateTeacher(c *fiber.Ctx) error {
 	}
 
 	var assignment models.LessonTeacher
-	if err := h.db.First(&assignment, id).Error; err != nil {
+	if err := h.db.First(&assignment, primaryKey(id)).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Assignment not found"})
 		}
@@ -283,11 +283,11 @@ func (h *LessonTeacherHandler) Unassign(c *fiber.Ctx) error {
 	lessonType := c.Query("type", "formal")
 
 	if lessonType == "diniyyah" {
-		if err := h.db.Delete(&models.DiniyyahLessonTeacher{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.DiniyyahLessonTeacher{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to unassign"})
 		}
 	} else {
-		if err := h.db.Delete(&models.LessonTeacher{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.LessonTeacher{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to unassign"})
 		}
 	}

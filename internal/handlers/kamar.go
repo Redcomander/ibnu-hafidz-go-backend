@@ -125,7 +125,7 @@ func (h *KamarHandler) List(c *fiber.Ctx) error {
 	query.Count(&total)
 
 	offset := (page - 1) * perPage
-	query.Order(sort + " " + order).Limit(perPage).Offset(offset).Find(&kamars)
+	safeOrder(query, sort, order).Limit(perPage).Offset(offset).Find(&kamars)
 
 	return c.JSON(fiber.Map{
 		"data":        kamars,
@@ -141,7 +141,7 @@ func (h *KamarHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.Preload("WaliKamar").Preload("SecondaryWalies").Preload("Students").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("WaliKamar").Preload("SecondaryWalies").Preload("Students").First(&kamar, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
@@ -222,7 +222,7 @@ func (h *KamarHandler) AddStudent(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
@@ -290,7 +290,7 @@ func (h *KamarHandler) RemoveStudent(c *fiber.Ctx) error {
 	studentID := c.Params("student_id")
 	var kamar models.Kamar
 
-	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
@@ -302,7 +302,7 @@ func (h *KamarHandler) RemoveStudent(c *fiber.Ctx) error {
 	}
 
 	var student models.Student
-	if err := h.db.First(&student, studentID).Error; err != nil {
+	if err := h.db.First(&student, primaryKey(studentID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
@@ -324,7 +324,7 @@ func (h *KamarHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",
@@ -402,7 +402,7 @@ func (h *KamarHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kamar models.Kamar
 
-	if err := h.db.Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("SecondaryWalies").First(&kamar, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kamar not found",

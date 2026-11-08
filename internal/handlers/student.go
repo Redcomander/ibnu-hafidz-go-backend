@@ -266,7 +266,7 @@ func (h *StudentHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var student models.Student
 
-	if err := h.db.First(&student, id).Error; err != nil {
+	if err := h.db.First(&student, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
@@ -308,7 +308,7 @@ func (h *StudentHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var student models.Student
 
-	if err := h.db.First(&student, id).Error; err != nil {
+	if err := h.db.First(&student, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
@@ -331,7 +331,7 @@ func (h *StudentHandler) Graduate(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var student models.Student
 
-	if err := h.db.First(&student, id).Error; err != nil {
+	if err := h.db.First(&student, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
@@ -358,7 +358,7 @@ func (h *StudentHandler) Graduate(c *fiber.Ctx) error {
 // Delete soft-deletes a student
 func (h *StudentHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.Student{}, id)
+	result := h.db.Delete(&models.Student{}, primaryKey(id))
 
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{

@@ -50,7 +50,7 @@ func (h *OcrAnswerKeyHandler) Get(c *fiber.Ctx) error {
 	}
 
 	var key models.OcrAnswerKey
-	if err := h.db.First(&key, id).Error; err != nil {
+	if err := h.db.First(&key, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Answer key not found",
@@ -136,7 +136,7 @@ func (h *OcrAnswerKeyHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var key models.OcrAnswerKey
-	if err := h.db.First(&key, id).Error; err != nil {
+	if err := h.db.First(&key, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Answer key not found",
@@ -185,7 +185,7 @@ func (h *OcrAnswerKeyHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
-	result := h.db.Delete(&models.OcrAnswerKey{}, id)
+	result := h.db.Delete(&models.OcrAnswerKey{}, primaryKey(id))
 	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",

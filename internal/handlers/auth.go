@@ -101,7 +101,7 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	}
 
 	// Generate refresh token
-	refreshToken, err := utils.GenerateRefreshToken(user.ID, user.Email, h.cfg.JWTRefreshSecret)
+	refreshToken, refreshExpires, err := h.createRefreshSession(user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
@@ -109,16 +109,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 
-	// Set refresh token as HttpOnly cookie
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    refreshToken,
-		Expires:  time.Now().Add(7 * 24 * time.Hour),
-		HTTPOnly: true,
-		Secure:   h.cfg.Environment == "production",
-		SameSite: "Lax",
-		Path:     "/api/auth",
-	})
+	// Set the opaque refresh token only after its server session is persisted.
+	c.Set("Cache-Control", "no-store")
+	h.refreshCookie(c, refreshToken, refreshExpires)
 
 	return c.JSON(models.AuthResponse{
 		AccessToken: accessToken,
@@ -126,66 +119,6 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		ExpiresIn:   900, // 15 minutes in seconds
 		User:        user,
 	})
-}
-
-// Refresh generates a new access token using the refresh token cookie
-func (h *AuthHandler) Refresh(c *fiber.Ctx) error {
-	refreshToken := c.Cookies("refresh_token")
-	if refreshToken == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
-			Error:   "unauthorized",
-			Message: "No refresh token provided",
-		})
-	}
-
-	// Validate refresh token
-	claims, err := utils.ValidateToken(refreshToken, h.cfg.JWTRefreshSecret)
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
-			Error:   "unauthorized",
-			Message: "Invalid or expired refresh token",
-		})
-	}
-
-	// Verify user still exists
-	var user models.User
-	if err := h.db.Preload("Roles.Permissions").First(&user, claims.UserID).Error; err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(models.ErrorResponse{
-			Error:   "unauthorized",
-			Message: "User no longer exists",
-		})
-	}
-
-	// Generate new access token
-	accessToken, err := utils.GenerateAccessToken(user.ID, user.Email, h.cfg.JWTSecret)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
-			Error:   "server_error",
-			Message: "Failed to generate token",
-		})
-	}
-
-	return c.JSON(models.AuthResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   900,
-		User:        user,
-	})
-}
-
-// Logout clears the refresh token cookie
-func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		Expires:  time.Now().Add(-1 * time.Hour),
-		HTTPOnly: true,
-		Secure:   h.cfg.Environment == "production",
-		SameSite: "Lax",
-		Path:     "/api/auth",
-	})
-
-	return c.JSON(fiber.Map{"message": "Logged out successfully"})
 }
 
 // Me returns the authenticated user's profile
@@ -364,7 +297,15 @@ func (h *AuthHandler) UpdateProfile(c *fiber.Ctx) error {
 		user.Password = hashedPassword
 	}
 
-	if err := h.db.Save(&user).Error; err != nil {
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		if strings.TrimSpace(req.NewPassword) != "" {
+			return revokeRefreshSessions(tx, userID)
+		}
+		return nil
+	}); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
 			Message: "Failed to update profile",
@@ -645,7 +586,7 @@ func PaginateQuery(c *fiber.Ctx, db *gorm.DB, searchFields []string) (*gorm.DB, 
 	if order != "asc" && order != "desc" {
 		order = "desc"
 	}
-	query = query.Order(sortBy + " " + order)
+	query = safeOrder(query, sortBy, order)
 
 	// Pagination
 	offset := (page - 1) * perPage

@@ -48,7 +48,7 @@ func (h *KelasHandler) List(c *fiber.Ctx) error {
 
 	var classes []models.Kelas
 	offset := (page - 1) * perPage
-	query.Order(sort + " " + order).Limit(perPage).Offset(offset).Find(&classes)
+	safeOrder(query, sort, order).Limit(perPage).Offset(offset).Find(&classes)
 
 	return c.JSON(fiber.Map{
 		"data":        classes,
@@ -64,7 +64,7 @@ func (h *KelasHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kelas models.Kelas
 
-	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, id).Error; err != nil {
+	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kelas not found",
@@ -140,7 +140,7 @@ func (h *KelasHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kelas models.Kelas
 
-	if err := h.db.First(&kelas, id).Error; err != nil {
+	if err := h.db.First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kelas not found",
@@ -198,7 +198,7 @@ func (h *KelasHandler) Update(c *fiber.Ctx) error {
 // Delete soft-deletes a class
 func (h *KelasHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.Kelas{}, id)
+	result := h.db.Delete(&models.Kelas{}, primaryKey(id))
 
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
@@ -215,7 +215,7 @@ func (h *KelasHandler) AddStudent(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kelas models.Kelas
 
-	if err := h.db.First(&kelas, id).Error; err != nil {
+	if err := h.db.First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kelas not found",
@@ -260,7 +260,7 @@ func (h *KelasHandler) RemoveStudent(c *fiber.Ctx) error {
 	studentID := c.Params("student_id")
 	var kelas models.Kelas
 
-	if err := h.db.First(&kelas, id).Error; err != nil {
+	if err := h.db.First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kelas not found",
@@ -268,7 +268,7 @@ func (h *KelasHandler) RemoveStudent(c *fiber.Ctx) error {
 	}
 
 	var student models.Student
-	if err := h.db.First(&student, studentID).Error; err != nil {
+	if err := h.db.First(&student, primaryKey(studentID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Student not found",
@@ -300,7 +300,7 @@ func (h *KelasHandler) ExportExcel(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kelas models.Kelas
 
-	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, id).Error; err != nil {
+	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kelas not found"})
 	}
 
@@ -395,7 +395,7 @@ func (h *KelasHandler) ExportPDF(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var kelas models.Kelas
 
-	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, id).Error; err != nil {
+	if err := h.db.Preload("WaliKelas").Preload("WaliKelasDiniyyah").Preload("Students").First(&kelas, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kelas not found"})
 	}
 

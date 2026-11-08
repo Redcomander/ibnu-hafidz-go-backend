@@ -21,7 +21,7 @@ func TestLoginStoresCountryFromGeoHeaders(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserActivityLog{}))
+	require.NoError(t, db.AutoMigrate(&models.RefreshSession{}, &models.User{}, &models.UserActivityLog{}))
 
 	hash, err := utils.HashPassword("secret123")
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestAnonymousPublicAnd404RequestsAreLogged(t *testing.T) {
 func TestAuthorizedPublicRequestKeepsUserIdentityInActivityLog(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserActivityLog{}))
+	require.NoError(t, db.AutoMigrate(&models.RefreshSession{}, &models.User{}, &models.UserActivityLog{}))
 
 	hash, err := utils.HashPassword("secret123")
 	require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestLoginStoresDeviceAndCountryInActivityLog(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	require.NoError(t, db.AutoMigrate(&models.User{}, &models.UserActivityLog{}))
+	require.NoError(t, db.AutoMigrate(&models.RefreshSession{}, &models.User{}, &models.UserActivityLog{}))
 
 	hash, err := utils.HashPassword("secret123")
 	require.NoError(t, err)

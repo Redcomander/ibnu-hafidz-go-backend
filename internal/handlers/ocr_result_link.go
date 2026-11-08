@@ -386,7 +386,7 @@ func (h *OCRResultLinkHandler) UpdateStudent(c *fiber.Ctx) error {
 	}
 
 	var record models.OCRResultLink
-	if err := h.db.First(&record, id).Error; err != nil {
+	if err := h.db.First(&record, primaryKey(id)).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 				Error:   "not_found",
@@ -454,7 +454,7 @@ func (h *OCRResultLinkHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.db.Delete(&models.OCRResultLink{}, id).Error; err != nil {
+	if err := h.db.Delete(&models.OCRResultLink{}, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
 			Error:   "server_error",
 			Message: err.Error(),
@@ -482,7 +482,7 @@ func (h *OCRResultLinkHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var record models.OCRResultLink
-	if err := h.db.First(&record, id).Error; err != nil {
+	if err := h.db.First(&record, primaryKey(id)).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 				Error:   "not_found",

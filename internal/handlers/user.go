@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"fmt"
-	"strings"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -204,7 +204,7 @@ func (h *UserHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var user models.User
 
-	if err := h.db.Preload("Roles.Permissions").First(&user, id).Error; err != nil {
+	if err := h.db.Preload("Roles.Permissions").First(&user, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "User not found",
@@ -294,7 +294,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var user models.User
 
-	if err := h.db.First(&user, id).Error; err != nil {
+	if err := h.db.First(&user, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "User not found",
@@ -359,7 +359,17 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		user.Password = hashedPassword
 	}
 
-	h.db.Save(&user)
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		if req.Password != "" {
+			return revokeRefreshSessions(tx, user.ID)
+		}
+		return nil
+	}); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update user")
+	}
 
 	// Update roles if field is provided (including empty array to clear roles).
 	if req.RoleIDs != nil {
@@ -375,7 +385,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 // Delete soft-deletes a user
 func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.User{}, id)
+	result := h.db.Delete(&models.User{}, primaryKey(id))
 
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{

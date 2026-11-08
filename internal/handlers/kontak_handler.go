@@ -167,7 +167,7 @@ func (h *KontakHandler) DeleteSource(c *fiber.Ctx) error {
 
 func (h *KontakHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.Kontak{}, id)
+	result := h.db.Delete(&models.Kontak{}, primaryKey(id))
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kontak not found"})
 	}
@@ -334,7 +334,7 @@ func (h *KontakHandler) Get(c *fiber.Ctx) error {
 
 	if err := h.db.Preload("Handler", func(tx *gorm.DB) *gorm.DB {
 		return tx.Select("id", "name", "email")
-	}).First(&item, id).Error; err != nil {
+	}).First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Kontak not found",
@@ -348,7 +348,7 @@ func (h *KontakHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Kontak
 
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kontak not found"})
 	}
 
@@ -441,7 +441,7 @@ func (h *KontakHandler) UpdateStatus(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Kontak
 
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kontak not found"})
 	}
 
@@ -483,7 +483,7 @@ func (h *KontakHandler) WhatsAppLink(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.Kontak
 
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Kontak not found"})
 	}
 
@@ -499,7 +499,7 @@ func (h *KontakHandler) WhatsAppLink(c *fiber.Ctx) error {
 			templateID = &tid
 
 			var tmpl models.TemplatePesan
-			if tErr := h.db.First(&tmpl, tid).Error; tErr == nil {
+			if tErr := h.db.First(&tmpl, primaryKey(tid)).Error; tErr == nil {
 				message = renderTemplateMessage(tmpl.Konten, item)
 			}
 		}
@@ -606,7 +606,7 @@ func (h *TemplatePesanHandler) Create(c *fiber.Ctx) error {
 func (h *TemplatePesanHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.TemplatePesan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Template not found"})
 	}
 
@@ -638,7 +638,7 @@ func (h *TemplatePesanHandler) Update(c *fiber.Ctx) error {
 
 func (h *TemplatePesanHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
-	result := h.db.Delete(&models.TemplatePesan{}, id)
+	result := h.db.Delete(&models.TemplatePesan{}, primaryKey(id))
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Template not found"})
 	}

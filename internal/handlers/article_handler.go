@@ -2,9 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -66,7 +63,7 @@ func (h *ArticleHandler) CreateCategory(c *fiber.Ctx) error {
 func (h *ArticleHandler) DeleteCategory(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var cat models.Category
-	if err := h.db.First(&cat, id).Error; err != nil {
+	if err := h.db.First(&cat, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Category not found"})
 	}
 	// Nullify articles in this category
@@ -78,7 +75,7 @@ func (h *ArticleHandler) DeleteCategory(c *fiber.Ctx) error {
 func (h *ArticleHandler) UpdateCategory(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var cat models.Category
-	if err := h.db.First(&cat, id).Error; err != nil {
+	if err := h.db.First(&cat, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Category not found"})
 	}
 
@@ -126,7 +123,7 @@ func (h *ArticleHandler) CreateTag(c *fiber.Ctx) error {
 func (h *ArticleHandler) DeleteTag(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var tag models.Tag
-	if err := h.db.First(&tag, id).Error; err != nil {
+	if err := h.db.First(&tag, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tag not found"})
 	}
 	// Clear article associations
@@ -140,6 +137,12 @@ func (h *ArticleHandler) DeleteTag(c *fiber.Ctx) error {
 func (h *ArticleHandler) ListArticles(c *fiber.Ctx) error {
 	page := c.QueryInt("page", 1)
 	perPage := c.QueryInt("per_page", 10)
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 10
+	}
 	search := c.Query("search")
 	status := c.Query("status")
 	categoryID := c.Query("category_id")
@@ -279,7 +282,7 @@ func (h *ArticleHandler) CreateArticle(c *fiber.Ctx) error {
 
 	if categoryID != "" {
 		var cat models.Category
-		if h.db.First(&cat, categoryID).RowsAffected > 0 {
+		if h.db.First(&cat, primaryKey(categoryID)).RowsAffected > 0 {
 			article.CategoryID = &cat.ID
 		}
 	}
@@ -289,28 +292,14 @@ func (h *ArticleHandler) CreateArticle(c *fiber.Ctx) error {
 		article.PublishedAt = &now
 	}
 
-	// Handle thumbnail upload
-	file, err := c.FormFile("thumbnail")
-	if err == nil && file != nil {
-		ext := strings.ToLower(filepath.Ext(file.Filename))
-		filename := fmt.Sprintf("thumb_%d%s", time.Now().UnixNano(), ext)
-		destDir := filepath.Join(h.uploadPath, "thumbnails")
-		os.MkdirAll(destDir, 0755)
-		destPath := filepath.Join(destDir, filename)
-
-		src, _ := file.Open()
-		defer src.Close()
-		dst, _ := os.Create(destPath)
-		io.Copy(dst, src)
-		dst.Close()
-
-		thumbPath := "thumbnails/" + filename
-		article.Thumbnail = &thumbPath
-	} else if galleryPath := c.FormValue("thumbnail_from_gallery"); galleryPath != "" {
-		article.Thumbnail = &galleryPath
+	thumbnail, err := h.articleThumbnail(c, nil)
+	if err != nil {
+		return err
 	}
+	article.Thumbnail = thumbnail
 
 	if err := h.db.Create(&article).Error; err != nil {
+		h.removeArticleThumbnail(thumbnail)
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Error: "server_error", Message: err.Error()})
 	}
 
@@ -330,7 +319,7 @@ func (h *ArticleHandler) CreateArticle(c *fiber.Ctx) error {
 func (h *ArticleHandler) UpdateArticle(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var article models.Article
-	if err := h.db.First(&article, id).Error; err != nil {
+	if err := h.db.First(&article, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Article not found"})
 	}
 
@@ -353,7 +342,7 @@ func (h *ArticleHandler) UpdateArticle(c *fiber.Ctx) error {
 	}
 	if categoryID != "" {
 		var cat models.Category
-		if h.db.First(&cat, categoryID).RowsAffected > 0 {
+		if h.db.First(&cat, primaryKey(categoryID)).RowsAffected > 0 {
 			article.CategoryID = &cat.ID
 		}
 	}
@@ -365,33 +354,21 @@ func (h *ArticleHandler) UpdateArticle(c *fiber.Ctx) error {
 		}
 	}
 
-	// Handle thumbnail upload
-	file, err := c.FormFile("thumbnail")
-	if err == nil && file != nil {
-		// Delete old thumbnail
-		if article.Thumbnail != nil {
-			os.Remove(filepath.Join(h.uploadPath, *article.Thumbnail))
-		}
-
-		ext := strings.ToLower(filepath.Ext(file.Filename))
-		filename := fmt.Sprintf("thumb_%d%s", time.Now().UnixNano(), ext)
-		destDir := filepath.Join(h.uploadPath, "thumbnails")
-		os.MkdirAll(destDir, 0755)
-		destPath := filepath.Join(destDir, filename)
-
-		src, _ := file.Open()
-		defer src.Close()
-		dst, _ := os.Create(destPath)
-		io.Copy(dst, src)
-		dst.Close()
-
-		thumbPath := "thumbnails/" + filename
-		article.Thumbnail = &thumbPath
-	} else if galleryPath := c.FormValue("thumbnail_from_gallery"); galleryPath != "" {
-		article.Thumbnail = &galleryPath
+	previousThumbnail := article.Thumbnail
+	thumbnail, err := h.articleThumbnail(c, previousThumbnail)
+	if err != nil {
+		return err
 	}
-
-	h.db.Save(&article)
+	article.Thumbnail = thumbnail
+	if err := h.db.Save(&article).Error; err != nil {
+		if thumbnail != previousThumbnail {
+			h.removeArticleThumbnail(thumbnail)
+		}
+		return fiber.NewError(500, "Failed to save article")
+	}
+	if thumbnail != previousThumbnail {
+		h.removeArticleThumbnail(previousThumbnail)
+	}
 
 	// Update tags
 	if tagIDs != "" {
@@ -409,13 +386,8 @@ func (h *ArticleHandler) UpdateArticle(c *fiber.Ctx) error {
 func (h *ArticleHandler) DeleteArticle(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var article models.Article
-	if err := h.db.First(&article, id).Error; err != nil {
+	if err := h.db.First(&article, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Article not found"})
-	}
-
-	// Delete thumbnail
-	if article.Thumbnail != nil {
-		os.Remove(filepath.Join(h.uploadPath, *article.Thumbnail))
 	}
 
 	// Clear tags association
@@ -427,7 +399,10 @@ func (h *ArticleHandler) DeleteArticle(c *fiber.Ctx) error {
 	// Delete comments
 	h.db.Where("article_id = ?", article.ID).Delete(&models.Comment{})
 
-	h.db.Delete(&article)
+	if err := h.db.Delete(&article).Error; err != nil {
+		return fiber.NewError(500, "Failed to delete article")
+	}
+	h.removeArticleThumbnail(article.Thumbnail)
 
 	return c.JSON(fiber.Map{"message": "Article deleted"})
 }
@@ -435,7 +410,7 @@ func (h *ArticleHandler) DeleteArticle(c *fiber.Ctx) error {
 func (h *ArticleHandler) GetAnalytics(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var article models.Article
-	if err := h.db.First(&article, id).Error; err != nil {
+	if err := h.db.First(&article, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Article not found"})
 	}
 
@@ -495,7 +470,7 @@ func (h *ArticleHandler) ListPendingComments(c *fiber.Ctx) error {
 func (h *ArticleHandler) ApproveComment(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var comment models.Comment
-	if err := h.db.First(&comment, id).Error; err != nil {
+	if err := h.db.First(&comment, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found", "message": "Comment not found"})
 	}
 
@@ -510,7 +485,7 @@ func (h *ArticleHandler) ApproveComment(c *fiber.Ctx) error {
 func (h *ArticleHandler) DeleteComment(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var comment models.Comment
-	if err := h.db.First(&comment, id).Error; err != nil {
+	if err := h.db.First(&comment, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "not_found", "message": "Comment not found"})
 	}
 

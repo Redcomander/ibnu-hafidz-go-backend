@@ -799,7 +799,7 @@ func (h *RevitalisasiHandler) UpdateKasbon(c *fiber.Ctx) error {
 	}
 
 	var existing models.RevitalisasiKasbon
-	if err := h.db.First(&existing, id).Error; err != nil {
+	if err := h.db.First(&existing, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "kasbon tidak ditemukan"})
 	}
 
@@ -855,7 +855,7 @@ func (h *RevitalisasiHandler) DeleteKasbon(c *fiber.Ctx) error {
 	}
 
 	var entry models.RevitalisasiKasbon
-	if err := h.db.First(&entry, id).Error; err != nil {
+	if err := h.db.First(&entry, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "kasbon tidak ditemukan"})
 	}
 	if err := h.db.Delete(&entry).Error; err != nil {
@@ -912,7 +912,7 @@ func (h *RevitalisasiHandler) CreateTukang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateTukang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiTukang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tukang tidak ditemukan"})
 	}
 
@@ -949,7 +949,7 @@ func (h *RevitalisasiHandler) UpdateTukang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteTukang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiTukang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tukang tidak ditemukan"})
 	}
 	if err := h.db.Delete(&item).Error; err != nil {
@@ -965,7 +965,7 @@ func (h *RevitalisasiHandler) ForceDeleteTukang(c *fiber.Ctx) error {
 	}
 
 	var item models.RevitalisasiTukang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Tukang tidak ditemukan"})
 	}
 
@@ -1093,7 +1093,7 @@ func (h *RevitalisasiHandler) CreateAbsenTukang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateAbsenTukang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiAbsenTukang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Data absensi tidak ditemukan"})
 	}
 
@@ -1175,7 +1175,7 @@ func (h *RevitalisasiHandler) UpdateAbsenTukang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteAbsenTukang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiAbsenTukang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Data absensi tidak ditemukan"})
 	}
 	h.cleanupPhotoPath(item.PhotoPath)
@@ -1233,7 +1233,7 @@ func (h *RevitalisasiHandler) CreateNotaMaterial(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiNotaMaterial
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Nota tidak ditemukan"})
 	}
 	var payload models.RevitalisasiNotaMaterial
@@ -1281,7 +1281,7 @@ func (h *RevitalisasiHandler) UpdateNotaMaterial(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteNotaMaterial(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiNotaMaterial
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Nota tidak ditemukan"})
 	}
 	h.cleanupPhotoPath(item.PhotoPath)
@@ -1342,7 +1342,7 @@ func (h *RevitalisasiHandler) CreateNotaMasuk(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiNotaMasuk
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Nota masuk tidak ditemukan"})
 	}
 	var payload models.RevitalisasiNotaMasuk
@@ -1390,7 +1390,7 @@ func (h *RevitalisasiHandler) UpdateNotaMasuk(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteNotaMasuk(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiNotaMasuk
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Nota masuk tidak ditemukan"})
 	}
 	h.cleanupPhotoPath(item.PhotoPath)
@@ -1476,7 +1476,7 @@ func (h *RevitalisasiHandler) CreateMaterialDatang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiMaterialDatang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Material tidak ditemukan"})
 	}
 	var payload struct {
@@ -1558,7 +1558,7 @@ func (h *RevitalisasiHandler) UpdateMaterialDatang(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteMaterialDatang(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiMaterialDatang
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Material tidak ditemukan"})
 	}
 	h.cleanupPhotoPath(item.PhotoPath)
@@ -1621,7 +1621,7 @@ func (h *RevitalisasiHandler) CreateProgresPembangunan(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiProgresPembangunan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Progress tidak ditemukan"})
 	}
 	var payload models.RevitalisasiProgresPembangunan
@@ -1665,7 +1665,7 @@ func (h *RevitalisasiHandler) UpdateProgresPembangunan(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeleteProgresPembangunan(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiProgresPembangunan
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Progress tidak ditemukan"})
 	}
 	h.cleanupPhotoPath(item.PhotoPath)
@@ -1711,7 +1711,7 @@ func (h *RevitalisasiHandler) CreatePrioritas(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) UpdatePrioritas(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiPrioritas
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Prioritas tidak ditemukan"})
 	}
 	var payload models.RevitalisasiPrioritas
@@ -1749,7 +1749,7 @@ func (h *RevitalisasiHandler) UpdatePrioritas(c *fiber.Ctx) error {
 func (h *RevitalisasiHandler) DeletePrioritas(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var item models.RevitalisasiPrioritas
-	if err := h.db.First(&item, id).Error; err != nil {
+	if err := h.db.First(&item, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Prioritas tidak ditemukan"})
 	}
 	if err := h.db.Delete(&item).Error; err != nil {

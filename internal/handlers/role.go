@@ -37,7 +37,7 @@ func (h *RoleHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var role models.Role
 
-	if err := h.db.Preload("Permissions").First(&role, id).Error; err != nil {
+	if err := h.db.Preload("Permissions").First(&role, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Role not found",
@@ -104,7 +104,7 @@ func (h *RoleHandler) Update(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var role models.Role
 
-	if err := h.db.First(&role, id).Error; err != nil {
+	if err := h.db.First(&role, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Role not found",
@@ -160,7 +160,7 @@ func (h *RoleHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var role models.Role
 
-	if err := h.db.First(&role, id).Error; err != nil {
+	if err := h.db.First(&role, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{
 			Error:   "not_found",
 			Message: "Role not found",

@@ -446,7 +446,7 @@ func (h *LaundryExportHandler) ExportWeeklyVendorStatisticsPDF(c *fiber.Ctx) err
 	end = time.Date(end.Year(), end.Month(), end.Day(), 23, 59, 59, 0, end.Location())
 
 	var vendor models.LaundryVendor
-	if err := h.db.Preload("Accounts.Student").Preload("Accounts.User").First(&vendor, vendorID).Error; err != nil {
+	if err := h.db.Preload("Accounts.Student").Preload("Accounts.User").First(&vendor, primaryKey(vendorID)).Error; err != nil {
 		return c.Status(404).SendString("Vendor not found")
 	}
 

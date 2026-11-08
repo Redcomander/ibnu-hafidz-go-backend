@@ -21,7 +21,7 @@ func NewKamarAttendanceHandler(db *gorm.DB) *KamarAttendanceHandler {
 func (h *KamarAttendanceHandler) getKamarForAttendanceAccess(c *fiber.Ctx) (models.Kamar, error) {
 	id := c.Params("id")
 	var kamar models.Kamar
-	if err := h.db.Preload("WaliKamar").Preload("SecondaryWalies").First(&kamar, id).Error; err != nil {
+	if err := h.db.Preload("WaliKamar").Preload("SecondaryWalies").First(&kamar, primaryKey(id)).Error; err != nil {
 		return models.Kamar{}, fiber.NewError(fiber.StatusNotFound, "Kamar not found")
 	}
 

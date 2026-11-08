@@ -354,11 +354,11 @@ func (h *ScheduleHandler) Delete(c *fiber.Ctx) error {
 	scheduleType := c.Query("type", "formal")
 
 	if scheduleType == "diniyyah" {
-		if err := h.db.Delete(&models.DiniyyahSchedule{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.DiniyyahSchedule{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete schedule"})
 		}
 	} else {
-		if err := h.db.Delete(&models.Schedule{}, id).Error; err != nil {
+		if err := h.db.Delete(&models.Schedule{}, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to delete schedule"})
 		}
 	}
@@ -405,7 +405,7 @@ func (h *ScheduleHandler) Restore(c *fiber.Ctx) error {
 
 	if scheduleType == "diniyyah" {
 		var schedule models.DiniyyahSchedule
-		if err := h.db.Unscoped().First(&schedule, id).Error; err != nil {
+		if err := h.db.Unscoped().First(&schedule, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 		}
 		if !schedule.DeletedAt.Valid {
@@ -418,7 +418,7 @@ func (h *ScheduleHandler) Restore(c *fiber.Ctx) error {
 	}
 
 	var schedule models.Schedule
-	if err := h.db.Unscoped().First(&schedule, id).Error; err != nil {
+	if err := h.db.Unscoped().First(&schedule, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 	}
 	if !schedule.DeletedAt.Valid {
@@ -461,7 +461,7 @@ func (h *ScheduleHandler) forceDeleteSchedule(tx *gorm.DB, id uint, scheduleType
 		if err := tx.Unscoped().Where("jadwal_diniyyah_id = ?", id).Delete(&models.AbsensiDiniyyah{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Unscoped().Delete(&models.DiniyyahSchedule{}, id).Error; err != nil {
+		if err := tx.Unscoped().Delete(&models.DiniyyahSchedule{}, primaryKey(id)).Error; err != nil {
 			return err
 		}
 		return nil
@@ -495,7 +495,7 @@ func (h *ScheduleHandler) forceDeleteSchedule(tx *gorm.DB, id uint, scheduleType
 	if err := tx.Unscoped().Where("jadwal_formal_id = ?", id).Delete(&models.Absensi{}).Error; err != nil {
 		return err
 	}
-	if err := tx.Unscoped().Delete(&models.Schedule{}, id).Error; err != nil {
+	if err := tx.Unscoped().Delete(&models.Schedule{}, primaryKey(id)).Error; err != nil {
 		return err
 	}
 	return nil
@@ -504,7 +504,7 @@ func (h *ScheduleHandler) forceDeleteSchedule(tx *gorm.DB, id uint, scheduleType
 func (h *ScheduleHandler) restoreSchedule(tx *gorm.DB, id uint, scheduleType string) error {
 	if scheduleType == "diniyyah" {
 		var schedule models.DiniyyahSchedule
-		if err := tx.Unscoped().First(&schedule, id).Error; err != nil {
+		if err := tx.Unscoped().First(&schedule, primaryKey(id)).Error; err != nil {
 			return err
 		}
 		if !schedule.DeletedAt.Valid {
@@ -514,7 +514,7 @@ func (h *ScheduleHandler) restoreSchedule(tx *gorm.DB, id uint, scheduleType str
 	}
 
 	var schedule models.Schedule
-	if err := tx.Unscoped().First(&schedule, id).Error; err != nil {
+	if err := tx.Unscoped().First(&schedule, primaryKey(id)).Error; err != nil {
 		return err
 	}
 	if !schedule.DeletedAt.Valid {
@@ -642,7 +642,7 @@ func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 
 	if input.Type == "diniyyah" {
 		var schedule models.DiniyyahSchedule
-		if err := h.db.First(&schedule, id).Error; err != nil {
+		if err := h.db.First(&schedule, primaryKey(id)).Error; err != nil {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 		}
 		schedule.DiniyyahLessonTeacherID = input.AssignmentID
@@ -655,7 +655,7 @@ func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 
 	// Formal
 	var schedule models.Schedule
-	if err := h.db.First(&schedule, id).Error; err != nil {
+	if err := h.db.First(&schedule, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Schedule not found"})
 	}
 	schedule.Type = normalizedFormalScheduleType(input.Type)

@@ -46,7 +46,7 @@ func (h *GalleryHandler) ListAlbums(c *fiber.Ctx) error {
 func (h *GalleryHandler) GetAlbum(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var album models.Album
-	if err := h.db.First(&album, id).Error; err != nil {
+	if err := h.db.First(&album, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Album not found"})
 	}
 
@@ -127,7 +127,7 @@ func (h *GalleryHandler) CreateAlbum(c *fiber.Ctx) error {
 func (h *GalleryHandler) UpdateAlbum(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var album models.Album
-	if err := h.db.First(&album, id).Error; err != nil {
+	if err := h.db.First(&album, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Album not found"})
 	}
 
@@ -172,7 +172,7 @@ func (h *GalleryHandler) UpdateAlbum(c *fiber.Ctx) error {
 func (h *GalleryHandler) DeleteAlbum(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var album models.Album
-	if err := h.db.First(&album, id).Error; err != nil {
+	if err := h.db.First(&album, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Album not found"})
 	}
 
@@ -191,7 +191,7 @@ func (h *GalleryHandler) DeleteAlbum(c *fiber.Ctx) error {
 func (h *GalleryHandler) AddGalleriesToAlbum(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var album models.Album
-	if err := h.db.First(&album, id).Error; err != nil {
+	if err := h.db.First(&album, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Album not found"})
 	}
 
@@ -267,7 +267,7 @@ func (h *GalleryHandler) UploadGallery(c *fiber.Ctx) error {
 	var albumIDPtr *uint
 	if albumID != "" {
 		var a models.Album
-		if h.db.First(&a, albumID).RowsAffected > 0 {
+		if h.db.First(&a, primaryKey(albumID)).RowsAffected > 0 {
 			albumIDPtr = &a.ID
 		}
 	}
@@ -383,7 +383,7 @@ func (h *GalleryHandler) UploadGallery(c *fiber.Ctx) error {
 func (h *GalleryHandler) UpdateGallery(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var gallery models.Gallery
-	if err := h.db.First(&gallery, id).Error; err != nil {
+	if err := h.db.First(&gallery, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Gallery item not found"})
 	}
 
@@ -408,7 +408,7 @@ func (h *GalleryHandler) UpdateGallery(c *fiber.Ctx) error {
 func (h *GalleryHandler) DeleteGallery(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var gallery models.Gallery
-	if err := h.db.First(&gallery, id).Error; err != nil {
+	if err := h.db.First(&gallery, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Error: "not_found", Message: "Gallery item not found"})
 	}
 

@@ -89,7 +89,7 @@ func (h *LaundryTransactionHandler) GetAccountStats(c *fiber.Ctx) error {
 	}
 
 	var account models.LaundryAccount
-	if err := h.db.First(&account, accountID).Error; err != nil {
+	if err := h.db.First(&account, primaryKey(accountID)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Account not found"})
 	}
 
@@ -224,7 +224,7 @@ func (h *LaundryTransactionHandler) Update(c *fiber.Ctx) error {
 	}
 
 	var trans models.LaundryTransaction
-	if err := h.db.First(&trans, id).Error; err != nil {
+	if err := h.db.First(&trans, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Transaction not found"})
 	}
 
@@ -269,7 +269,7 @@ func (h *LaundryTransactionHandler) MarkAsPickedUp(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var trans models.LaundryTransaction
 
-	if err := h.db.Preload("Account").First(&trans, id).Error; err != nil {
+	if err := h.db.Preload("Account").First(&trans, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Transaction not found"})
 	}
 
@@ -356,7 +356,7 @@ func (h *LaundryTransactionHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var trans models.LaundryTransaction
 
-	if err := h.db.Preload("Account").First(&trans, id).Error; err != nil {
+	if err := h.db.Preload("Account").First(&trans, primaryKey(id)).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(models.ErrorResponse{Message: "Transaction not found"})
 	}
 
