@@ -3,14 +3,17 @@ package handlers
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ibnu-hafidz/web-v2/internal/config"
+	"github.com/ibnu-hafidz/web-v2/internal/diagnostics"
+	"github.com/ibnu-hafidz/web-v2/internal/maintenance"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
-	"github.com/ibnu-hafidz/web-v2/internal/utils"
 	"gorm.io/gorm"
 )
 
@@ -19,6 +22,7 @@ type NotificationHandler struct {
 	cfg     *config.Config
 	clients map[uint]map[chan string]bool // map[UserID]map[Channel]bool
 	mu      sync.Mutex
+	tickets map[string]sseTicket
 }
 
 func NewNotificationHandler(db *gorm.DB, cfg *config.Config) *NotificationHandler {
@@ -26,91 +30,132 @@ func NewNotificationHandler(db *gorm.DB, cfg *config.Config) *NotificationHandle
 		db:      db,
 		cfg:     cfg,
 		clients: make(map[uint]map[chan string]bool),
+		tickets: make(map[string]sseTicket),
 	}
 }
 
-// IssueSSETicket issues a short-lived (30-second) JWT for SSE authentication.
-// The client uses this token in the SSE URL query param (?token=...) so that
-// the long-lived access token never appears in server logs or browser history.
+type sseTicket struct {
+	UserID  uint
+	Expires time.Time
+}
+
+// Tickets are opaque, short-lived and consumed once. They cannot authenticate
+// ordinary API calls and never expose a reusable access token in the URL.
 func (h *NotificationHandler) IssueSSETicket(c *fiber.Ctx) error {
-	userID := c.Locals("userID").(uint)
-	email, _ := c.Locals("email").(string)
-
-	token, err := utils.GenerateSSEToken(userID, email, h.cfg.JWTSecret)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{
-			Error:   "token_error",
-			Message: "Failed to generate SSE ticket",
-		})
+	userID, ok := c.Locals("userID").(uint)
+	if !ok || userID == 0 {
+		return fiber.NewError(401, "Authentication required")
 	}
-
-	return c.JSON(fiber.Map{
-		"ticket":     token,
-		"expires_in": 30,
-	})
+	ticket := diagnostics.NewID()
+	h.mu.Lock()
+	for key, value := range h.tickets {
+		if !value.Expires.After(time.Now()) {
+			delete(h.tickets, key)
+		}
+	}
+	h.tickets[ticket] = sseTicket{UserID: userID, Expires: time.Now().Add(30 * time.Second)}
+	h.mu.Unlock()
+	c.Set("Cache-Control", "no-store")
+	return c.JSON(fiber.Map{"ticket": ticket, "expires_in": 30})
 }
 
-// List returns notifications for the current user
+func (h *NotificationHandler) consumeTicket(token string) (uint, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ticket, exists := h.tickets[token]
+	delete(h.tickets, token)
+	return ticket.UserID, exists && ticket.Expires.After(time.Now())
+}
+
+func (h *NotificationHandler) unread(userID uint) (int64, error) {
+	var count int64
+	err := h.db.Model(&models.Notification{}).Where("user_id = ? AND is_read = ?", userID, false).Count(&count).Error
+	return count, err
+}
+
 func (h *NotificationHandler) List(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(uint)
-	page := c.QueryInt("page", 1)
-	limit := c.QueryInt("limit", 10)
-	offset := (page - 1) * limit
-
-	var notifications []models.Notification
+	page, err := strconv.Atoi(c.Query("page", "1"))
+	if err != nil || page < 1 || page > 1000000 {
+		return fiber.NewError(400, "Invalid page")
+	}
+	limit, err := strconv.Atoi(c.Query("limit", "10"))
+	if err != nil || limit < 1 || limit > 100 {
+		return fiber.NewError(400, "Limit must be between 1 and 100")
+	}
+	notifications := []models.Notification{}
 	var total int64
-
-	h.db.Model(&models.Notification{}).
-		Where("user_id = ?", userID).
-		Count(&total)
-
-	h.db.Where("user_id = ?", userID).
-		Order("created_at desc").
-		Limit(limit).
-		Offset(offset).
-		Find(&notifications)
-
-	// Count unread
-	var unreadCount int64
-	h.db.Model(&models.Notification{}).
-		Where("user_id = ? AND is_read = ?", userID, false).
-		Count(&unreadCount)
-
-	return c.JSON(fiber.Map{
-		"data":         notifications,
-		"total":        total,
-		"unread_count": unreadCount,
-		"page":         page,
-		"last_page":    (int(total) + limit - 1) / limit,
-	})
+	if err := h.db.Model(&models.Notification{}).Where("user_id = ?", userID).Count(&total).Error; err != nil {
+		return err
+	}
+	if err := h.db.Where("user_id = ?", userID).Order("created_at desc, id desc").Limit(limit).Offset((page - 1) * limit).Find(&notifications).Error; err != nil {
+		return err
+	}
+	unread, err := h.unread(userID)
+	if err != nil {
+		return err
+	}
+	c.Set("Cache-Control", "no-store")
+	return c.JSON(fiber.Map{"data": notifications, "total": total, "unread_count": unread, "page": page, "last_page": (total + int64(limit) - 1) / int64(limit)})
 }
 
-// MarkRead marks notifications as read
 func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(uint)
-	idStr := c.Params("id")
-
+	id := c.Params("id")
 	query := h.db.Model(&models.Notification{}).Where("user_id = ?", userID)
-
-	if idStr == "all" {
-		query.Where("is_read = ?", false).Update("is_read", true)
+	if id == "all" {
+		query = query.Where("is_read = ?", false)
 	} else {
-		query.Where("id = ?", idStr).Update("is_read", true)
+		parsed, err := strconv.ParseUint(id, 10, 64)
+		if err != nil || parsed == 0 {
+			return fiber.NewError(400, "Invalid notification ID")
+		}
+		var existing models.Notification
+		if err := h.db.Where("id = ? AND user_id = ?", parsed, userID).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fiber.NewError(404, "Notification not found")
+			}
+			return err
+		}
+		query = query.Where("id = ?", parsed)
 	}
-
-	return c.JSON(fiber.Map{"message": "Notifications marked as read"})
+	if err := query.Update("is_read", true).Error; err != nil {
+		return err
+	}
+	count, err := h.unread(userID)
+	if err != nil {
+		return err
+	}
+	c.Set("Cache-Control", "no-store")
+	return c.JSON(fiber.Map{"message": "Notifications marked as read", "unread_count": count})
 }
 
 // Stream handles Server-Sent Events (SSE)
 func (h *NotificationHandler) Stream(c *fiber.Ctx) error {
+	userID, valid := h.consumeTicket(c.Query("token"))
+	if !valid {
+		return fiber.NewError(401, "Invalid or expired stream ticket")
+	}
+	c.Locals("userID", userID)
+	var user models.User
+	if err := h.db.Preload("Roles").First(&user, userID).Error; err != nil {
+		return fiber.NewError(401, "User unavailable")
+	}
+	settings, err := maintenance.Read(h.db)
+	if err != nil {
+		return fiber.NewError(503, "Maintenance settings unavailable")
+	}
+	if settings.Enabled && settings.Scope == "all" && !maintenance.IsAdmin(&user) {
+		c.Set("Retry-After", "60")
+		return c.Status(503).JSON(fiber.Map{"error": "maintenance", "message": settings.Message})
+	}
 	// SSE headers
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
-	c.Set("Transfer-Encoding", "chunked")
+	c.Set("X-Accel-Buffering", "no")
 
-	userID := c.Locals("userID").(uint)
-	messageChan := make(chan string)
+	messageChan := make(chan string, 32)
 
 	// Register client
 	h.mu.Lock()
@@ -135,11 +180,21 @@ func (h *NotificationHandler) Stream(c *fiber.Ctx) error {
 			close(messageChan)
 		}()
 
+		if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
+			return
+		}
+		if err := w.Flush(); err != nil {
+			return
+		}
+		lifetime := time.NewTimer(5 * time.Minute)
+		defer lifetime.Stop()
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
 		for {
 			select {
+			case <-lifetime.C:
+				return
 			case msg, ok := <-messageChan:
 				if !ok {
 					return
@@ -183,23 +238,24 @@ func (h *NotificationHandler) SendNotification(userID uint, title, message, noti
 		return err
 	}
 
-	// 2. Broadcast to connected clients
-	payload, _ := json.Marshal(notif)
-	msg := string(payload)
-
-	h.mu.Lock()
-	if clients, ok := h.clients[userID]; ok {
-		for clientChan := range clients {
-			select {
-			case clientChan <- msg:
-			default:
-				// Skip if channel is blocked
-			}
-		}
-	}
-	h.mu.Unlock()
-
+	h.Broadcast(notif)
 	return nil
+}
+
+// Broadcast happens only after the notification row's transaction commits.
+func (h *NotificationHandler) Broadcast(notif models.Notification) {
+	payload, err := json.Marshal(notif)
+	if err != nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for channel := range h.clients[notif.UserID] {
+		select {
+		case channel <- string(payload):
+		default:
+		} // DB polling recovers overflow.
+	}
 }
 
 // SendToRole sends a notification to all users with a specific role
@@ -213,8 +269,9 @@ func (h *NotificationHandler) SendToRole(roleName, title, message, notifType, ac
 	}
 
 	for _, user := range users {
-		// Run in goroutine to not block
-		go h.SendNotification(user.ID, title, message, notifType, actionURL)
+		if err := h.SendNotification(user.ID, title, message, notifType, actionURL); err != nil {
+			return err
+		}
 	}
 
 	return nil

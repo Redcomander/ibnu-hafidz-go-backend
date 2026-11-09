@@ -42,6 +42,8 @@ func halaqohMembershipApp(t *testing.T) (*gorm.DB, *fiber.App) {
 	require.NoError(t, db.Create(&models.HalaqohAssignment{UserID: 1, StudentID: 1, Active: true}).Error)
 	require.NoError(t, db.Create(&models.HalaqohAssignment{UserID: 2, StudentID: 3, Active: true}).Error)
 	handler := NewHalaqohHandler(db)
+	require.NoError(t, db.AutoMigrate(&models.Notification{}))
+	handler.SetNotifications(NewNotificationHandler(db, nil))
 	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
 	app.Use(middleware.InjectDB(db))
 	app.Use(func(c *fiber.Ctx) error {

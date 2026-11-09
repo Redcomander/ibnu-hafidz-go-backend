@@ -37,7 +37,7 @@ func Maintenance(db *gorm.DB, cfg *config.Config) fiber.Handler {
 		}
 		// Keep session recovery and the authenticated control endpoint reachable.
 		switch path {
-		case "/api/maintenance", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/me":
+		case "/api/maintenance", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/me", "/api/notifications/stream":
 			return c.Next()
 		}
 		settings, err := maintenance.Read(db)

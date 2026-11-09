@@ -17,8 +17,11 @@ import (
 // ──────────────────────────────────────────────────────────────
 
 type HalaqohHandler struct {
-	db *gorm.DB
+	db            *gorm.DB
+	notifications *NotificationHandler
 }
+
+func (h *HalaqohHandler) SetNotifications(handler *NotificationHandler) { h.notifications = handler }
 
 func NewHalaqohHandler(db *gorm.DB) *HalaqohHandler {
 	return &HalaqohHandler{db: db}

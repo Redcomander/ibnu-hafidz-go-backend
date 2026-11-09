@@ -136,6 +136,8 @@ func main() {
 	// Setup routes
 	app.Use("/api", middleware.Maintenance(db, cfg))
 	api := app.Group("/api")
+	notifHandler := handlers.NewNotificationHandler(db, cfg)
+	api.Get("/notifications/stream", notifHandler.Stream)
 	maintenanceHandler := handlers.NewMaintenanceHandler(db, cfg)
 	api.Get("/maintenance", maintenanceHandler.Get)
 	api.Put("/maintenance", middleware.Auth(cfg), maintenanceHandler.Update)
@@ -301,11 +303,9 @@ func main() {
 	protected.Post("/arrivals/reset-students", middleware.Permission("dashboard.view"), arrivalHandler.ResetStudentArrivals)
 
 	// Notifications
-	notifHandler := handlers.NewNotificationHandler(db, cfg)
 	protected.Get("/notifications", notifHandler.List)
 	protected.Put("/notifications/:id/read", notifHandler.MarkRead)
 	protected.Post("/notifications/stream/ticket", notifHandler.IssueSSETicket)
-	protected.Get("/notifications/stream", notifHandler.Stream)
 
 	// Schedules
 	scheduleHandler := handlers.NewScheduleHandler(db)
@@ -359,6 +359,7 @@ func main() {
 
 	// Halaqoh
 	halaqohHandler := handlers.NewHalaqohHandler(db)
+	halaqohHandler.SetNotifications(notifHandler)
 	halaqohStatsHandler := handlers.NewHalaqohStatsHandler(db)
 
 	// Laundry Handlers

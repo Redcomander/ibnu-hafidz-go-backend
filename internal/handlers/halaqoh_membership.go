@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -284,6 +285,7 @@ func (h *HalaqohHandler) submitMembershipChange(c *fiber.Ctx, user *models.User,
 		return err
 	}
 	var request models.HalaqohAssignmentChangeRequest
+	var notices []models.Notification
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		if err := lockHalaqohTeacher(tx, teacherID); err != nil {
 			return err
@@ -337,11 +339,23 @@ func (h *HalaqohHandler) submitMembershipChange(c *fiber.Ctx, user *models.User,
 			return err
 		}
 		request = models.HalaqohAssignmentChangeRequest{TeacherID: teacherID, RequestedByUserID: user.ID, TargetTeacherID: teacherID, RequestType: kind, StudentIDs: ids, StudentOwnerSnapshot: owners, PreviousStudentIDs: previous, PreviousHelperTeacher: previousHelper, HelperTeacherID: helper, Status: "pending"}
-		return tx.Create(&request).Error
+		if err := tx.Create(&request).Error; err != nil {
+			return err
+		}
+		if h.notifications != nil {
+			var recipients []uint
+			if err := tx.Model(&models.User{}).Joins("JOIN role_user ru ON ru.user_id = users.id JOIN roles r ON r.id = ru.role_id").Where("r.name IN ?", []string{"admin", "super_admin"}).Distinct().Pluck("users.id", &recipients).Error; err != nil {
+				return err
+			}
+			notices, err = h.queueMembershipNotices(tx, recipients, "Pengajuan perubahan Halaqoh", fmt.Sprintf("Pengajuan #%d menunggu persetujuan Anda.", request.ID), "/dashboard/halaqoh/validasi")
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
+	h.publishMembershipNotices(notices)
 	return c.Status(202).JSON(fiber.Map{"message": "Permintaan dikirim. Perubahan berlaku setelah disetujui admin.", "request_id": request.ID})
 }
 
@@ -442,6 +456,16 @@ func (h *HalaqohHandler) reviewMembershipChange(c *fiber.Ctx, approve bool) erro
 		return fiber.NewError(403, "Hanya admin/super_admin yang dapat memverifikasi perubahan halaqoh")
 	}
 	var request models.HalaqohAssignmentChangeRequest
+	var notices []models.Notification
+	queueReview := func(tx *gorm.DB) error {
+		title := "Pengajuan Halaqoh ditolak"
+		if approve {
+			title = "Pengajuan Halaqoh disetujui"
+		}
+		var err error
+		notices, err = h.queueMembershipNotices(tx, []uint{request.RequestedByUserID}, title, fmt.Sprintf("Pengajuan #%d sudah ditinjau. Lihat riwayat pengajuan untuk detail.", request.ID), "/dashboard/halaqoh-assignments")
+		return err
+	}
 	var acknowledgement struct {
 		ConfirmTransfers bool `json:"confirm_transfers"`
 	}
@@ -476,7 +500,10 @@ func (h *HalaqohHandler) reviewMembershipChange(c *fiber.Ctx, approve bool) erro
 			return fiber.NewError(409, "Permintaan sudah ditinjau")
 		}
 		if !approve {
-			return reviewPendingHalaqoh(tx, &request, user.ID, "rejected", reason)
+			if err := reviewPendingHalaqoh(tx, &request, user.ID, "rejected", reason); err != nil {
+				return err
+			}
+			return queueReview(tx)
 		}
 		if request.TargetTeacherID != request.TeacherID || request.RequestedByUserID != request.TeacherID {
 			return fiber.NewError(409, "Pemilik permintaan tidak valid")
@@ -561,15 +588,49 @@ func (h *HalaqohHandler) reviewMembershipChange(c *fiber.Ctx, approve bool) erro
 		}
 		switch request.RequestType {
 		case "create", "update":
-			return applyHalaqohRoster(tx, request.TargetTeacherID, ids, request.HelperTeacherID)
+			err = applyHalaqohRoster(tx, request.TargetTeacherID, ids, request.HelperTeacherID)
 		case "delete_single":
-			return tx.Model(&models.HalaqohAssignment{}).Where("user_id = ? AND student_id = ? AND active = ?", request.TargetTeacherID, ids[0], true).Update("active", false).Error
+			err = tx.Model(&models.HalaqohAssignment{}).Where("user_id = ? AND student_id = ? AND active = ?", request.TargetTeacherID, ids[0], true).Update("active", false).Error
 		default:
-			return tx.Model(&models.HalaqohAssignment{}).Where("user_id = ? AND active = ?", request.TargetTeacherID, true).Update("active", false).Error
+			err = tx.Model(&models.HalaqohAssignment{}).Where("user_id = ? AND active = ?", request.TargetTeacherID, true).Update("active", false).Error
 		}
+		if err != nil {
+			return err
+		}
+		return queueReview(tx)
 	})
 	if err != nil {
 		return err
 	}
+	h.publishMembershipNotices(notices)
 	return c.JSON(fiber.Map{"message": "Permintaan perubahan halaqoh berhasil ditinjau"})
+}
+
+func (h *HalaqohHandler) queueMembershipNotices(tx *gorm.DB, recipients []uint, title, message, action string) ([]models.Notification, error) {
+	if h.notifications == nil {
+		return nil, nil
+	}
+	rows := []models.Notification{}
+	seen := map[uint]bool{}
+	for _, id := range recipients {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		row := models.Notification{UserID: id, Title: title, Message: message, Type: "info", ActionURL: &action}
+		if err := tx.Create(&row).Error; err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func (h *HalaqohHandler) publishMembershipNotices(rows []models.Notification) {
+	if h.notifications == nil {
+		return
+	}
+	for _, row := range rows {
+		h.notifications.Broadcast(row)
+	}
 }
