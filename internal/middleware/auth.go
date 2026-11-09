@@ -396,6 +396,12 @@ func ActivityLog() fiber.Handler {
 			DeviceName:  &deviceName,
 			CountryCode: &country,
 		}
+		// Persist route templates so arrival tokens and other path parameters do
+		// not enter new audit rows. Historical records are left untouched.
+		log.Path = c.Route().Path
+		if log.Path == "" || log.Path == "/" {
+			log.Path = "(unmatched)"
+		}
 
 		if country == "" {
 			log.CountryCode = nil
@@ -407,7 +413,9 @@ func ActivityLog() fiber.Handler {
 			log.IPAddress = nil
 		}
 
-		_ = db.Create(&log).Error
+		if db.Create(&log).Error == nil {
+			c.Locals("activityLogID", log.ID)
+		}
 		return err
 	}
 }

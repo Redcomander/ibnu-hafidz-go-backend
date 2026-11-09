@@ -123,7 +123,7 @@ func TestAnonymousPublicAnd404RequestsAreLogged(t *testing.T) {
 	}
 
 	assert.Equal(t, 200, seen["/public/home"])
-	assert.Equal(t, 404, seen["/missing-page"])
+	assert.Equal(t, 404, seen["(unmatched)"]) // Never retain arbitrary URL tokens.
 }
 
 func TestAuthorizedPublicRequestKeepsUserIdentityInActivityLog(t *testing.T) {

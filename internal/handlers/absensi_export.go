@@ -624,7 +624,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsExcel(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
 			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
-			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
+			"SUM(CASE WHEN ta.status IN ('Dinas', 'Dinas Luar') THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -809,7 +809,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsExcel(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
 		if teacherID != "" {
 			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
@@ -831,7 +831,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsExcel(c *fiber.Ctx) error {
 			if formalStatusTotals[row.ID] == nil {
 				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
 			}
-			if strings.EqualFold(row.Status, "Dinas Luar") {
+			if normalizeTeacherDutyStatus(row.Status) == "Dinas" {
 				formalStatusTotals[row.ID]["dinas"] += normCount
 				continue
 			}
@@ -959,7 +959,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsExcel(c *fiber.Ctx) error {
 		f.SetCellValue(sheetHistory, fmt.Sprintf("A%d", row), log.Date.Format("2006-01-02"))
 		f.SetCellValue(sheetHistory, fmt.Sprintf("B%d", row), fmt.Sprintf("%s / %s", truncStr(log.Lesson, 20), truncStr(log.Kelas, 15)))
 		f.SetCellValue(sheetHistory, fmt.Sprintf("C%d", row), truncStr(log.OriginalTeacher, 25))
-		f.SetCellValue(sheetHistory, fmt.Sprintf("D%d", row), truncStr(log.OriginalStatus, 15))
+		f.SetCellValue(sheetHistory, fmt.Sprintf("D%d", row), normalizeTeacherDutyStatus(log.OriginalStatus))
 		f.SetCellValue(sheetHistory, fmt.Sprintf("E%d", row), truncStr(log.SubstituteTeacher, 25))
 	}
 	f.SetColWidth(sheetHistory, "A", "A", 16)
@@ -1057,7 +1057,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
 			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
-			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
+			"SUM(CASE WHEN ta.status IN ('Dinas', 'Dinas Luar') THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -1193,7 +1193,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
 		if teacherID != "" {
 			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
@@ -1215,7 +1215,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 			if formalStatusTotals[row.ID] == nil {
 				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
 			}
-			if strings.EqualFold(row.Status, "Dinas Luar") {
+			if normalizeTeacherDutyStatus(row.Status) == "Dinas" {
 				formalStatusTotals[row.ID]["dinas"] += normCount
 				continue
 			}
@@ -1294,12 +1294,13 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 
 	// Calculate Global Counts from the teacher summary itself, then re-normalize
 	// formal absence and substitute totals using session-aware math.
-	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Substitute": 0}
+	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Dinas": 0, "Substitute": 0}
 	for _, t := range teacherSummary {
 		teacherCountsMap["Hadir"] += t.Hadir
 		teacherCountsMap["Izin"] += t.Izin
 		teacherCountsMap["Sakit"] += t.Sakit
 		teacherCountsMap["Alpha"] += t.Alpha
+		teacherCountsMap["Dinas"] += t.Dinas
 	}
 
 	if !isDiniyyahAttendanceType(typeStr) {
@@ -1492,7 +1493,7 @@ func (h *AbsensiHandler) ExportTeacherStatisticsPDF(c *fiber.Ctx) error {
 		lessonKelasStr := fmt.Sprintf("%s / %s", truncStr(log.Lesson, 15), truncStr(log.Kelas, 10))
 		pdf.CellFormat(40, 8, lessonKelasStr, "1", 0, "L", false, 0, "")
 		pdf.CellFormat(40, 8, truncStr(log.OriginalTeacher, 20), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(30, 8, truncStr(log.OriginalStatus, 15), "1", 0, "C", false, 0, "")
+		pdf.CellFormat(30, 8, normalizeTeacherDutyStatus(log.OriginalStatus), "1", 0, "C", false, 0, "")
 		pdf.CellFormat(40, 8, truncStr(log.SubstituteTeacher, 20), "1", 1, "L", false, 0, "")
 	}
 

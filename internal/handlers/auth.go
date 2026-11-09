@@ -527,8 +527,9 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	if e, ok := err.(*fiber.Error); ok {
 		code = e.Code
 		msg = e.Message
-	} else {
-		msg = err.Error()
+	}
+	if code >= 500 {
+		msg = "Internal Server Error"
 	}
 
 	// Determine error type based on status code
@@ -544,10 +545,7 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 		errorType = "not_found"
 	}
 
-	return c.Status(code).JSON(models.ErrorResponse{
-		Error:   errorType,
-		Message: msg,
-	})
+	return c.Status(code).JSON(fiber.Map{"error": errorType, "message": msg, "request_id": c.GetRespHeader("X-Request-ID")})
 }
 
 // ---- Pagination helper used by all list handlers ----

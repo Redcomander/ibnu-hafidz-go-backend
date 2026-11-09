@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 APP_NAME="ibnu-go-backend"
 BIN_DIR="$REPO_ROOT/bin"
 BIN_PATH="$BIN_DIR/$APP_NAME"
+NEXT_BIN_PATH="$BIN_DIR/$APP_NAME.next"
 RUNTIME_DIR="${CPANEL_RUNTIME_DIR:-$HOME/.local/$APP_NAME}"
 ENV_FILE="${CPANEL_BACKEND_ENV_FILE:-$RUNTIME_DIR/.env.production}"
 LOG_DIR="${CPANEL_BACKEND_LOG_DIR:-$HOME/logs/$APP_NAME}"
@@ -74,7 +75,18 @@ fi
 
 echo "[deploy] Sedang build binary backend..."
 "$GO_BIN" mod download
-"$GO_BIN" build -o "$BIN_PATH" ./cmd/server
+"$GO_BIN" build -o "$NEXT_BIN_PATH" ./cmd/server
+
+# Load the intended database configuration before validating the release.
+set -a
+source "$ENV_FILE"
+set +a
+export DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR:-$RUNTIME_DIR/diagnostics}"
+
+# Read-only: never baseline or repair a database automatically during deployment.
+# Keep the running service alive if the operator has not prepared the baseline.
+echo "[deploy] Memeriksa versi database (tanpa mengubah data)..."
+"$NEXT_BIN_PATH" --check-database
 
 echo "[deploy] Menghentikan proses sebelumnya (jika ada)..."
 if [[ -f "$PID_FILE" ]]; then
@@ -86,9 +98,7 @@ if [[ -f "$PID_FILE" ]]; then
 fi
 
 echo "[deploy] Menjalankan backend..."
-set -a
-source "$ENV_FILE"
-set +a
+mv "$NEXT_BIN_PATH" "$BIN_PATH"
 
 nohup "$BIN_PATH" >> "$LOG_DIR/app.log" 2>&1 &
 NEW_PID=$!

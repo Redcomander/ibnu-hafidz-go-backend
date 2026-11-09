@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/ibnu-hafidz/web-v2/internal/maintenance"
 	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"strings"
 )
 
 type CmsHandler struct {
@@ -40,6 +42,9 @@ func (h *CmsHandler) Get(c *fiber.Ctx) error {
 // Upsert creates or updates a CMS setting by key.
 func (h *CmsHandler) Upsert(c *fiber.Ctx) error {
 	key := c.Params("key")
+	if strings.EqualFold(strings.TrimSpace(key), maintenance.Key) {
+		return fiber.NewError(403, "Use the administrator maintenance endpoint")
+	}
 
 	var body struct {
 		Value string `json:"value"`
@@ -83,6 +88,9 @@ func (h *CmsHandler) Upsert(c *fiber.Ctx) error {
 
 // Delete removes a CMS setting, restoring the hardcoded default.
 func (h *CmsHandler) Delete(c *fiber.Ctx) error {
+	if strings.EqualFold(strings.TrimSpace(c.Params("key")), maintenance.Key) {
+		return fiber.NewError(403, "Use the administrator maintenance endpoint")
+	}
 	key := c.Params("key")
 	h.db.Where("`key` = ?", key).Delete(&models.CmsSetting{})
 	return c.JSON(fiber.Map{"message": "CMS setting deleted — hardcoded default restored"})

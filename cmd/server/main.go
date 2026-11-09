@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"strings"
@@ -13,9 +14,9 @@ import (
 
 	"github.com/ibnu-hafidz/web-v2/internal/config"
 	"github.com/ibnu-hafidz/web-v2/internal/database"
+	"github.com/ibnu-hafidz/web-v2/internal/diagnostics"
 	"github.com/ibnu-hafidz/web-v2/internal/handlers"
 	"github.com/ibnu-hafidz/web-v2/internal/middleware"
-	"github.com/ibnu-hafidz/web-v2/internal/models"
 )
 
 func safeClientIP(c *fiber.Ctx) string {
@@ -26,6 +27,8 @@ func safeClientIP(c *fiber.Ctx) string {
 }
 
 func main() {
+	checkDatabase := flag.Bool("check-database", false, "verify database migrations without starting HTTP or writing data")
+	flag.Parse()
 	// Load .env
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
@@ -43,197 +46,25 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// Auto-migrate models
-	if err := database.Migrate(db); err != nil {
-		log.Fatalf("Failed to migrate database: %v", err)
+	// Startup only verifies migration metadata; it never changes schema or seeds data.
+	if err := database.CheckMigrations(db); err != nil {
+		log.Fatalf("Database is not ready: %v", err)
 	}
-	// Migrate Notification
-	if err := db.AutoMigrate(&models.Notification{}); err != nil {
-		log.Fatalf("Failed to migrate notifications: %v", err)
-	}
-	if err := db.AutoMigrate(&models.UserActivityLog{}); err != nil {
-		log.Fatalf("Failed to migrate activity logs: %v", err)
-	}
-	if err := db.AutoMigrate(&models.FeatureFlag{}); err != nil {
-		log.Fatalf("Failed to migrate feature flags: %v", err)
-	}
-	// Migrate Lesson
-	if err := db.AutoMigrate(&models.Lesson{}, &models.DiniyyahLesson{}); err != nil {
-		log.Fatalf("Failed to migrate lessons: %v", err)
-	}
-
-	// Migrate Schedules
-	if err := db.AutoMigrate(&models.Schedule{}, &models.DiniyyahSchedule{}); err != nil {
-		log.Fatalf("Failed to migrate schedules: %v", err)
-	}
-
-	// Migrate Attendance (Absensi)
-	if err := db.AutoMigrate(
-		&models.Absensi{},
-		&models.AbsensiDiniyyah{},
-		&models.TeacherAttendance{},
-		&models.TeacherAttendanceSnapshot{},
-		&models.SubstituteLog{},
-		&models.SubstituteLogSnapshot{},
-		&models.SubstituteDiniyyahLog{},
-		&models.SubstituteDiniyyahLogSnapshot{},
-	); err != nil {
-		log.Fatalf("Failed to migrate attendance: %v", err)
-	}
-
-	// Migrate Arrival tracking
-	if err := db.AutoMigrate(
-		&models.StudentArrival{},
-		&models.UserArrival{},
-		&models.StudentArrivalSetting{},
-		&models.SidebarMenuSetting{},
-	); err != nil {
-		log.Fatalf("Failed to migrate arrivals: %v", err)
-	}
-
-	// Migrate Halaqoh
-	if err := db.AutoMigrate(
-		&models.HalaqohAssignment{},
-		&models.HalaqohAttendance{},
-		&models.HalaqohAttendanceSnapshot{},
-		&models.HalaqohTeacherAttendance{},
-		&models.HalaqohSubstituteLog{},
-		&models.HalaqohAssignmentChangeRequest{},
-	); err != nil {
-		log.Fatalf("Failed to migrate halaqoh: %v", err)
-	}
-
-	// Migrate Laundry
-	if err := db.AutoMigrate(
-		&models.LaundryVendor{},
-		&models.LaundryAccount{},
-		&models.LaundryTransaction{},
-		&models.LaundryLog{},
-	); err != nil {
-		log.Fatalf("Failed to migrate laundry: %v", err)
-	}
-
-	// Migrate Kontak Calon Santri
-	if err := db.AutoMigrate(
-		&models.ImportBatch{},
-		&models.Kontak{},
-		&models.TemplatePesan{},
-		&models.RiwayatKontak{},
-	); err != nil {
-		log.Fatalf("Failed to migrate kontak module: %v", err)
-	}
-
-	// Migrate Database Tagihan
-	if err := db.AutoMigrate(
-		&models.Tagihan{},
-	); err != nil {
-		log.Fatalf("Failed to migrate tagihan module: %v", err)
-	}
-
-	// Migrate Absensi Ekstra
-	if err := db.AutoMigrate(
-		&models.AbsensiEkstraGroup{},
-		&models.AbsensiEkstraGroupStudent{},
-		&models.AbsensiEkstraGroupSupervisor{},
-		&models.AbsensiEkstraSession{},
-		&models.AbsensiEkstraSessionRecord{},
-	); err != nil {
-		log.Fatalf("Failed to migrate absensi ekstra: %v", err)
-	}
-
-	// Migrate Revitalisasi SMA
-	if err := db.AutoMigrate(
-		&models.RevitalisasiTukang{},
-		&models.RevitalisasiAbsenTukang{},
-		&models.RevitalisasiKasbon{},
-		&models.RevitalisasiNotaMaterial{},
-		&models.RevitalisasiNotaMasuk{},
-		&models.RevitalisasiMaterialDatang{},
-		&models.RevitalisasiProgresPembangunan{},
-		&models.RevitalisasiPrioritas{},
-	); err != nil {
-		log.Printf("Warning: revitalisasi migration: %v", err)
-	}
-
-	// Migrate Gallery & Article
-	if err := db.AutoMigrate(
-		&models.Album{},
-		&models.Gallery{},
-		&models.Category{},
-		&models.Tag{},
-		&models.Article{},
-		&models.ArticleView{},
-		&models.Comment{},
-	); err != nil {
-		log.Printf("Warning: gallery/article migration: %v", err)
-	}
-
-	// Migrate Prestasi
-	if err := db.AutoMigrate(&models.Prestasi{}); err != nil {
-		log.Printf("Warning: prestasi migration: %v", err)
-	}
-
-	if err := db.AutoMigrate(&models.CmsSetting{}); err != nil {
-		log.Printf("Warning: cms_settings migration: %v", err)
-	}
-
-	if err := db.AutoMigrate(&models.OCRResultLink{}); err != nil {
-		log.Printf("Warning: ocr_result_links migration: %v", err)
-	}
-	if err := db.AutoMigrate(&models.OcrAnswerKey{}); err != nil {
-		log.Printf("Warning: ocr_answer_keys migration: %v", err)
-	}
-
-	// Drop 'name' column if it exists (cleanup from previous migration artifact)
-	// We ignore the error in case it's already dropped
-	// Drop 'name' column if it exists (cleanup from previous migration artifact)
-	// We ignore the error in case it's already dropped
-	db.Exec("ALTER TABLE lessons DROP COLUMN name")
-
-	// FORCE FIX: Ensure time columns are TIME type, not DATETIME
-	// This resolves "Incorrect datetime value: '08:00:00'" error
-	db.Exec("ALTER TABLE jadwal_formal MODIFY COLUMN jam_mulai TIME")
-	db.Exec("ALTER TABLE jadwal_formal MODIFY COLUMN jam_selesai TIME")
-	db.Exec("ALTER TABLE jadwal_diniyyahs MODIFY COLUMN jam_mulai TIME")
-	db.Exec("ALTER TABLE jadwal_diniyyahs MODIFY COLUMN jam_selesai TIME")
-
-	// Cleanup: remove orphaned created_by_id / submitted_by_id columns from failed migration
-	db.Exec("ALTER TABLE absensi_ekstra_sessions DROP COLUMN created_by_id")
-	db.Exec("ALTER TABLE absensi_ekstra_groups DROP COLUMN created_by_id")
-	db.Exec("ALTER TABLE absensi_ekstra_session_records DROP COLUMN submitted_by_id")
-	// Also drop stale foreign key constraints if they exist
-	db.Exec("ALTER TABLE absensi_ekstra_sessions DROP FOREIGN KEY fk_absensi_ekstra_sessions_created_by")
-	db.Exec("ALTER TABLE absensi_ekstra_sessions DROP FOREIGN KEY IF EXISTS fk_absensi_ekstra_sessions_created_by")
-	// Also drop waktu columns that GORM may add as datetime instead of time
-	db.Exec("ALTER TABLE absensi_ekstra_sessions MODIFY COLUMN waktu_mulai TIME")
-	db.Exec("ALTER TABLE absensi_ekstra_sessions MODIFY COLUMN waktu_selesai TIME")
-
-	// Make substitute log foreign keys nullable for manual (no-schedule) entries
-	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jadwal_formal_id BIGINT UNSIGNED NULL")
-	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jadwal_diniyyah_id BIGINT UNSIGNED NULL")
-	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jadwal_diniyyah_id BIGINT UNSIGNED NULL")
-	db.Exec("ALTER TABLE halaqoh_substitute_logs MODIFY COLUMN halaqoh_assignment_id BIGINT UNSIGNED NULL")
-
-	// Fix substitute_logs jam columns that GORM may have created as DATETIME instead of TIME
-	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jam_mulai TIME NULL")
-	db.Exec("ALTER TABLE substitute_logs MODIFY COLUMN jam_selesai TIME NULL")
-	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_mulai TIME NULL")
-	db.Exec("ALTER TABLE substitute_logs_diniyyah MODIFY COLUMN jam_selesai TIME NULL")
-
-	// Ensure substitute snapshot jam columns exist for recap UI/history edit flows
-	db.Exec("ALTER TABLE substitute_log_snapshots ADD COLUMN IF NOT EXISTS jam_mulai VARCHAR(16) NOT NULL DEFAULT '-'")
-	db.Exec("ALTER TABLE substitute_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
-	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_mulai VARCHAR(16) NOT NULL DEFAULT '-'")
-	db.Exec("ALTER TABLE substitute_diniyyah_log_snapshots ADD COLUMN IF NOT EXISTS jam_selesai VARCHAR(16) NOT NULL DEFAULT '-'")
-	// Extend teacher_attendances status enum to include Dinas Luar
-	db.Exec("ALTER TABLE teacher_attendances MODIFY COLUMN status ENUM('Hadir', 'Izin', 'Sakit', 'Alpha', 'Dinas Luar') NOT NULL")
-
-	// Seed Permissions
-	if err := database.SeedPermissions(db); err != nil {
-		log.Printf("Failed to seed permissions: %v", err)
+	if *checkDatabase {
+		log.Println("Database migration check passed")
+		return
 	}
 
 	// Create Fiber app
+	diagnosticsDir := os.Getenv("DIAGNOSTICS_DIR")
+	if diagnosticsDir == "" {
+		diagnosticsDir = "logs/diagnostics"
+	}
+	diagnosticStore, diagnosticErr := diagnostics.New(diagnosticsDir)
+	if diagnosticErr != nil {
+		log.Print("Diagnostic persistence unavailable; using bounded memory storage")
+		diagnosticStore = diagnostics.Memory()
+	}
 	app := fiber.New(fiber.Config{
 		BodyLimit:               50 * 1024 * 1024, // 50MB for file uploads
 		ErrorHandler:            handlers.ErrorHandler,
@@ -243,10 +74,11 @@ func main() {
 	})
 
 	// Global middleware
+	app.Use(middleware.Diagnostics(diagnosticStore))
 	app.Use(middleware.InjectDB(db))
 	app.Use(middleware.InjectConfig(cfg))
 	app.Use(middleware.ActivityLog())
-	app.Use(logger.New())
+	app.Use(logger.New(logger.Config{Format: "${time} request_id=${respHeader:X-Request-ID} status=${status} method=${method} latency=${latency}\n"}))
 	// Security headers
 	app.Use(func(c *fiber.Ctx) error {
 		c.Set("X-Frame-Options", "DENY")
@@ -293,6 +125,7 @@ func main() {
 		},
 		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin,Content-Type,Accept,Authorization",
+		ExposeHeaders:    "X-Request-ID",
 		AllowCredentials: true,
 	}))
 	app.Use(limiter.New(limiter.Config{
@@ -301,7 +134,11 @@ func main() {
 	}))
 
 	// Setup routes
+	app.Use("/api", middleware.Maintenance(db, cfg))
 	api := app.Group("/api")
+	maintenanceHandler := handlers.NewMaintenanceHandler(db, cfg)
+	api.Get("/maintenance", maintenanceHandler.Get)
+	api.Put("/maintenance", middleware.Auth(cfg), maintenanceHandler.Update)
 
 	// Auth routes (public)
 	auth := api.Group("/auth")
@@ -331,6 +168,11 @@ func main() {
 
 	// Protected routes
 	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg))
+	systemLogHandler := handlers.NewSystemLogHandler(diagnosticStore)
+	systemLogs := protected.Group("/system-logs", handlers.SuperAdminLogs)
+	systemLogs.Get("/", systemLogHandler.List)
+	systemLogs.Put("/debug", systemLogHandler.Debug)
+	systemLogs.Put("/:id/resolution", systemLogHandler.Resolve)
 
 	// Profile (self service)
 	profile := protected.Group("/profile")

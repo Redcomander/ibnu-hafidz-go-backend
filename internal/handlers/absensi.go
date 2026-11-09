@@ -561,6 +561,7 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
+	req.Status = normalizeTeacherDutyStatus(req.Status)
 
 	if req.Type == "" {
 		req.Type = "formal" // Default to formal for backward compatibility
@@ -841,6 +842,7 @@ func (h *AbsensiHandler) AssignSubstitute(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
+	req.Status = normalizeTeacherDutyStatus(req.Status)
 
 	if req.Type == "" {
 		req.Type = "formal"
@@ -1081,6 +1083,7 @@ func (h *AbsensiHandler) UpdateSubstituteHistory(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request"})
 	}
+	req.Status = normalizeTeacherDutyStatus(req.Status)
 	if req.Type == "" {
 		req.Type = c.Query("type", "formal")
 	}
@@ -1557,7 +1560,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 
 	// ── Teacher Attendance ──
 	var teacherSummary []TeacherSummaryEntry
-	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0}
+	teacherCountsMap := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Dinas": 0}
 
 	// 1. Aggregate Global Teacher Counts
 	teacherQ := h.db.Table("teacher_attendances").
@@ -1579,7 +1582,7 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	teacherQ.Select("status, count(*) as count").Group("status").Scan(&teacherStatusResults)
 
 	for _, ts := range teacherStatusResults {
-		teacherCountsMap[ts.Status] = ts.Count
+		teacherCountsMap[normalizeTeacherDutyStatus(ts.Status)] += ts.Count
 	}
 
 	// 2. Fetch Teacher Summary (Per-teacher counts)
@@ -1589,7 +1592,8 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Hadir' THEN 1 ELSE 0 END) as hadir, "+
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
-			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha").
+			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
+			"SUM(CASE WHEN ta.status IN ('Dinas', 'Dinas Luar') THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -1683,6 +1687,10 @@ func (h *AbsensiHandler) GetStatistics(c *fiber.Ctx) error {
 	}
 
 	// Build chart data for student bar chart
+	for i := range substituteHistory {
+		substituteHistory[i].Status = normalizeTeacherDutyStatus(substituteHistory[i].Status)
+	}
+
 	chartData := []fiber.Map{
 		{"name": "Hadir", "value": countsMap["hadir"]},
 		{"name": "Izin", "value": countsMap["izin"]},
@@ -1734,7 +1742,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			"SUM(CASE WHEN ta.status = 'Izin' THEN 1 ELSE 0 END) as izin, "+
 			"SUM(CASE WHEN ta.status = 'Sakit' THEN 1 ELSE 0 END) as sakit, "+
 			"SUM(CASE WHEN ta.status = 'Alpha' THEN 1 ELSE 0 END) as alpha, "+
-			"SUM(CASE WHEN ta.status = 'Dinas Luar' THEN 1 ELSE 0 END) as dinas").
+			"SUM(CASE WHEN ta.status IN ('Dinas', 'Dinas Luar') THEN 1 ELSE 0 END) as dinas").
 		Joins("JOIN users u ON u.id = ta.user_id").
 		Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 		Where("ta.deleted_at IS NULL")
@@ -1783,7 +1791,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		rawStatusQ = applyFormalScheduleTypeFilter(rawStatusQ, "jf", typeStr)
 		if teacherID != "" {
 			rawStatusQ = rawStatusQ.Where("ta.user_id = ?", teacherID)
@@ -1805,7 +1813,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			if formalStatusTotals[row.ID] == nil {
 				formalStatusTotals[row.ID] = map[string]int{"izin": 0, "sakit": 0, "alpha": 0, "dinas": 0}
 			}
-			if strings.EqualFold(row.Status, "Dinas Luar") {
+			if normalizeTeacherDutyStatus(row.Status) == "Dinas" {
 				formalStatusTotals[row.ID]["dinas"] += normCount
 				continue
 			}
@@ -2040,6 +2048,9 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			case "alpha":
 				teacherSummary[idx].Alpha += count
 				teacherCountsMap["Alpha"] += count
+			case "dinas", "dinas luar":
+				teacherSummary[idx].Dinas += count
+				teacherCountsMap["Dinas"] += count
 			}
 			continue
 		}
@@ -2131,7 +2142,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_formal_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		absQ = applyFormalScheduleTypeFilter(absQ, "jf", typeStr)
 		if teacherID != "" {
 			absQ = absQ.Where("ta.user_id = ?", teacherID)
@@ -2152,7 +2163,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("ta.date >= ? AND ta.date < ?", startDate, endExclusive).
 			Where("ta.deleted_at IS NULL").
 			Where("ta.jadwal_diniyyah_id IS NOT NULL").
-			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("ta.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		if teacherID != "" {
 			absQ = absQ.Where("ta.user_id = ?", teacherID)
 		}
@@ -2181,7 +2192,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Where("sl.date >= ? AND sl.date < ?", startDate, endExclusive).
 			Where("sl.deleted_at IS NULL").
 			Where("sl.jadwal_formal_id IS NOT NULL").
-			Where("sl.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("sl.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		subAbsQ = applyFormalScheduleTypeFilter(subAbsQ, "jf", typeStr)
 		if teacherID != "" {
 			subAbsQ = subAbsQ.Where("sl.original_teacher_id = ?", teacherID)
@@ -2199,7 +2210,7 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 			Joins("JOIN kelas ON kelas.id = dkt.kelas_id").
 			Joins("JOIN users original ON original.id = sld.original_teacher_id").
 			Where("sld.date >= ? AND sld.date < ?", startDate, endExclusive).
-			Where("sld.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas Luar"})
+			Where("sld.status IN ?", []string{"Izin", "Sakit", "Alpha", "Dinas", "Dinas Luar"})
 		if teacherID != "" {
 			subAbsQ = subAbsQ.Where("sld.original_teacher_id = ?", teacherID)
 		}
@@ -2216,6 +2227,13 @@ func (h *AbsensiHandler) GetTeacherStatistics(c *fiber.Ctx) error {
 	sort.SliceStable(absenceHistory, func(i, j int) bool {
 		return absenceHistory[i].Date.After(absenceHistory[j].Date)
 	})
+
+	for i := range absenceHistory {
+		absenceHistory[i].Status = normalizeTeacherDutyStatus(absenceHistory[i].Status)
+	}
+	for i := range substituteHistory {
+		substituteHistory[i].OriginalStatus = normalizeTeacherDutyStatus(substituteHistory[i].OriginalStatus)
+	}
 
 	return c.JSON(fiber.Map{
 		"teacher_counts":     teacherCountsMap,
@@ -2337,9 +2355,10 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Body permintaan tidak valid"})
 	}
+	req.Status = normalizeTeacherDutyStatus(req.Status)
 
 	if source == "substitute_log" {
-		validStatuses := map[string]bool{"Izin": true, "Sakit": true, "Alpha": true, "Dinas Luar": true}
+		validStatuses := map[string]bool{"Izin": true, "Sakit": true, "Alpha": true, "Dinas": true}
 		if req.Status != "" && !validStatuses[req.Status] {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status riwayat guru pengganti tidak valid"})
 		}
@@ -2375,7 +2394,7 @@ func (h *AbsensiHandler) UpdateTeacherAttendanceRecord(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Data absensi tidak ditemukan"})
 	}
 
-	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true, "Dinas Luar": true}
+	validStatuses := map[string]bool{"Hadir": true, "Izin": true, "Sakit": true, "Alpha": true, "Dinas": true}
 	if req.Status != "" && !validStatuses[req.Status] {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Status tidak valid"})
 	}

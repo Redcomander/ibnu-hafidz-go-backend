@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS app_schema_migrations (
+    version BIGINT NOT NULL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    checksum VARCHAR(64) NOT NULL,
+    dirty BOOLEAN NOT NULL,
+    schema_snapshot LONGTEXT NOT NULL,
+    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

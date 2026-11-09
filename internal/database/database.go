@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/ibnu-hafidz/web-v2/internal/config"
-	"github.com/ibnu-hafidz/web-v2/internal/models"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -40,37 +39,4 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 
 	log.Println("✅ Database connected successfully")
 	return db, nil
-}
-
-// Migrate runs auto-migrations for all models
-func Migrate(db *gorm.DB) error {
-	log.Println("Running database migrations...")
-	if err := db.AutoMigrate(
-		&models.User{},
-		&models.RefreshSession{},
-		&models.Role{},
-		&models.Permission{},
-		&models.Student{},
-		&models.Visitor{},
-		&models.Kamar{},
-		&models.Kelas{},
-	); err != nil {
-		return err
-	}
-
-	// Migrate legacy class membership from kelas_siswa pivot (old app) to students.kelas_id
-	if db.Migrator().HasTable("kelas_siswa") {
-		log.Println("Migrating legacy kelas_siswa membership into students.kelas_id...")
-		err := db.Exec(`
-			UPDATE students s
-			JOIN kelas_siswa ks ON ks.student_id = s.id
-			SET s.kelas_id = ks.kelas_id
-			WHERE s.kelas_id IS NULL
-		`).Error
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

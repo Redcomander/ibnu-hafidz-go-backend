@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,6 +25,14 @@ func (h *ActivityLogHandler) List(c *fiber.Ctx) error {
 	var total int64
 
 	query := h.db.Model(&models.UserActivityLog{})
+	c.Set("Cache-Control", "no-store")
+	if statusText := c.Query("status"); statusText != "" {
+		status, err := strconv.Atoi(statusText)
+		if err != nil || status < 100 || status > 599 {
+			return fiber.NewError(400, "Invalid status filter")
+		}
+		query = query.Where("status_code = ?", status)
+	}
 
 	if userID := c.Query("user_id"); userID != "" {
 		query = query.Where("user_id = ?", userID)
@@ -39,10 +48,12 @@ func (h *ActivityLogHandler) List(c *fiber.Ctx) error {
 		query = query.Where("user_activity_logs.path LIKE ? OR user_activity_logs.method LIKE ?", like, like)
 	}
 
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return fiber.NewError(500, "Failed to count request logs")
+	}
 
 	paginatedQuery, page, perPage := PaginateQuery(c, query, []string{"created_at", "path", "method"})
-	if err := paginatedQuery.Order("created_at DESC").Preload("User").Find(&logs).Error; err != nil {
+	if err := paginatedQuery.Order("user_activity_logs.created_at DESC").Preload("User", func(q *gorm.DB) *gorm.DB { return q.Select("id", "name") }).Find(&logs).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to load request logs")
 	}
 	enrichLogCountries(c.Context(), h.db, logs, h.countryLookup)
