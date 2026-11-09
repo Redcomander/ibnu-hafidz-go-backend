@@ -193,6 +193,7 @@ func (h *AuthHandler) GetDeviceLoginHistory(c *fiber.Ctx) error {
 		})
 	}
 
+	enrichLogCountries(c.Context(), h.db, logs, utils.LookupIPCountries)
 	history := make([]fiber.Map, 0, len(logs))
 	for i, log := range logs {
 		agent := ""

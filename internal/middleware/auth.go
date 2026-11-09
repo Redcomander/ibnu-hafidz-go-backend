@@ -61,14 +61,7 @@ func requestCountryCode(c *fiber.Ctx) string {
 		"X-Vercel-IP-Country",
 	} {
 		if value := strings.TrimSpace(c.Get(header)); value != "" {
-			country := strings.TrimSpace(strings.ToUpper(value))
-			if idx := strings.Index(country, ","); idx >= 0 {
-				country = strings.TrimSpace(country[:idx])
-			}
-			switch country {
-			case "", "UNKNOWN", "N/A", "NA", "XX", "-":
-				continue
-			default:
+			if country := utils.NormalizeCountryCode(value); country != "" {
 				return country
 			}
 		}
