@@ -11,17 +11,17 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestHasTeacherScopedHalaqohAccess_AllowsTeacherRolesForStudentsView(t *testing.T) {
+func TestHasTeacherScopedHalaqohAccess_DoesNotGrantStudentDirectory(t *testing.T) {
 	user := &models.User{
 		Roles: []models.Role{{Name: "guru"}},
 	}
 
-	if !hasTeacherScopedHalaqohAccess(user, "students.view") {
-		t.Fatal("expected guru role to be allowed for students.view in Halaqoh assignment access")
+	if hasTeacherScopedHalaqohAccess(user, "students.view") {
+		t.Fatal("teacher role must not grant master student-directory access")
 	}
 }
 
-func TestPermissionAny_AllowsTeacherRoleForStudentsView(t *testing.T) {
+func TestPermissionAny_RejectsTeacherDirectoryBypass(t *testing.T) {
 	app := fiber.New()
 	app.Use(func(c *fiber.Ctx) error {
 		c.Locals("userID", uint(1))
@@ -38,8 +38,8 @@ func TestPermissionAny_AllowsTeacherRoleForStudentsView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected request error: %v", err)
 	}
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("expected status %d but got %d", fiber.StatusOK, resp.StatusCode)
+	if resp.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("expected status %d but got %d", fiber.StatusForbidden, resp.StatusCode)
 	}
 }
 

@@ -343,7 +343,7 @@ func main() {
 	// Students
 	studentHandler := handlers.NewStudentHandler(db)
 	students := protected.Group("/students")
-	students.Get("/", middleware.PermissionAny("students.view", "halaqoh-assignments.create", "halaqoh-assignments.edit", "halaqoh.view_all"), studentHandler.List)
+	students.Get("/", middleware.Permission("students.view"), studentHandler.List)
 	students.Post("/", middleware.Permission("students.create"), studentHandler.Create)
 	students.Post("/import", middleware.Permission("students.create"), studentHandler.ImportCSV)
 	students.Get("/template", middleware.Permission("students.view"), studentHandler.ExportTemplate)
@@ -533,6 +533,8 @@ func main() {
 	waServiceHandler := handlers.NewWAServiceHandler(cfg, db)
 
 	halaqoh := protected.Group("/halaqoh")
+	halaqoh.Get("/student-options", halaqohHandler.StudentOptions)
+	halaqoh.Get("/teacher-options", halaqohHandler.TeacherOptions)
 	// Assignments
 	halaqoh.Get("/assignments", halaqohHandler.ListAssignments)
 	halaqoh.Get("/assignment-change-requests", halaqohHandler.ListAssignmentChangeRequests)

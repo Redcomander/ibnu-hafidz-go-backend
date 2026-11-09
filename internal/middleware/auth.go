@@ -153,8 +153,6 @@ func hasTeacherScopedHalaqohAccess(user *models.User, permissionName string) boo
 	}
 
 	allowedPermissions := map[string]struct{}{
-		"students.view":              {},
-		"users.view":                 {},
 		"halaqoh-assignments.create": {},
 		"halaqoh-assignments.edit":   {},
 		"halaqoh-assignments.delete": {},
