@@ -114,7 +114,7 @@ func (h *HalaqohHandler) TeacherOptions(c *fiber.Ctx) error {
 		ID   uint   `json:"id"`
 		Name string `json:"name"`
 	}
-	if err := halaqohTeacherQuery(h.db).Select("users.id, users.name").Order("users.name").Scan(&teachers).Error; err != nil {
+	if err := h.db.Model(&models.User{}).Select("users.id, users.name").Order("users.name, users.id").Scan(&teachers).Error; err != nil {
 		return fiber.NewError(500, "Gagal memuat pengajar")
 	}
 	return c.JSON(fiber.Map{"data": teachers})
@@ -158,7 +158,7 @@ func sameStudentIDs(a, b []uint) bool {
 
 func validateHalaqohSelection(tx *gorm.DB, teacherID uint, ids []uint, helper *uint) error {
 	var teacherCount int64
-	if err := halaqohTeacherQuery(tx).Where("users.id = ?", teacherID).Count(&teacherCount).Error; err != nil {
+	if err := tx.Model(&models.User{}).Where("users.id = ?", teacherID).Count(&teacherCount).Error; err != nil {
 		return err
 	}
 	if teacherCount != 1 {
@@ -169,7 +169,7 @@ func validateHalaqohSelection(tx *gorm.DB, teacherID uint, ids []uint, helper *u
 			return fiber.NewError(400, "Guru pembantu harus berbeda dari guru pengampu")
 		}
 		var count int64
-		if err := halaqohTeacherQuery(tx).Where("users.id = ?", *helper).Count(&count).Error; err != nil {
+		if err := tx.Model(&models.User{}).Where("users.id = ?", *helper).Count(&count).Error; err != nil {
 			return err
 		}
 		if count != 1 {

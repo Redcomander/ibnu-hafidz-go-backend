@@ -58,6 +58,7 @@ func halaqohMembershipApp(t *testing.T) (*gorm.DB, *fiber.App) {
 	})
 	app.Get("/students", middleware.Permission("students.view"), NewStudentHandler(db).List)
 	app.Get("/options", handler.StudentOptions)
+	app.Get("/teacher-options", handler.TeacherOptions)
 	app.Post("/assignments", handler.CreateAssignment)
 	app.Put("/assignments/:teacher_id", handler.UpdateAssignment)
 	app.Delete("/assignments/:id", handler.DeleteAssignment)
@@ -66,6 +67,39 @@ func halaqohMembershipApp(t *testing.T) (*gorm.DB, *fiber.App) {
 	app.Post("/requests/:id/approve", handler.ApproveAssignmentChangeRequest)
 	app.Post("/requests/:id/reject", handler.RejectAssignmentChangeRequest)
 	return db, app
+}
+
+func TestHalaqohTeacherOptionsIncludesAllExistingUsers(t *testing.T) {
+	db, app := halaqohMembershipApp(t)
+	plainUser := models.User{Name: "Account without teaching role", Username: "plain", Email: "plain@test", Password: "secret"}
+	require.NoError(t, db.Create(&plainUser).Error)
+	deleted := models.User{Name: "Deleted account", Username: "deleted", Email: "deleted@test", Password: "secret"}
+	require.NoError(t, db.Create(&deleted).Error)
+	require.NoError(t, db.Delete(&deleted).Error)
+	response := membershipRequest(t, app, 3, "GET", "/teacher-options", "")
+	defer response.Body.Close()
+	require.Equal(t, 200, response.StatusCode)
+	var payload struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Len(t, payload.Data, 4)
+	ids := []uint{}
+	for _, row := range payload.Data {
+		require.Len(t, row, 2, "Picker must expose only ID and name")
+		ids = append(ids, uint(row["id"].(float64)))
+	}
+	require.Contains(t, ids, plainUser.ID)
+	require.Contains(t, ids, uint(3), "Admin accounts must also be selectable")
+	require.NotContains(t, ids, deleted.ID)
+	require.NoError(t, validateHalaqohSelection(db, plainUser.ID, nil, nil))
+	require.NoError(t, validateHalaqohSelection(db, 1, nil, &plainUser.ID))
+	require.Error(t, validateHalaqohSelection(db, deleted.ID, nil, nil))
+	require.Error(t, validateHalaqohSelection(db, 999999, nil, nil))
+	require.Error(t, validateHalaqohSelection(db, plainUser.ID, nil, &plainUser.ID))
+	forbidden := membershipRequest(t, app, plainUser.ID, "GET", "/teacher-options", "")
+	defer forbidden.Body.Close()
+	require.Equal(t, 403, forbidden.StatusCode, "Being selectable must not grant editing access")
 }
 
 func membershipRequest(t *testing.T, app *fiber.App, user uint, method, target, body string) *http.Response {
