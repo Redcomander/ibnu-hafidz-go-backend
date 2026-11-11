@@ -27,6 +27,10 @@ func ApplyMobileReleases(db *gorm.DB) error {
 		return errors.New("mobile release migration requires MySQL; rehearse on a restored MySQL database")
 	}
 	return db.Connection(func(conn *gorm.DB) error {
+		// Connection supplies an initialized GORM statement. Keep the same SQL
+		// connection for advisory locks, but give each operation a fresh statement:
+		// MariaDB INSERT RETURNING must not leak into the subsequent UPDATE.
+		conn = conn.Session(&gorm.Session{NewDB: true})
 		var name string
 		if e := conn.Raw("SELECT DATABASE()").Scan(&name).Error; e != nil {
 			return e

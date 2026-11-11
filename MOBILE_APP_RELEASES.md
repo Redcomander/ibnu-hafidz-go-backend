@@ -66,6 +66,15 @@ menghapus marker/tabel atau mengulang SQL secara membabi buta. Tidak ada perinta
 "down" destruktif. Binary lama yang hanya mengenal 001 tidak cocok dengan
 riwayat 002; rollback binary harus tetap mengenal migrasi 002.
 
+Jika rehearsal MariaDB gagal dengan `UPDATE ... RETURNING`, gunakan perbaikan
+yang mengisolasi statement GORM pada koneksi migrasi. Kegagalan ini dapat terjadi
+setelah tabel 002 dibuat tetapi sebelum marker dirty dibersihkan. Pertahankan
+database rehearsal yang gagal untuk investigasi; jangan menghapus marker atau
+mengulang migrasi di sana. Ulangi rehearsal menggunakan database baru yang
+dipulihkan dari backup sebelum migrasi, dengan user yang hanya dapat mengakses
+database baru tersebut. Produksi belum boleh dimigrasi sampai rehearsal lulus
+dan data bisnis sebelum/sesudah telah dibandingkan.
+
 ## Kontrak API dan alur rilis
 
 Publik, tersedia sebelum login dan saat maintenance:

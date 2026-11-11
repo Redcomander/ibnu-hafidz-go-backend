@@ -82,6 +82,8 @@ func TestMySQLBaselinePreservesExistingData(t *testing.T) {
 		return state
 	}
 	before := snapshot()
+	legacyDefinitions, err := captureSchema(db)
+	require.NoError(t, err)
 	require.Error(t, CheckMigrations(db))
 	require.NoError(t, RegisterBaseline(db))
 	require.NoError(t, CheckMigrations(db))
@@ -90,5 +92,28 @@ func TestMySQLBaselinePreservesExistingData(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&migrationRecord{}).Count(&count).Error)
 	require.EqualValues(t, 1, count)
+	// Exercise the real INSERT -> DDL -> UPDATE sequence on MySQL/MariaDB.
+	// MariaDB's INSERT RETURNING clause must never contaminate UPDATE SQL.
+	require.NoError(t, ApplyMobileReleases(db))
+	require.NoError(t, CheckMigrations(db))
+	require.NoError(t, ApplyMobileReleases(db), "repeating a successful migration must be a no-op")
+	after := snapshot()
+	definitions := after["definitions"].([]tableDefinition)
+	var legacyAfter []tableDefinition
+	for _, definition := range definitions {
+		if definition.Name != "mobile_app_releases" && definition.Name != "mobile_release_policies" && definition.Name != "mobile_release_audits" {
+			legacyAfter = append(legacyAfter, definition)
+		}
+	}
+	require.Equal(t, legacyDefinitions, legacyAfter, "release migration must preserve original table definitions")
+	for name, records := range before {
+		if name != "definitions" {
+			require.Equal(t, records, after[name], "release migration changed original table %s", name)
+		}
+	}
+	var releases []migrationRecord
+	require.NoError(t, db.Order("version").Find(&releases).Error)
+	require.Len(t, releases, 2)
+	require.False(t, releases[1].Dirty)
 	// Do not drop anything; discard the entire isolated database/container externally.
 }
