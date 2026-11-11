@@ -130,3 +130,21 @@ func TestUnrelatedMetadataTableIsNotOverwritten(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT note FROM app_schema_migrations`).Scan(&note).Error)
 	require.Equal(t, "keep me", note)
 }
+func TestMobileMigrationHistoryIsExplicitAndReadOnly(t *testing.T) {
+	db := migrationTestDB(t)
+	seedLegacyDatabase(t, db)
+	require.NoError(t, RegisterBaseline(db))
+	for _, name := range []string{"mobile_app_releases", "mobile_release_policies", "mobile_release_audits"} {
+		require.NoError(t, db.Exec("CREATE TABLE "+name+" (id INTEGER PRIMARY KEY)").Error)
+	}
+	row := migrationRecord{Version: 2, Name: "mobile_releases", Checksum: mobileReleaseChecksum(), SchemaSnapshot: "{}"}
+	require.NoError(t, db.Create(&row).Error)
+	before := businessSnapshot(t, db)
+	require.NoError(t, CheckMigrations(db))
+	require.Equal(t, before, businessSnapshot(t, db))
+	require.NoError(t, db.Model(&migrationRecord{}).Where("version = 2").Update("dirty", true).Error)
+	require.Error(t, CheckMigrations(db))
+	var dirty migrationRecord
+	require.NoError(t, db.First(&dirty, 2).Error)
+	require.True(t, dirty.Dirty, "status must never repair unfinished DDL")
+}

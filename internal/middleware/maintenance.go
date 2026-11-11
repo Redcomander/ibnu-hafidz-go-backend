@@ -35,6 +35,9 @@ func Maintenance(db *gorm.DB, cfg *config.Config) fiber.Handler {
 		if c.Method() == fiber.MethodOptions {
 			return c.Next()
 		}
+		if c.Method() == fiber.MethodGet && (path == "/api/app/version" || strings.HasPrefix(path, "/api/app/download/")) {
+			return c.Next()
+		}
 		// Keep session recovery and the authenticated control endpoint reachable.
 		switch path {
 		case "/api/maintenance", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/me", "/api/notifications/stream":

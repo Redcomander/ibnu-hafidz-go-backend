@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-//go:embed migrations/001_existing_schema.sql
+//go:embed migrations/*.sql
 var migrationFiles embed.FS
 
 const migrationTable = "app_schema_migrations"
@@ -55,12 +55,23 @@ func CheckMigrations(db *gorm.DB) error {
 	if err := db.Order("version").Find(&rows).Error; err != nil {
 		return fmt.Errorf("read migration history: %w", err)
 	}
-	if len(rows) != 1 {
+	if len(rows) < 1 || len(rows) > 2 {
 		return fmt.Errorf("unexpected migration history (%d entries); refusing to change it", len(rows))
 	}
 	row := rows[0]
 	if row.Version != baselineVersion || row.Name != baselineName || row.Checksum != baselineChecksum() || row.Dirty {
 		return errors.New("migration version/checksum mismatch or unfinished migration; restore compatible code or investigate; no automatic repair performed")
+	}
+	if len(rows) == 2 {
+		next := rows[1]
+		if next.Version != 2 || next.Name != "mobile_releases" || next.Checksum != mobileReleaseChecksum() || next.Dirty {
+			return errors.New("mobile release migration history mismatch or unfinished migration")
+		}
+		for _, table := range []string{"mobile_app_releases", "mobile_release_policies", "mobile_release_audits"} {
+			if !db.Migrator().HasTable(table) {
+				return errors.New("mobile release schema missing; investigate migration history")
+			}
+		}
 	}
 	// A marker alone must not permit an empty/missing application schema to start.
 	_, err := captureSchema(db)

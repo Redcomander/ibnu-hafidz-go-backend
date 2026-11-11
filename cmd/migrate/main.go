@@ -12,16 +12,16 @@ import (
 )
 
 func main() {
-	command := flag.String("command", "status", "status (read-only) or baseline (metadata only)")
+	command := flag.String("command", "status", "status, baseline, or mobile-releases (additive tables)")
 	confirmedDB := flag.String("confirm-database", "", "exact DB_DATABASE name required to register a baseline")
 	backupVerified := flag.Bool("backup-verified", false, "confirm a database and upload backup has been restored successfully in isolation")
 	flag.Parse()
-	if *command != "status" && *command != "baseline" {
-		log.Fatal("command must be status or baseline")
+	if *command != "status" && *command != "baseline" && *command != "mobile-releases" {
+		log.Fatal("command must be status, baseline, or mobile-releases")
 	}
 	_ = godotenv.Load()
 	cfg := config.Load()
-	if *command == "baseline" && (!*backupVerified || *confirmedDB != cfg.DBName) {
+	if *command != "status" && (!*backupVerified || *confirmedDB != cfg.DBName) {
 		log.Fatal("baseline requires -backup-verified and -confirm-database matching DB_DATABASE; see DATABASE_MIGRATIONS.md")
 	}
 	db, err := database.Connect(cfg)
@@ -35,6 +35,8 @@ func main() {
 	defer sqlDB.Close()
 	if *command == "baseline" {
 		err = database.RegisterBaseline(db)
+	} else if *command == "mobile-releases" {
+		err = database.ApplyMobileReleases(db)
 	} else {
 		err = database.CheckMigrations(db)
 	}
@@ -42,5 +44,5 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println("Migration baseline 001 verified. Existing application rows and schema were not modified by this command.")
+	fmt.Println("Migration command completed. No existing business records were changed.")
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/ibnu-hafidz/web-v2/internal/diagnostics"
 	"github.com/ibnu-hafidz/web-v2/internal/handlers"
 	"github.com/ibnu-hafidz/web-v2/internal/middleware"
+	"github.com/ibnu-hafidz/web-v2/internal/mobile"
 )
 
 func safeClientIP(c *fiber.Ctx) string {
@@ -66,13 +67,22 @@ func main() {
 		diagnosticStore = diagnostics.Memory()
 	}
 	app := fiber.New(fiber.Config{
-		BodyLimit:               50 * 1024 * 1024, // 50MB for file uploads
-		ErrorHandler:            handlers.ErrorHandler,
-		ProxyHeader:             fiber.HeaderXForwardedFor,
-		EnableTrustedProxyCheck: true,
-		TrustedProxies:          []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
+		BodyLimit:                    int(mobile.Load().MaxBytes + 1024*1024),
+		StreamRequestBody:            true,
+		DisablePreParseMultipartForm: true,
+		ErrorHandler:                 handlers.ErrorHandler,
+		ProxyHeader:                  fiber.HeaderXForwardedFor,
+		EnableTrustedProxyCheck:      true,
+		TrustedProxies:               []string{"127.0.0.1", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"},
 	})
 
+	// Preserve the established body limit outside the dedicated APK upload route.
+	app.Use(func(c *fiber.Ctx) error {
+		if c.Path() != "/api/admin/app/releases" && c.Request().Header.ContentLength() > 50*1024*1024 {
+			return fiber.NewError(413, "Unggahan melebihi batas ukuran")
+		}
+		return c.Next()
+	})
 	// Global middleware
 	app.Use(middleware.Diagnostics(diagnosticStore))
 	app.Use(middleware.InjectDB(db))
@@ -136,6 +146,9 @@ func main() {
 	// Setup routes
 	app.Use("/api", middleware.Maintenance(db, cfg))
 	api := app.Group("/api")
+	mobileHandler := handlers.NewMobileReleaseHandler(db, mobile.Load())
+	api.Get("/app/version", mobileHandler.Version)
+	api.Get("/app/download/:id", mobileHandler.Download)
 	notifHandler := handlers.NewNotificationHandler(db, cfg)
 	api.Get("/notifications/stream", notifHandler.Stream)
 	maintenanceHandler := handlers.NewMaintenanceHandler(db, cfg)
@@ -170,6 +183,14 @@ func main() {
 
 	// Protected routes
 	protected := api.Group("/", middleware.InjectDB(db), middleware.Auth(cfg))
+	mobileAdmin := protected.Group("/admin/app", handlers.SuperAdminReleases)
+	mobileAdmin.Get("/releases", mobileHandler.List)
+	mobileAdmin.Post("/releases", mobileHandler.Upload)
+	mobileAdmin.Put("/policy", mobileHandler.Policy)
+	mobileAdmin.Get("/releases/:id", mobileHandler.Get)
+	mobileAdmin.Get("/releases/:id/download", mobileHandler.Download)
+	mobileAdmin.Post("/releases/:id/publish", mobileHandler.Publish)
+	mobileAdmin.Post("/releases/:id/archive", mobileHandler.Archive)
 	systemLogHandler := handlers.NewSystemLogHandler(diagnosticStore)
 	systemLogs := protected.Group("/system-logs", handlers.SuperAdminLogs)
 	systemLogs.Get("/", systemLogHandler.List)

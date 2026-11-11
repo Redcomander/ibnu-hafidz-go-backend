@@ -42,3 +42,6 @@ coverage.out
 
 # Private diagnostic events (never publish or commit).
 /logs/
+
+# APK release binaries belong in private external storage
+*.apk
