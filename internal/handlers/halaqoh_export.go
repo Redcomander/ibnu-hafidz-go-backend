@@ -21,6 +21,7 @@ type teacherExportSummary struct {
 	Izin       int
 	Sakit      int
 	Alpha      int
+	Dinas      int
 	Substitute int
 }
 
@@ -92,6 +93,8 @@ func (h *HalaqohStatsHandler) fetchTeacherData(startDate, endDate, teacherIDStr,
 				ts.Sakit++
 			case "Alpha":
 				ts.Alpha++
+			case "Dinas":
+				ts.Dinas++
 			}
 		}
 	}
@@ -115,6 +118,8 @@ func (h *HalaqohStatsHandler) fetchTeacherData(startDate, endDate, teacherIDStr,
 				ts.Sakit++
 			case "Alpha":
 				ts.Alpha++
+			case "Dinas":
+				ts.Dinas++
 			}
 		}
 
@@ -132,7 +137,7 @@ func (h *HalaqohStatsHandler) fetchTeacherData(startDate, endDate, teacherIDStr,
 
 		statusLabel := "-"
 		if log.Status != nil {
-			statusLabel = *log.Status
+			statusLabel = capitalize(*log.Status)
 		}
 
 		history = append(history, substituteExportHistory{
@@ -179,7 +184,7 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherPDF(c *fiber.Ctx) error {
 		return c.Status(500).SendString("Database error")
 	}
 
-	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf := fpdf.New("L", "mm", "A4", "")
 	pdf.AddPage()
 
 	pdf.SetFont("Arial", "B", 16)
@@ -199,6 +204,7 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherPDF(c *fiber.Ctx) error {
 	pdf.CellFormat(15, 8, "Izin", "1", 0, "C", false, 0, "")
 	pdf.CellFormat(15, 8, "Sakit", "1", 0, "C", false, 0, "")
 	pdf.CellFormat(15, 8, "Alpha", "1", 0, "C", false, 0, "")
+	pdf.CellFormat(15, 8, "Dinas", "1", 0, "C", false, 0, "")
 	pdf.CellFormat(20, 8, "Substitute", "1", 1, "C", false, 0, "")
 
 	pdf.SetFont("Arial", "", 10)
@@ -244,6 +250,7 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherPDF(c *fiber.Ctx) error {
 			pdf.CellFormat(15, 8, fmt.Sprintf("%d", s.Izin), "1", 0, "C", false, 0, "")
 			pdf.CellFormat(15, 8, fmt.Sprintf("%d", s.Sakit), "1", 0, "C", false, 0, "")
 			pdf.CellFormat(15, 8, fmt.Sprintf("%d", s.Alpha), "1", 0, "C", false, 0, "")
+			pdf.CellFormat(15, 8, fmt.Sprintf("%d", s.Dinas), "1", 0, "C", false, 0, "")
 			pdf.CellFormat(20, 8, fmt.Sprintf("%d", s.Substitute), "1", 1, "C", false, 0, "")
 		}
 	}
@@ -310,7 +317,8 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherExcel(c *fiber.Ctx) error {
 	sheet1 := "Ringkasan Guru"
 	f.SetSheetName("Sheet1", sheet1)
 
-	headers1 := []string{"No", "Nama Guru", "Sesi", "Hadir", "Izin", "Sakit", "Alpha", "Substitute"}
+	f.SetColWidth(sheet1, "D", "I", 14)
+	headers1 := []string{"No", "Nama Guru", "Sesi", "Hadir", "Izin", "Sakit", "Alpha", "Dinas", "Substitute"}
 	for i, header := range headers1 {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheet1, cell, header)
@@ -343,7 +351,8 @@ func (h *HalaqohStatsHandler) ExportHalaqohTeacherExcel(c *fiber.Ctx) error {
 			f.SetCellValue(sheet1, fmt.Sprintf("E%d", row), s.Izin)
 			f.SetCellValue(sheet1, fmt.Sprintf("F%d", row), s.Sakit)
 			f.SetCellValue(sheet1, fmt.Sprintf("G%d", row), s.Alpha)
-			f.SetCellValue(sheet1, fmt.Sprintf("H%d", row), s.Substitute)
+			f.SetCellValue(sheet1, fmt.Sprintf("H%d", row), s.Dinas)
+			f.SetCellValue(sheet1, fmt.Sprintf("I%d", row), s.Substitute)
 			row++
 		}
 		endRow := row - 1

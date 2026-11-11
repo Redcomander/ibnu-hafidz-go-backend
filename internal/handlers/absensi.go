@@ -539,7 +539,9 @@ func (h *AbsensiHandler) SubmitAttendance(c *fiber.Ctx) error {
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return fiber.NewError(500, "Failed to commit attendance. Please retry.")
+	}
 	return c.JSON(fiber.Map{"message": "Attendance saved successfully"})
 }
 
@@ -673,14 +675,20 @@ func (h *AbsensiHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 			Notes:            req.Notes,
 			PhotoPath:        photoPath,
 		}
-		h.db.Create(&attendance)
-	} else {
+		if err := h.db.Create(&attendance).Error; err != nil {
+			return fiber.NewError(500, "Failed to save teacher attendance. Please retry.")
+		}
+	} else if findErr == nil {
 		attendance.Status = req.Status
 		attendance.Notes = req.Notes
 		if photoPath != "" {
 			attendance.PhotoPath = photoPath
 		}
-		h.db.Save(&attendance)
+		if err := h.db.Save(&attendance).Error; err != nil {
+			return fiber.NewError(500, "Failed to update teacher attendance. Please retry.")
+		}
+	} else {
+		return fiber.NewError(500, "Failed to load teacher attendance. Please retry.")
 	}
 
 	if lessonName, kelasName, err := h.resolveAttendanceSnapshotLabels(req.Type, req.JadwalID); err == nil {

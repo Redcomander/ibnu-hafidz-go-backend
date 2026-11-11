@@ -975,13 +975,14 @@ func (h *HalaqohHandler) GetAttendance(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"assignments":    allAssignments,
-		"attendance_map": attendanceMap,
-		"substitute_map": substituteMap,
-		"teacher":        assignment.Teacher,
-		"sessions":       sessions,
-		"session_times":  sessionTimeInfos,
-		"date":           dateStr,
+		"assignments":     allAssignments,
+		"offline_permits": halaqohOfflinePermits(c, user.ID, "students", dateStr, allAssignmentIDs),
+		"attendance_map":  attendanceMap,
+		"substitute_map":  substituteMap,
+		"teacher":         assignment.Teacher,
+		"sessions":        sessions,
+		"session_times":   sessionTimeInfos,
+		"date":            dateStr,
 	})
 }
 
@@ -998,14 +999,6 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 		return err
 	}
 
-	// ── Time restriction check ──
-	if !canBypassTimeRestriction(user) && !isWithinSessionTime(session) {
-		times := sessionTimes[session]
-		return c.Status(403).JSON(fiber.Map{
-			"error": fmt.Sprintf("Sesi %s hanya dapat diakses pada jam %s - %s", session, times[0], times[1]),
-		})
-	}
-
 	type AttendanceRecord struct {
 		HalaqohAssignmentID uint   `json:"halaqoh_assignment_id"`
 		StudentID           uint   `json:"student_id"`
@@ -1013,8 +1006,10 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 		Notes               string `json:"notes"`
 	}
 	type Req struct {
-		Date    string             `json:"date"`
-		Records []AttendanceRecord `json:"records"`
+		Date          string             `json:"date"`
+		Records       []AttendanceRecord `json:"records"`
+		OfflinePermit string             `json:"offline_permit"`
+		CapturedAt    string             `json:"captured_at"`
 	}
 	var req Req
 	if err := c.BodyParser(&req); err != nil {
@@ -1022,6 +1017,13 @@ func (h *HalaqohHandler) SubmitSessionAttendance(c *fiber.Ctx) error {
 	}
 	if req.Date == "" {
 		req.Date = todayString()
+	}
+	ids := []uint{}
+	for _, record := range req.Records {
+		ids = append(ids, record.HalaqohAssignmentID)
+	}
+	if !canBypassTimeRestriction(user) && !isWithinSessionTime(session) && !validHalaqohOfflinePermit(c, user.ID, "students", req.Date, session, req.OfflinePermit, req.CapturedAt, ids) {
+		return fiber.NewError(403, "Sesi sudah ditutup. Izin offline tidak tersedia atau kedaluwarsa; data perlu ditinjau admin.")
 	}
 
 	tx := h.db.Begin()
@@ -1214,9 +1216,10 @@ func (h *HalaqohHandler) GetTeacherAttendance(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"assignment":    assignment,
-		"session_infos": sessionInfos,
-		"date":          dateStr,
+		"assignment":      assignment,
+		"offline_permits": halaqohOfflinePermits(c, user.ID, "teachers", dateStr, []uint{assignment.ID}),
+		"session_infos":   sessionInfos,
+		"date":            dateStr,
 	})
 }
 
@@ -1234,7 +1237,7 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	status := c.FormValue("status")
+	status := normalizeTeacherDutyStatus(c.FormValue("status"))
 	notes := c.FormValue("notes")
 	dateStr := c.FormValue("date")
 	if dateStr == "" {
@@ -1253,9 +1256,12 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 	if !canSubmitHalaqohTeacherAttendance(user) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Absensi guru halaqoh hanya dapat diisi oleh tim presensi/admin"})
 	}
+	if subErr != nil && subErr != gorm.ErrRecordNotFound {
+		return fiber.NewError(500, "Gagal memuat penugasan guru pengganti. Silakan coba lagi.")
+	}
 
 	// ── Time restriction check ──
-	if !canBypassTimeRestriction(user) && !isWithinSessionTime(session) {
+	if !canBypassTimeRestriction(user) && !isWithinSessionTime(session) && !validHalaqohOfflinePermit(c, user.ID, "teachers", dateStr, session, c.FormValue("offline_permit"), c.FormValue("captured_at"), []uint{uint(assignmentID)}) {
 		times := sessionTimes[session]
 		return c.Status(403).JSON(fiber.Map{
 			"error": fmt.Sprintf("Sesi %s hanya dapat diakses pada jam %s - %s", session, times[0], times[1]),
@@ -1283,8 +1289,10 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 		if notes != "" {
 			attendance.Notes = &notes
 		}
-		h.db.Create(&attendance)
-	} else {
+		if err := h.db.Create(&attendance).Error; err != nil {
+			return fiber.NewError(500, "Gagal menyimpan absensi guru. Silakan coba lagi.")
+		}
+	} else if err == nil {
 		updates := map[string]interface{}{
 			"status":       status,
 			"submitted_by": user.ID,
@@ -1295,7 +1303,11 @@ func (h *HalaqohHandler) SubmitTeacherAttendance(c *fiber.Ctx) error {
 		} else {
 			updates["notes"] = nil
 		}
-		h.db.Model(&attendance).Updates(updates)
+		if err := h.db.Model(&attendance).Updates(updates).Error; err != nil {
+			return fiber.NewError(500, "Gagal memperbarui absensi guru. Silakan coba lagi.")
+		}
+	} else {
+		return fiber.NewError(500, "Gagal memuat absensi guru. Silakan coba lagi.")
 	}
 
 	file, fileErr := c.FormFile("photo")

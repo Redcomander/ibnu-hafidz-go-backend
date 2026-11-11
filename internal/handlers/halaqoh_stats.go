@@ -193,11 +193,11 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 	}
 
 	// 3. Aggregate Stats
-	stats := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0}
+	stats := map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Dinas": 0}
 	sessions := []string{"Shubuh", "Ashar", "Isya"}
 	sessionStats := make(map[string]map[string]int)
 	for _, s := range sessions {
-		sessionStats[s] = map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0}
+		sessionStats[s] = map[string]int{"Hadir": 0, "Izin": 0, "Sakit": 0, "Alpha": 0, "Dinas": 0}
 	}
 	substitutionCount := 0
 
@@ -208,6 +208,7 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 		Izin       int    `json:"izin"`
 		Sakit      int    `json:"sakit"`
 		Alpha      int    `json:"alpha"`
+		Dinas      int    `json:"dinas"`
 		Substitute int    `json:"substitute"`
 	}
 	teacherMap := make(map[uint]*TeacherSummary)
@@ -260,6 +261,8 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 				ts.Sakit++
 			case "Alpha":
 				ts.Alpha++
+			case "Dinas":
+				ts.Dinas++
 			}
 		}
 	}
@@ -298,6 +301,8 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 				ts.Sakit++
 			case "Alpha":
 				ts.Alpha++
+			case "Dinas":
+				ts.Dinas++
 			}
 		}
 
@@ -312,7 +317,7 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 		// Formatted history
 		statusLabel := "-"
 		if log.Status != nil {
-			statusLabel = *log.Status
+			statusLabel = capitalize(*log.Status)
 		}
 		history = append(history, SubstituteHistory{
 			ID:                  log.ID,
@@ -364,7 +369,7 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 				Date:    a.Date.Format("2006-01-02"),
 				Teacher: tName,
 				Session: a.Session,
-				Status:  a.Status,
+				Status:  capitalize(a.Status),
 				Notes:   notes,
 				Source:  "teacher_attendance",
 			})
@@ -414,6 +419,7 @@ func (h *HalaqohStatsHandler) TeacherStatistics(c *fiber.Ctx) error {
 
 // Helper to capitalize status strings
 func capitalize(s string) string {
+	s = normalizeTeacherDutyStatus(strings.TrimSpace(s))
 	if len(s) == 0 {
 		return ""
 	}
