@@ -122,6 +122,11 @@ func canManageHalaqohAssignments(user *models.User) bool {
 		user.HasRole("tim_presensi")
 }
 
+func canAssignHalaqohSubstitute(user *models.User) bool {
+	return user != nil && (user.HasRole("super_admin") || user.HasRole("admin") ||
+		user.HasRole("tim_presensi") || user.HasPermission("halaqoh-assignments.edit"))
+}
+
 func canSubmitHalaqohTeacherAttendance(user *models.User) bool {
 	if user == nil {
 		return false
@@ -389,11 +394,13 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 
 	// ── Access control info for each teacher group ──
 	type AccessInfo struct {
-		TeacherID           uint `json:"teacher_id"`
-		CanAccessAttendance bool `json:"can_access_attendance"`
-		CanManage           bool `json:"can_manage"`
-		IsSubstitute        bool `json:"is_substitute"`
-		IsHelper            bool `json:"is_helper"`
+		TeacherID                  uint `json:"teacher_id"`
+		CanAccessAttendance        bool `json:"can_access_attendance"`
+		CanManage                  bool `json:"can_manage"`
+		CanSubmitTeacherAttendance bool `json:"can_submit_teacher_attendance"`
+		CanAssignSubstitute        bool `json:"can_assign_substitute"`
+		IsSubstitute               bool `json:"is_substitute"`
+		IsHelper                   bool `json:"is_helper"`
 	}
 	var accessInfos []AccessInfo
 	canManage := canManageHalaqohAssignments(user)
@@ -419,11 +426,13 @@ func (h *HalaqohHandler) ListAssignments(c *fiber.Ctx) error {
 		}
 
 		accessInfos = append(accessInfos, AccessInfo{
-			TeacherID:           tid,
-			CanAccessAttendance: isOwn || isSub || canManage || isHelper,
-			CanManage:           isHalaqohAdmin(user) || isOwn,
-			IsSubstitute:        isSub,
-			IsHelper:            isHelper,
+			TeacherID:                  tid,
+			CanAccessAttendance:        isOwn || isSub || canManage || isHelper,
+			CanManage:                  isHalaqohAdmin(user) || isOwn,
+			CanSubmitTeacherAttendance: canSubmitHalaqohTeacherAttendance(user),
+			CanAssignSubstitute:        canAssignHalaqohSubstitute(user),
+			IsSubstitute:               isSub,
+			IsHelper:                   isHelper,
 		})
 	}
 
@@ -619,6 +628,13 @@ func (h *HalaqohHandler) RejectAssignmentChangeRequest(c *fiber.Ctx) error {
 }
 
 func (h *HalaqohHandler) AssignSubstitute(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canAssignHalaqohSubstitute(user) {
+		return fiber.NewError(fiber.StatusForbidden, "Tidak memiliki akses mengatur guru pengganti")
+	}
 	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
 	if id == 0 {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid assignment ID"})
@@ -674,6 +690,13 @@ func (h *HalaqohHandler) AssignSubstitute(c *fiber.Ctx) error {
 }
 
 func (h *HalaqohHandler) UnassignSubstitute(c *fiber.Ctx) error {
+	user, err := h.getUserFromContext(c)
+	if err != nil {
+		return err
+	}
+	if !canAssignHalaqohSubstitute(user) {
+		return fiber.NewError(fiber.StatusForbidden, "Tidak memiliki akses mengatur guru pengganti")
+	}
 	id, _ := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	type Req struct {

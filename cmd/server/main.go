@@ -411,8 +411,9 @@ func main() {
 	halaqoh.Delete("/assignments/:id", halaqohHandler.DeleteAssignment)
 	halaqoh.Delete("/assignments/teacher/:teacher_id", halaqohHandler.DeleteAssignmentsByTeacher)
 	// Substitute
-	halaqoh.Post("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.AssignSubstitute)
-	halaqoh.Delete("/assignments/:id/substitute", middleware.Permission("halaqoh-assignments.edit"), halaqohHandler.UnassignSubstitute)
+	// Substitute handlers enforce their own role/permission checks independently of membership editing.
+	halaqoh.Post("/assignments/:id/substitute", halaqohHandler.AssignSubstitute)
+	halaqoh.Delete("/assignments/:id/substitute", halaqohHandler.UnassignSubstitute)
 	halaqoh.Delete("/substitute-history/:id", halaqohHandler.DeleteSubstituteHistory)
 	halaqoh.Post("/substitute-history", halaqohHandler.AddSubstituteHistoryManual)
 	halaqoh.Put("/substitute-history/:id", halaqohHandler.UpdateSubstituteHistoryManual)
