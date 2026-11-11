@@ -193,6 +193,8 @@ func main() {
 	students.Get("/template", middleware.Permission("students.view"), studentHandler.ExportTemplate)
 	students.Get("/export/excel", middleware.Permission("students.view"), studentHandler.ExportCSV)
 	students.Post("/mass-delete", middleware.Permission("students.delete"), studentHandler.MassDelete)
+	students.Get("/attendance-signals", middleware.Permission("students.view"), studentHandler.AttendanceSignals)
+	students.Get("/:id/progress", middleware.Permission("students.view"), studentHandler.Progress)
 	students.Get("/:id", middleware.Permission("students.view"), studentHandler.Get)
 	students.Put("/:id", middleware.Permission("students.edit"), studentHandler.Update)
 	students.Put("/:id/graduate", middleware.Permission("students.edit"), studentHandler.Graduate)
