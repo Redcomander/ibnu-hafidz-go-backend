@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -98,9 +99,26 @@ func (h *HalaqohStatsHandler) StudentStatistics(c *fiber.Ctx) error {
 	izinStudents := make(map[string]bool)
 	sakitStudents := make(map[string]bool)
 	alpaStudents := make(map[string]bool)
+	type studentFrequency struct {
+		StudentID uint   `json:"student_id"`
+		Name      string `json:"name"`
+		Count     int    `json:"count"`
+	}
+	frequencies := map[string]map[uint]*studentFrequency{"izin": {}, "sakit": {}, "alpa": {}}
 
 	for _, record := range records {
-		switch record.Status {
+		status := strings.ToLower(strings.TrimSpace(record.Status))
+		if status == "alpha" || status == "tidak_hadir" {
+			status = "alpa"
+		}
+		if group, ok := frequencies[status]; ok && record.HalaqohAssignment.Student.ID != 0 {
+			student := record.HalaqohAssignment.Student
+			if group[student.ID] == nil {
+				group[student.ID] = &studentFrequency{StudentID: student.ID, Name: student.NamaLengkap}
+			}
+			group[student.ID].Count++
+		}
+		switch status {
 		case "hadir":
 			hadir++
 		case "izin":
@@ -136,12 +154,27 @@ func (h *HalaqohStatsHandler) StudentStatistics(c *fiber.Ctx) error {
 		{"name": "Sakit", "value": sakit},
 		{"name": "Alpa", "value": alpa},
 	}
+	details := map[string][]studentFrequency{}
+	for status, students := range frequencies {
+		rows := make([]studentFrequency, 0, len(students))
+		for _, student := range students {
+			rows = append(rows, *student)
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Count == rows[j].Count {
+				return rows[i].StudentID < rows[j].StudentID
+			}
+			return rows[i].Count > rows[j].Count
+		})
+		details[status] = rows
+	}
 
 	return c.JSON(fiber.Map{
-		"chartData":     chartData,
-		"izinStudents":  getKeys(izinStudents),
-		"sakitStudents": getKeys(sakitStudents),
-		"alpaStudents":  getKeys(alpaStudents),
+		"chartData":       chartData,
+		"izinStudents":    getKeys(izinStudents),
+		"sakitStudents":   getKeys(sakitStudents),
+		"alpaStudents":    getKeys(alpaStudents),
+		"student_details": details,
 	})
 }
 

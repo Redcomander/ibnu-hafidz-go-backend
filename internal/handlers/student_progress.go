@@ -165,11 +165,33 @@ func (h *StudentHandler) AttendanceSignals(c *fiber.Ctx) error {
 		Count     int64  `json:"count"`
 	}
 	rows := []signal{}
-	q := studentSourceQuery(h.db, *source).Joins("JOIN students ON students.id = "+studentIDColumn(*source)).Where("students.deleted_at IS NULL").Where(source.table+"."+source.date+" >= ? AND "+source.table+"."+source.date+" < ?", start, end).Where("LOWER("+source.table+".status) IN ?", []string{"alpha", "alpa", "tidak_hadir"})
+	status := strings.ToLower(strings.TrimSpace(c.Query("status", "alpha")))
+	statuses := []string{status}
+	switch status {
+	case "alpha", "alpa", "tidak_hadir":
+		status = "alpha"
+		statuses = []string{"alpha", "alpa", "tidak_hadir"}
+	case "izin", "sakit":
+	default:
+		return fiber.NewError(400, "Status tidak valid")
+	}
+	threshold := c.QueryInt("threshold", 3)
+	if threshold < 1 || threshold > 10000 {
+		return fiber.NewError(400, "Batas jumlah tidak valid")
+	}
+	q := studentSourceQuery(h.db, *source).Joins("JOIN students ON students.id = "+studentIDColumn(*source)).Where("students.deleted_at IS NULL").Where(source.table+"."+source.date+" >= ? AND "+source.table+"."+source.date+" < ?", start, end).Where("LOWER("+source.table+".status) IN ?", statuses)
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		q = q.Where("students.nama_lengkap LIKE ?", "%"+search+"%")
 	}
-	err = q.Select("students.id AS student_id, students.nama_lengkap AS name, COUNT(*) AS count").Group("students.id, students.nama_lengkap").Having("COUNT(*) >= ?", 3).Order("count DESC, students.id").Offset((page - 1) * 20).Limit(21).Scan(&rows).Error
+	grouped := q.Select("students.id AS student_id, students.nama_lengkap AS name, COUNT(*) AS count").Group("students.id, students.nama_lengkap").Having("COUNT(*) >= ?", threshold)
+	var totals struct {
+		Students int64
+		Records  int64
+	}
+	if err := h.db.Table("(?) AS ranked_students", grouped.Session(&gorm.Session{})).Select("COUNT(*) AS students, COALESCE(SUM(count), 0) AS records").Scan(&totals).Error; err != nil {
+		return fiber.NewError(500, "Gagal memuat total indikator")
+	}
+	err = grouped.Order("count DESC, students.id").Offset((page - 1) * 20).Limit(21).Scan(&rows).Error
 	if err != nil {
 		return fiber.NewError(500, "Gagal memuat indikator")
 	}
@@ -177,5 +199,5 @@ func (h *StudentHandler) AttendanceSignals(c *fiber.Ctx) error {
 	if more {
 		rows = rows[:20]
 	}
-	return c.JSON(fiber.Map{"data": rows, "has_more": more, "page": page, "threshold": 3, "module": source.module, "start_date": start, "end_exclusive": end})
+	return c.JSON(fiber.Map{"data": rows, "has_more": more, "page": page, "threshold": threshold, "status": status, "total_students": totals.Students, "total_records": totals.Records, "module": source.module, "start_date": start, "end_exclusive": end})
 }
