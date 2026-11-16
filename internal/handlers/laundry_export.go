@@ -340,6 +340,9 @@ func (h *LaundryExportHandler) ExportExceededAccountsExcel(c *fiber.Ctx) error {
 	}
 
 	query := h.db.Model(&models.LaundryAccount{}).Preload("Vendor").Preload("Student").Preload("User").Where("active = ?", true)
+	if vendorID := c.Query("vendor_id"); vendorID != "" && vendorID != "all" {
+		query = query.Where("vendor_id = ?", vendorID)
+	}
 
 	if search != "" {
 		query = query.Where(
