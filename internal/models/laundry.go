@@ -73,3 +73,11 @@ type LaundryLog struct {
 
 	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
+
+// Attribution is additive and leaves historic transaction rows untouched.
+type LaundryTransactionInput struct {
+	TransactionID uint      `gorm:"primaryKey;autoIncrement:false" json:"transaction_id"`
+	ActorID       uint      `json:"actor_id"`
+	ActorName     string    `json:"actor_name"`
+	CreatedAt     time.Time `json:"created_at"`
+}

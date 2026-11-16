@@ -115,5 +115,16 @@ func TestMySQLBaselinePreservesExistingData(t *testing.T) {
 	require.NoError(t, db.Order("version").Find(&releases).Error)
 	require.Len(t, releases, 2)
 	require.False(t, releases[1].Dirty)
+	// Exercise the additive laundry migration on the same isolated MySQL database.
+	require.NoError(t, ApplyLaundryInputs(db))
+	require.NoError(t, ApplyLaundryInputs(db), "repeat must be a no-op")
+	require.NoError(t, CheckMigrations(db))
+	laundryAfter := snapshot()
+	for name, records := range before {
+		if name != "definitions" {
+			require.Equal(t, records, laundryAfter[name], "laundry migration changed original table %s", name)
+		}
+	}
+	require.True(t, db.Migrator().HasTable("laundry_transaction_inputs"))
 	// Do not drop anything; discard the entire isolated database/container externally.
 }

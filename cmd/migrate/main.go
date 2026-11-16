@@ -12,12 +12,12 @@ import (
 )
 
 func main() {
-	command := flag.String("command", "status", "status, baseline, or mobile-releases (additive tables)")
+	command := flag.String("command", "status", "status, baseline, mobile-releases, or laundry-inputs (additive tables)")
 	confirmedDB := flag.String("confirm-database", "", "exact DB_DATABASE name required to register a baseline")
 	backupVerified := flag.Bool("backup-verified", false, "confirm a database and upload backup has been restored successfully in isolation")
 	flag.Parse()
-	if *command != "status" && *command != "baseline" && *command != "mobile-releases" {
-		log.Fatal("command must be status, baseline, or mobile-releases")
+	if *command != "status" && *command != "baseline" && *command != "mobile-releases" && *command != "laundry-inputs" {
+		log.Fatal("command must be status, baseline, mobile-releases, or laundry-inputs")
 	}
 	_ = godotenv.Load()
 	cfg := config.Load()
@@ -37,6 +37,8 @@ func main() {
 		err = database.RegisterBaseline(db)
 	} else if *command == "mobile-releases" {
 		err = database.ApplyMobileReleases(db)
+	} else if *command == "laundry-inputs" {
+		err = database.ApplyLaundryInputs(db)
 	} else {
 		err = database.CheckMigrations(db)
 	}

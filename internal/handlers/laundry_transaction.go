@@ -47,6 +47,13 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 		Preload("Account.Student").
 		Preload("Account.User").
 		Preload("PickedUpBy")
+	if vendorID := c.Query("vendor_id"); vendorID != "" && vendorID != "all" {
+		id, err := strconv.ParseUint(vendorID, 10, 64)
+		if err != nil || id == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Vendor tidak valid")
+		}
+		query = query.Where("COALESCE(laundry_transactions.vendor_id, (SELECT vendor_id FROM laundry_accounts WHERE id = laundry_transactions.laundry_account_id)) = ?", id)
+	}
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -67,13 +74,21 @@ func (h *LaundryTransactionHandler) List(c *fiber.Ctx) error {
 			)
 	}
 
-	query.Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return err
+	}
 
 	offset := (page - 1) * perPage
-	query.Order("laundry_transactions.created_at desc").Limit(perPage).Offset(offset).Find(&transactions)
+	if err := query.Order("laundry_transactions.created_at desc, laundry_transactions.id desc").Limit(perPage).Offset(offset).Find(&transactions).Error; err != nil {
+		return err
+	}
+	results, err := h.annotateTransactions(transactions)
+	if err != nil {
+		return err
+	}
 
 	return c.JSON(fiber.Map{
-		"data":        transactions,
+		"data":        results,
 		"total":       total,
 		"page":        page,
 		"per_page":    perPage,
@@ -132,6 +147,20 @@ func (h *LaundryTransactionHandler) GetAccountStats(c *fiber.Ctx) error {
 
 // Create new transaction
 func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
+	actorID, ok := c.Locals("userID").(uint)
+	if !ok || actorID == 0 {
+		return fiber.ErrUnauthorized
+	}
+	if !h.db.Migrator().HasTable("laundry_transaction_inputs") {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.ErrorResponse{Message: "Pencatatan transaksi belum tersedia. Hubungi admin."})
+	}
+	var actor struct {
+		ID   uint
+		Name string
+	}
+	if err := h.db.Table("users").Select("id, name").Where("id = ? AND deleted_at IS NULL", actorID).First(&actor).Error; err != nil {
+		return fiber.ErrUnauthorized
+	}
 	type CreateRequest struct {
 		LaundryAccountID uint    `json:"laundry_account_id"`
 		Tanggal          string  `json:"tanggal"`
@@ -182,12 +211,16 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Failed to create transaction"})
 	}
+	if err := tx.Create(&models.LaundryTransactionInput{TransactionID: trans.ID, ActorID: actorID, ActorName: actor.Name}).Error; err != nil {
+		tx.Rollback()
+		return fiber.ErrInternalServerError
+	}
 
 	// Update account totals
-	account.TotalTransactions++
-	account.TotalKg += trans.BeratKg
-
-	if err := tx.Save(&account).Error; err != nil {
+	if err := tx.Model(&models.LaundryAccount{}).Where("id = ?", account.ID).Updates(map[string]interface{}{
+		"total_transactions": gorm.Expr("COALESCE(total_transactions, 0) + 1"),
+		"total_kg":           gorm.Expr("COALESCE(total_kg, 0) + ?", trans.BeratKg),
+	}).Error; err != nil {
 		tx.Rollback()
 		return c.Status(fiber.StatusInternalServerError).JSON(models.ErrorResponse{Message: "Failed to update account totals"})
 	}
@@ -201,7 +234,9 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 	// Log Action
 	logUserAction(tx, c, "Tambah Transaksi", "Menambahkan "+strconv.FormatFloat(trans.BeratKg, 'f', 2, 64)+" KG untuk Nomor Laundry: "+account.NomorLaundry)
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
 
 	return c.Status(fiber.StatusCreated).JSON(trans)
 }

@@ -55,14 +55,14 @@ func CheckMigrations(db *gorm.DB) error {
 	if err := db.Order("version").Find(&rows).Error; err != nil {
 		return fmt.Errorf("read migration history: %w", err)
 	}
-	if len(rows) < 1 || len(rows) > 2 {
+	if len(rows) < 1 || len(rows) > 3 {
 		return fmt.Errorf("unexpected migration history (%d entries); refusing to change it", len(rows))
 	}
 	row := rows[0]
 	if row.Version != baselineVersion || row.Name != baselineName || row.Checksum != baselineChecksum() || row.Dirty {
 		return errors.New("migration version/checksum mismatch or unfinished migration; restore compatible code or investigate; no automatic repair performed")
 	}
-	if len(rows) == 2 {
+	if len(rows) >= 2 {
 		next := rows[1]
 		if next.Version != 2 || next.Name != "mobile_releases" || next.Checksum != mobileReleaseChecksum() || next.Dirty {
 			return errors.New("mobile release migration history mismatch or unfinished migration")
@@ -71,6 +71,15 @@ func CheckMigrations(db *gorm.DB) error {
 			if !db.Migrator().HasTable(table) {
 				return errors.New("mobile release schema missing; investigate migration history")
 			}
+		}
+	}
+	if len(rows) == 3 {
+		next := rows[2]
+		if next.Version != 3 || next.Name != "laundry_transaction_inputs" || next.Checksum != laundryInputsChecksum() || next.Dirty {
+			return errors.New("laundry input migration history mismatch or unfinished migration")
+		}
+		if !db.Migrator().HasTable("laundry_transaction_inputs") {
+			return errors.New("laundry transaction input schema missing")
 		}
 	}
 	// A marker alone must not permit an empty/missing application schema to start.
