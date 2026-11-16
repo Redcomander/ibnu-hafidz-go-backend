@@ -34,3 +34,14 @@ Tes backend memeriksa filter vendor historis/fallback, transaksi mirip lintas fi
 Pada versi awal, middleware menyamarkan 503 ini menjadi `server_error` / `Internal Server Error`. Jalur pembuatan transaksi mengembalikan 503 ketika tabel pencatatan penginput belum tersedia. Versi perbaikan mengirim kode aman `laundry_not_ready` beserta ID permintaan, tanpa membuka SQL atau detail internal.
 
 Periksa database yang dipakai proses backend (gunakan environment runtime yang sama), bukan hanya `.env` checkout. Jika migrasi 003 belum diterapkan, ikuti persiapan deployment di atas: backup terbaru, uji restore/rehearsal, lalu `laundry-inputs` dengan nama database yang benar dan `status`, sebelum deploy ulang. Migrasi bersifat tambahan; jangan menghapus tabel/history atau melewati pencatatan penginput untuk menghilangkan 503. Jika status sudah versi 3 tetapi tetap 503, bandingkan target database runtime dan CLI, izin database, serta ID permintaan pada log produksi sebelum mengulang migrasi.
+
+### Pilihan operator: lanjut tanpa uji restore
+
+Khusus `laundry-inputs`, operator dapat memilih backup gzip yang belum diuji restore dengan `-backup-without-restore=/absolute/backup.sql.gz` sebagai pengganti `-backup-verified`. CLI membaca seluruh gzip untuk memeriksa integritas dan menolak file kosong/rusak. Ini bukan pembuktian bahwa dump dapat di-restore atau berasal dari target yang benar. Nama database tetap wajib dikonfirmasi. Opsi ini tidak berlaku untuk baseline/mobile-releases dan tidak dapat digabung dengan `-backup-verified`. Pemilihan ini ditulis pada output CLI; tidak mengubah aturan history, checksum, advisory lock, atau sifat tambahan migrasi 003.
+
+```bash
+go run ./cmd/migrate -command=laundry-inputs -confirm-database=ibnuhafi_database -backup-without-restore="$HOME/private/backups/before-laundry-003-20261116-151807.sql.gz"
+go run ./cmd/migrate -command=status
+```
+
+Gunakan environment runtime backend dan pastikan dump tersebut adalah backup target yang dimaksud sebelum menjalankan perintah. Tidak ada restore yang dijalankan oleh opsi ini.

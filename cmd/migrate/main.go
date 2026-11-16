@@ -15,14 +15,18 @@ func main() {
 	command := flag.String("command", "status", "status, baseline, mobile-releases, or laundry-inputs (additive tables)")
 	confirmedDB := flag.String("confirm-database", "", "exact DB_DATABASE name required to register a baseline")
 	backupVerified := flag.Bool("backup-verified", false, "confirm a database and upload backup has been restored successfully in isolation")
+	unrestoredBackup := flag.String("backup-without-restore", "", "laundry-inputs only: gzip backup path; explicitly proceed without restore verification")
 	flag.Parse()
 	if *command != "status" && *command != "baseline" && *command != "mobile-releases" && *command != "laundry-inputs" {
 		log.Fatal("command must be status, baseline, mobile-releases, or laundry-inputs")
 	}
 	_ = godotenv.Load()
 	cfg := config.Load()
-	if *command != "status" && (!*backupVerified || *confirmedDB != cfg.DBName) {
-		log.Fatal("baseline requires -backup-verified and -confirm-database matching DB_DATABASE; see DATABASE_MIGRATIONS.md")
+	if err := validateBackup(*command, *confirmedDB, cfg.DBName, *backupVerified, *unrestoredBackup); err != nil {
+		log.Fatal(err)
+	}
+	if *unrestoredBackup != "" {
+		log.Print("Backup gzip integrity checked. Restore NOT verified; proceeding by explicit operator choice for laundry-inputs only.")
 	}
 	db, err := database.Connect(cfg)
 	if err != nil {
