@@ -152,7 +152,7 @@ func (h *LaundryTransactionHandler) Create(c *fiber.Ctx) error {
 		return fiber.ErrUnauthorized
 	}
 	if !h.db.Migrator().HasTable("laundry_transaction_inputs") {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(models.ErrorResponse{Message: "Pencatatan transaksi belum tersedia. Hubungi admin."})
+		return c.Status(fiber.StatusServiceUnavailable).JSON(models.ErrorResponse{Error: "laundry_not_ready", Message: "Pencatatan penginput laundry belum siap. Hubungi admin untuk menyelesaikan pembaruan sistem. Transaksi belum disimpan."})
 	}
 	var actor struct {
 		ID   uint

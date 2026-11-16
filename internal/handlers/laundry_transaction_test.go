@@ -11,6 +11,8 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/gofiber/fiber/v2"
+	"github.com/ibnu-hafidz/web-v2/internal/diagnostics"
+	"github.com/ibnu-hafidz/web-v2/internal/middleware"
 	"gorm.io/gorm"
 )
 
@@ -187,6 +189,40 @@ func TestLaundryTransactionVendorSimilarityAndAttribution(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLaundryTransactionMissingInputsExplains503WithoutWriting(t *testing.T) {
+	db := newLaundryTransactionTestDB(t)
+	store, err := diagnostics.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	app.Use(middleware.Diagnostics(store))
+	app.Use(func(c *fiber.Ctx) error { c.Locals("userID", uint(9)); return c.Next() })
+	app.Post("/transactions", NewLaundryTransactionHandler(db).Create)
+	var before int64
+	db.Table("laundry_transactions").Count(&before)
+	response, err := app.Test(httptest.NewRequest("POST", "/transactions", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var body struct {
+		Error, Message string
+		RequestID      string `json:"request_id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 503 || body.Error != "laundry_not_ready" || body.RequestID == "" || !strings.Contains(body.Message, "Transaksi belum disimpan") {
+		t.Fatalf("unexpected public error: status=%d body=%+v", response.StatusCode, body)
+	}
+	var after int64
+	db.Table("laundry_transactions").Count(&after)
+	if before != after {
+		t.Fatal("unattributed transaction was written")
 	}
 }
 

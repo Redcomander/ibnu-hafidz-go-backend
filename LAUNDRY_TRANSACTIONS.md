@@ -28,3 +28,9 @@ Jika migrasi belum diterapkan, daftar transaksi masih bisa dibaca; pembuatan tra
 ## Verifikasi lokal
 
 Tes backend memeriksa filter vendor historis/fallback, transaksi mirip lintas filter dan pagination, orang berbeda bernama sama, hari berbeda, soft delete, sumber penginput dari sesi, dan rollback atomik saat pencatatan gagal. Tes migrasi SQLite memeriksa data/definisi lama dan history dirty/checksum. Jalur migrasi MySQL/MariaDB diuji oleh integration test opsional dalam database terisolasi ketika environment pengujian MySQL tersedia; rehearsal hosting tetap diperlukan. Database produksi tidak disentuh dari sesi pengembangan ini.
+
+## Jika tambah transaksi mendapat HTTP 503
+
+Pada versi awal, middleware menyamarkan 503 ini menjadi `server_error` / `Internal Server Error`. Jalur pembuatan transaksi mengembalikan 503 ketika tabel pencatatan penginput belum tersedia. Versi perbaikan mengirim kode aman `laundry_not_ready` beserta ID permintaan, tanpa membuka SQL atau detail internal.
+
+Periksa database yang dipakai proses backend (gunakan environment runtime yang sama), bukan hanya `.env` checkout. Jika migrasi 003 belum diterapkan, ikuti persiapan deployment di atas: backup terbaru, uji restore/rehearsal, lalu `laundry-inputs` dengan nama database yang benar dan `status`, sebelum deploy ulang. Migrasi bersifat tambahan; jangan menghapus tabel/history atau melewati pencatatan penginput untuk menghilangkan 503. Jika status sudah versi 3 tetapi tetap 503, bandingkan target database runtime dan CLI, izin database, serta ID permintaan pada log produksi sebelum mengulang migrasi.

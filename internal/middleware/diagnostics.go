@@ -60,7 +60,10 @@ func Diagnostics(store *diagnostics.Store) fiber.Handler {
 				_ = json.Unmarshal(c.Response().Body(), &body)
 				// Maintenance has its own deliberate public message. Other direct 5xx
 				// responses get the same safe envelope as errors returned to ErrorHandler.
-				if status != 503 || body.Error != "maintenance" {
+				if status == 503 && body.Error == "laundry_not_ready" {
+					// Fixed public text only: never forward arbitrary handler errors or SQL.
+					_ = c.Status(status).JSON(fiber.Map{"error": "laundry_not_ready", "message": "Pencatatan penginput laundry belum siap. Hubungi admin untuk menyelesaikan pembaruan sistem. Transaksi belum disimpan.", "request_id": id})
+				} else if status != 503 || body.Error != "maintenance" {
 					_ = c.Status(status).JSON(fiber.Map{"error": "server_error", "message": "Internal Server Error", "request_id": id})
 				}
 			}
